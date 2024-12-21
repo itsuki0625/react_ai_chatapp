@@ -1,4 +1,5 @@
-version: '3'
+version: '3.8'  # 最新のバージョンを使用することを推奨
+
 services:
   backend:
     build: ./backend
@@ -6,16 +7,29 @@ services:
       - '5000:5000'
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PORT=${PORT}
+      - SERCRET_KEY=${SERCRET_KEY}
+    env_file:
+      - .env
     networks:
       - app-network
+    volumes:
+      - ./backend:/app  # 開発時にコードをマウント（ホットリロード用）
+    command: uvicorn app:app --host 0.0.0.0 --port 5000
+
   frontend:
     build: ./frontend
     ports:
-      - '3000:3000'
+      - '3000:80'  # フロントエンドはNginxが80番ポートを使用
     depends_on:
       - backend
     networks:
       - app-network
+    volumes:
+      - ./frontend:/app  # 開発時にコードをマウント（ホットリロード用）
+    environment:
+      - REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL}  # フロントエンドからバックエンドへのURL
+    restart: always
 
 networks:
   app-network:

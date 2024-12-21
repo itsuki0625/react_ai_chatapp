@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+httpx
+python-dotenv
+
+fastapi-sessions
+python-jose
+cryptography
