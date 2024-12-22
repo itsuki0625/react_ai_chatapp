@@ -16,7 +16,7 @@ const DashboardPage = () => {
       title: "AIチャット",
       description: "AIと対話して自己理解を深めましょう",
       icon: MessageSquare,
-      href: "/app/chat",
+      href: "/chat",
       stats: "新規チャット可能"
     },
     {

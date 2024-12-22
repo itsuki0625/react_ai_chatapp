@@ -20,11 +20,12 @@ interface NavItem {
 }
 
 const navigation: NavItem[] = [
-  { name: 'ダッシュボード', href: '/app/dashboard', icon: Home },
-  { name: 'AIチャット', href: '/app/chat', icon: MessageSquare },
-  { name: '自己分析', href: '/app/self-analysis', icon: User },
-  { name: '志望理由書', href: '/app/statement', icon: FileText },
-  { name: '設定', href: '/app/settings', icon: Settings },
+  { name: 'ダッシュボード', href: '/dashboard', icon: Home },
+  { name: 'AIチャット', href: '/chat', icon: MessageSquare },
+  { name: 'FAQチャット', href: '/faq', icon: MessageSquare },
+  { name: '志望校管理', href: '/application', icon: User },
+  { name: '志望理由書', href: '/statement', icon: FileText },
+  { name: '設定', href: '/settings', icon: Settings },
 ];
 
 export const AppLayout = ({ children }: { children: React.ReactNode }) => {
@@ -51,7 +52,7 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
       `}>
         <div className="p-6">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-slate-900">Study Support</h1>
+            <h1 className="text-2xl font-bold text-slate-900">SmartAO</h1>
             <button
               className="lg:hidden p-2"
               onClick={() => setSidebarOpen(false)}

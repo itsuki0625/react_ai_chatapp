@@ -31,7 +31,7 @@ const LoginPage = () => {
           </h2>
           <p className="mt-2 text-sm text-gray-600">
             アカウントをお持ちでない方は
-            <a href="/auth/signup" className="font-medium text-blue-600 hover:text-blue-500">
+            <a href="/signup" className="font-medium text-blue-600 hover:text-blue-500">
               新規登録
             </a>
           </p>

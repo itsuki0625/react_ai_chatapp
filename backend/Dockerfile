@@ -15,8 +15,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 # アプリケーションのソースコードをコピー
 COPY . .
 
+ENV PYTHONPATH=/app
+
 # ポート5000を開放
 EXPOSE 5000
 
-# サーバーの起動コマンド
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5000","--reload"]
+# マイグレーション用のスクリプトを追加
+COPY ./scripts/start.sh /start.sh
+COPY ./scripts/migrate.sh /migrate.sh
+COPY ./scripts/seed.sh /seed.sh
+RUN chmod +x /start.sh /migrate.sh /seed.sh
+
+# 起動コマンドを変更
+CMD ["/start.sh"]
