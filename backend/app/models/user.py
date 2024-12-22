@@ -28,7 +28,8 @@ class User(Base, TimestampMixin):
     class_number = Column(String)
     student_number = Column(String)
     profile_image_url = Column(String)
-    is_active = Column(Boolean, default=True)    last_login_at = Column(DateTime)
+    is_active = Column(Boolean, default=True)   
+    last_login_at = Column(DateTime)
 
     # Relationships
     chat_sessions = relationship("ChatSession", back_populates="user")
