@@ -16,7 +16,7 @@ client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 async def stream_openai_response(messages: List[Dict], session_id: str):
     try:
         response = await client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o",
             messages=messages,
             stream=True,
             temperature=0.7

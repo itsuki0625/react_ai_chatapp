@@ -25,6 +25,7 @@ const navigation: NavItem[] = [
   { name: 'FAQチャット', href: '/faq', icon: MessageSquare },
   { name: '志望校管理', href: '/application', icon: User },
   { name: '志望理由書', href: '/statement', icon: FileText },
+  { name: 'コンテンツ', href: '/content', icon: FileText },
   { name: '設定', href: '/settings', icon: Settings },
 ];
 

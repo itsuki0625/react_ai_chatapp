@@ -34,7 +34,7 @@ async def chat_stream(
             for msg in chat_request.history
         ]
         
-        system_message = "あなたは就職活動中の学生の自己分析をサポートするAIアシスタントです。"
+        system_message = settings.INSTRUCTION
         
         messages = [
             {"role": "system", "content": system_message},
