@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from app.core.config import settings
-from app.api.v1.endpoints import chat, auth
+from app.api.v1.endpoints import chat
 import logging
 
 # ロギング設定
@@ -24,7 +24,6 @@ app.add_middleware(
 )
 
 # ルーターの登録
-app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 
 if __name__ == "__main__":

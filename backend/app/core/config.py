@@ -2,6 +2,7 @@ from pydantic_settings import BaseSettings
 from typing import List
 import os
 from dotenv import load_dotenv
+import openai
 
 load_dotenv()
 
@@ -32,5 +33,13 @@ class Settings(BaseSettings):
     # JWT設定
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
+    class Config:
+        env_file = ".env"
+
+settings = Settings()
+
+# OpenAI APIキーの設定
+openai.api_key = settings.OPENAI_API_KEY
 
 settings = Settings() 

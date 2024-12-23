@@ -13,3 +13,6 @@ pydantic-settings
 pydantic[email]
 python-multipart
 pandas
+openai
+passlib
+bcrypt

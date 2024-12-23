@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, User, Bot } from 'lucide-react';
+import { useChat } from '@/hooks/useChat';
 
 interface Message {
   id: string;
@@ -21,6 +22,7 @@ const FaqChatPage = () => {
   ]);
   const [newMessage, setNewMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { sendMessage } = useChat();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -45,16 +47,29 @@ const FaqChatPage = () => {
     setMessages(prev => [...prev, userMessage]);
     setNewMessage('');
 
-    // 仮のボットレスポンス
-    setTimeout(() => {
+    try {
+      const { response } = await sendMessage(newMessage);
+      
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: 'ご共有ありがとうございます。もう少し具体的に教えていただけますでしょうか？',
+        content: response,
         sender: 'bot',
         timestamp: new Date()
       };
+      
       setMessages(prev => [...prev, botMessage]);
-    }, 1000);
+    } catch (error) {
+      console.error('エラーが発生しました:', error);
+      
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: 'メッセージの送信中にエラーが発生しました。もう一度お試しください。',
+        sender: 'bot',
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
+    }
   };
 
   return (

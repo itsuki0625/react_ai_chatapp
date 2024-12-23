@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from core.config import settings
+from app.core.config import settings
 from typing import Generator
 
 # エンジンの作成

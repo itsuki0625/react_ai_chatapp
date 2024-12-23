@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, User, Bot } from 'lucide-react';
+import { useChat } from '@/hooks/useChat';
 
 interface Message {
   id: string;
@@ -20,7 +21,9 @@ const ChatPage = () => {
     }
   ]);
   const [newMessage, setNewMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { sendStreamMessage } = useChat();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -33,7 +36,7 @@ const ChatPage = () => {
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -44,17 +47,59 @@ const ChatPage = () => {
 
     setMessages(prev => [...prev, userMessage]);
     setNewMessage('');
+    setIsLoading(true);
 
-    // 仮のボットレスポンス
-    setTimeout(() => {
-      const botMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: 'ご共有ありがとうございます。もう少し具体的に教えていただけますでしょうか？',
-        sender: 'bot',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, botMessage]);
-    }, 1000);
+    // ボットの応答用の仮メッセージを作成
+    const botMessageId = (Date.now() + 1).toString();
+    const botMessage: Message = {
+      id: botMessageId,
+      content: '',
+      sender: 'bot',
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, botMessage]);
+
+    try {
+      // チャット履歴の形式を変換
+      const history = messages.map(msg => ({
+        sender: msg.sender === 'user' ? 'user' : 'assistant',
+        text: msg.content
+      }));
+
+      await sendStreamMessage(
+        newMessage,
+        history,
+        (text) => {
+          // ストリーミングで受け取ったテキストを既存のメッセージに追加
+          setMessages(prev => prev.map(msg => 
+            msg.id === botMessageId
+              ? { ...msg, content: msg.content + text }
+              : msg
+          ));
+        },
+        (error) => {
+          console.error('エラーが発生しました:', error);
+          setMessages(prev => prev.map(msg =>
+            msg.id === botMessageId
+              ? { ...msg, content: 'メッセージの送信中にエラーが発生しました。もう一度お試しください。' }
+              : msg
+          ));
+        }
+      );
+    } catch (error) {
+      console.error('エラーが発生しました:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const formatTimestamp = (date: Date) => {
+    return date.toLocaleTimeString('ja-JP', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
   };
 
   return (
@@ -88,9 +133,9 @@ const ChatPage = () => {
                       : 'bg-white border border-gray-200'
                   }`}
                 >
-                  <p className="text-sm">{message.content}</p>
+                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                   <span className="text-xs text-gray-400 mt-1 block">
-                    {message.timestamp.toLocaleTimeString()}
+                    {formatTimestamp(message.timestamp)}
                   </span>
                 </div>
                 {message.sender === 'user' && (
@@ -115,11 +160,12 @@ const ChatPage = () => {
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             placeholder="メッセージを入力..."
-            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            disabled={isLoading}
+            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <button
             type="submit"
-            disabled={!newMessage.trim()}
+            disabled={!newMessage.trim() || isLoading}
             className="bg-blue-600 text-white rounded-lg px-6 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="h-5 w-5" />
