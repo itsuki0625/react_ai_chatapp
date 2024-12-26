@@ -24,10 +24,15 @@ async def stream_openai_response(messages: List[Dict], session_id: str):
         
         async for chunk in response:
             if chunk.choices[0].delta.content is not None:
-                yield f"data: {chunk.choices[0].delta.content}\n\n"
+                try:
+                    yield f"data: {chunk.choices[0].delta.content}\n\n"
+                except Exception as e:
+                    logger.error(f"Error while streaming chunk: {str(e)}")
+                    continue
         
         yield "data: [DONE]\n\n"
         
     except Exception as e:
         logger.error(f"Error from OpenAI: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        yield f"data: エラーが発生しました: {str(e)}\n\n"
+        yield "data: [DONE]\n\n" 

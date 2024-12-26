@@ -22,10 +22,16 @@ async def chat_stream(
     current_user: User = Depends(get_current_user),
 ):
     logger.info(f"Received message: {chat_request.message}")
-    session = request.session
-    if "session_id" not in session:
-        session["session_id"] = str(uuid.uuid4())
-
+    
+    # セッションの初期化を確実に行う
+    if not hasattr(request, 'session'):
+        request.session = {}
+    
+    # セッションIDがない場合は新規作成
+    if "session_id" not in request.session:
+        request.session["session_id"] = str(uuid.uuid4())
+        logger.info(f"Created new session_id: {request.session['session_id']}")
+    
     try:
         logger.info(f"Chat request: {chat_request.message}")
         formatted_history = [
@@ -47,7 +53,7 @@ async def chat_stream(
         logger.info(f"Formatted Messages: {messages}")
 
         return StreamingResponse(
-            stream_openai_response(messages, session["session_id"]),
+            stream_openai_response(messages, request.session["session_id"]),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache", 
