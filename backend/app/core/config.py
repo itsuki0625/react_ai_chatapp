@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
+    # Session settings
+    SESSION_COOKIE_NAME: str = "session"
+    SESSION_MAX_AGE: int = 3600  # 1時間
+    SESSION_SECURE: bool = False  # 開発環境ではFalse、本番環境ではTrue
+
     class Config:
         env_file = ".env"
 

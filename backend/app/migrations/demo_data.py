@@ -3,15 +3,8 @@ from app.models.user import User, Role
 from app.models.university import University, Department
 from app.models.school import School
 from app.models.admission import AdmissionMethod
-from app.models.desired_school import DesiredSchool, DesiredDepartment
-from app.models.document import Document
-from app.models.personal_statement import PersonalStatement
-from app.models.schedule import ScheduleEvent
-from app.models.system import SystemSetting
-from app.models.enums import (
-    DocumentStatus, PersonalStatementStatus
-)
 from sqlalchemy.orm import Session
+from app.core.security import get_password_hash
 
 def insert_demo_data(db: Session):
     # ロールデータ
@@ -142,11 +135,11 @@ def insert_demo_data(db: Session):
         db.add(method)
     db.flush()
 
-    # ユーザーデータ
+    # ユーザーデー��
     users = [
         User(
             email="admin@demo-univ.ac.jp",
-            hashed_password="$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKyNiAYMxRRQv2q",  # password: "admin123"
+            hashed_password=get_password_hash("admin123"),  # password: "admin123"
             full_name="管理者 テスト",
             role_id=roles[0].id,  # 管理者ロール
             school_id=demo_school.id,
@@ -154,7 +147,7 @@ def insert_demo_data(db: Session):
         ),
         User(
             email="teacher@demo-high.ed.jp",
-            hashed_password="$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKyNiAYMxRRQv2q",  # password: "teacher123"
+            hashed_password=get_password_hash("teacher123"),  # password: "teacher123"
             full_name="教員 テスト",
             role_id=roles[1].id,  # 教員ロール
             school_id=demo_school.id,
@@ -162,7 +155,7 @@ def insert_demo_data(db: Session):
         ),
         User(
             email="student@example.com",
-            hashed_password="$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKyNiAYMxRRQv2q",  # password: "student123"
+            hashed_password=get_password_hash("student123"),  # password: "student123"
             full_name="生徒 テスト",
             role_id=roles[2].id,  # 生徒ロール
             school_id=demo_school.id,
@@ -176,49 +169,13 @@ def insert_demo_data(db: Session):
         db.add(user)
     db.flush()
 
-    # 志望校データ
-    desired_school = DesiredSchool(
-        user_id=users[2].id,  # 生徒ユーザー
-        university_id=demo_university.id,
-        preference_order=1
+    # テストユーザーの作成
+    test_user = User(
+        email="test@example.com",
+        hashed_password=get_password_hash("test123"),  # パスワードをハッシュ化
+        full_name="テストユーザー",
+        role_id=roles[2].id,  # 生徒ロール
+        is_active=True
     )
-    db.add(desired_school)
-    db.flush()
-
-    # 志望学部データ
-    desired_department = DesiredDepartment(
-        desired_school_id=desired_school.id,
-        admission_method_id=admission_methods[0].id
-    )
-    db.add(desired_department)
-    db.flush()
-
-    # 提出書類データ
-    document = Document(
-        desired_department_id=desired_department.id,
-        name="志願書",
-        status=DocumentStatus.DRAFT,
-        deadline=datetime(2024, 8, 31)
-    )
-    db.add(document)
-
-    # 志望理由書データ
-    personal_statement = PersonalStatement(
-        user_id=users[2].id,
-        desired_department_id=desired_department.id,
-        content="私は...",
-        status=PersonalStatementStatus.DRAFT
-    )
-    db.add(personal_statement)
-
-    # スケジュールイベント
-    schedule_event = ScheduleEvent(
-        desired_department_id=desired_department.id,
-        event_name="出願締切",
-        date=datetime(2024, 8, 31),
-        type="deadline",
-        completed=False
-    )
-    db.add(schedule_event)
-
+    db.add(test_user)
     db.commit() 

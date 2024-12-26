@@ -2,22 +2,77 @@
 
 import React, { useState, FormEvent } from 'react';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+
+// APIのURLを直接指定してデバッグ
+const API_URL = 'http://localhost:5000';  // 開発環境用
 
 const LoginPage = () => {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
+    setIsLoading(true);
 
     try {
-      // ここにログイン処理を実装
-      console.log('Login attempt with:', { email, password });
+      const formData = new URLSearchParams();
+      formData.append('username', email);
+      formData.append('password', password);
+
+      console.log('Sending request to:', `${API_URL}/api/v1/auth/login`);  // URLを確認
+
+      const response = await fetch(`${API_URL}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',  // JSONレスポンスを明示的にリクエスト
+        },
+        body: formData,
+        credentials: 'include'
+      });
+
+      // レスポンスの内容をデバッグ
+      const contentType = response.headers.get('content-type');
+      console.log('Response content type:', contentType);
+
+      if (!response.ok) {
+        const text = await response.text();  // エラーの場合はテキストとして読み取り
+        console.error('Error response:', text);
+        throw new Error(text || 'ログインに失敗しました');
+      }
+
+      const data = await response.json();
+      console.log('Login response:', data);
+
+      // ログイン成功時の処理
+      console.log('Login successful:', data);
+      
+      // ユーザーの役割に応じて適切なページにリダイレクト
+      switch (data.role) {
+        case 'student':
+          router.push('/dashboard/student');
+          break;
+        case 'teacher':
+          router.push('/dashboard/teacher');
+          break;
+        case 'admin':
+          router.push('/dashboard/admin');
+          break;
+        default:
+          router.push('/dashboard');
+      }
+
     } catch (err) {
-      setError('ログインに失敗しました。メールアドレスとパスワードを確認してください。');
+      console.error('Login error:', err);
+      setError(err instanceof Error ? err.message : 'ログインに失敗しました。メールアドレスとパスワードを確認してください。');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -125,9 +180,24 @@ const LoginPage = () => {
           <div>
             <button
               type="submit"
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              disabled={isLoading}
+              className={`group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white 
+                ${isLoading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'} 
+                focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
             >
-              ログイン
+              {isLoading ? (
+                <>
+                  <span className="absolute left-0 inset-y-0 flex items-center pl-3">
+                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  </span>
+                  ログイン中...
+                </>
+              ) : (
+                'ログイン'
+              )}
             </button>
           </div>
         </form>

@@ -20,3 +20,8 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True 
+
+class LoginResponse(BaseModel):
+    email: EmailStr
+    full_name: str
+    role: str 

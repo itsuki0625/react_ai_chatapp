@@ -1,4 +1,0 @@
-id,name,description,is_active,created_at,updated_at
-"adm1aa2bb-3cc4-dd5e-6ff7-gg8hh9ii0jj1","一般入試","標準的な一般入試",TRUE,"2024-01-30 08:00:00","2024-01-30 08:00:00"
-"adm2bb3cc-4dd5-ee6f-7gg8-hh9ii0jj1kk2","推薦入試","教師の推薦に基づく入試",TRUE,"2024-01-31 09:00:00","2024-01-31 09:00:00"
-

@@ -11,7 +11,7 @@ services:
       - app-network
     volumes:
       - ./backend:/app
-    command: ["/start.sh"]
+    command: ["/app/scripts/start.sh"]
     depends_on:
       db:
         condition: service_healthy
@@ -30,6 +30,8 @@ services:
       - ./.env
     restart: always
     command: npm run dev -- -p 3000
+    environment:
+      - HOST=0.0.0.0
 
   db:
     image: postgres:13

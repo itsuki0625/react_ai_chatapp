@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.services.openai_service import stream_openai_response
 import uuid
 from openai import AsyncOpenAI
+from app.api.deps import get_current_user, User
 
 router = APIRouter()
 
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 async def chat_stream(
     request: Request,
     chat_request: ChatRequest,
+    current_user: User = Depends(get_current_user),
 ):
     logger.info(f"Received message: {chat_request.message}")
     session = request.session
@@ -50,7 +52,7 @@ async def chat_stream(
             headers={
                 "Cache-Control": "no-cache", 
                 "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"
+                "X-Accel-Buffering": "no",
             }
         )
     except Exception as e:
@@ -69,7 +71,10 @@ async def end_session(request: Request):
     return {"message": "Session ended successfully"}
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_with_ai(chat_request: ChatRequest):
+async def chat_with_ai(
+    chat_request: ChatRequest,
+    current_user: User = Depends(get_current_user),
+):
     try:
         logger.info(f"Sending to OpenAI: {chat_request.message}")
         
