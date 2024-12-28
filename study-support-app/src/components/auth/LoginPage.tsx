@@ -2,13 +2,14 @@
 
 import React, { useState, FormEvent } from 'react';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 // APIのURLを直接指定してデバッグ
 const API_URL = 'http://localhost:5000';  // 開発環境用
 
 const LoginPage = () => {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -52,20 +53,24 @@ const LoginPage = () => {
 
       // ログイン成功時の処理
       console.log('Login successful:', data);
-      
-      // ユーザーの役割に応じて適切なページにリダイレクト
-      switch (data.role) {
-        case 'student':
-          router.push('/dashboard/student');
-          break;
-        case 'teacher':
-          router.push('/dashboard/teacher');
-          break;
-        case 'admin':
-          router.push('/dashboard/admin');
-          break;
-        default:
-          router.push('/dashboard');
+      // パラメータを取得、リダイレクトがあるならそのパスにリダイレクト
+      const redirectPath = searchParams.get('redirect');
+      if (redirectPath) {
+        router.push(redirectPath);
+      } else {
+        switch (data.role) {
+          case 'student':
+            router.push('/dashboard');
+            break;
+          case 'teacher':
+            router.push('/teacher/dashboard');
+            break;
+          case 'admin':
+            router.push('/admin/dashboard');
+            break;
+          default:
+            router.push('/dashboard');
+        }
       }
 
     } catch (err) {
@@ -73,6 +78,24 @@ const LoginPage = () => {
       setError(err instanceof Error ? err.message : 'ログインに失敗しました。メールアドレスとパスワードを確認してください。');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      const response = await fetch('/api/v1/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        router.push('/login');
+      } else {
+        setError('ログアウトに失敗しました');
+      }
+    } catch (error) {
+      setError('ログアウト中にエラーが発生しました');
+      console.error('Logout error:', error);
     }
   };
 

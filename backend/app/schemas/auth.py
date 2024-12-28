@@ -1,4 +1,6 @@
 from pydantic import BaseModel, EmailStr
+from uuid import UUID
+from typing import Optional
 
 class Token(BaseModel):
     access_token: str
@@ -25,3 +27,12 @@ class LoginResponse(BaseModel):
     email: EmailStr
     full_name: str
     role: str 
+
+class SignUpRequest(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: str 
+    role_id: UUID
+    school_id: Optional[UUID] = None
+
+

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Bell, User, Shield, LogOut } from 'lucide-react';
+import LogoutButton from '@/components/common/LogoutButton';
 
 const SettingsPage = () => {
   const [userSettings, setUserSettings] = useState({
@@ -140,10 +141,7 @@ const SettingsPage = () => {
           </div>
         </div>
         <div className="p-6 space-y-4">
-          <button className="w-full flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700">
-            <LogOut className="h-5 w-5 mr-2" />
-            ログアウト
-          </button>
+          <LogoutButton />
           <button className="w-full text-left px-4 py-3 text-red-600 hover:bg-red-50 rounded-md">
             アカウントを削除
           </button>
