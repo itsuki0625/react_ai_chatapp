@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 @router.post("/login", response_model=LoginResponse)
 async def login(
     request: Request,
-    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ) -> Any:
@@ -29,7 +28,7 @@ async def login(
         if not user or not verify_password(form_data.password, user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password",
+                detail="メールアドレスまたはパスワードが正しくありません",
             )
         
         # セッションにユーザー情報を保存
@@ -37,14 +36,13 @@ async def login(
         request.session["email"] = user.email
         request.session["role"] = user.role.permissions
 
-        # 明示的にJSONレスポンスを返す
-        return JSONResponse(content={
+        return {
             "email": user.email,
             "full_name": user.full_name,
             "role": user.role.permissions
-        })
+        }
     except Exception as e:
-        logger.error(f"Login error: {str(e)}")
+        logger.error(f"ログインエラー: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -58,12 +56,12 @@ async def logout(request: Request):
 @router.get("/me", response_model=dict)
 async def read_users_me(request: Request) -> Any:
     """
-    Get current user.
+    現在のユーザー情報を取得
     """
     if "user_id" not in request.session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated"
+            detail="認証が必要です"
         )
     return {
         "user_id": request.session["user_id"],
@@ -96,6 +94,7 @@ async def signup(
     新規ユーザー登録
     """
     try:
+        print("user_data : ", user_data)
         # メールアドレスの重複チェック
         existing_user = get_user_by_email(db, email=user_data.email)
         if existing_user:
@@ -112,13 +111,15 @@ async def signup(
             db=db,
             email=user_data.email,
             password=hashed_password,
-            full_name=user_data.full_name
+            full_name=user_data.name,
         )
+        print("user : ", user)
         
         # セッションにユーザー情報を保存
         request.session["user_id"] = str(user.id)
         request.session["email"] = user.email
         request.session["role"] = user.role.permissions
+        print("request.session : ", request.session)
         
         return {
             "message": "User created successfully",

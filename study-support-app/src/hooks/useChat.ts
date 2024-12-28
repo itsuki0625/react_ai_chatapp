@@ -5,14 +5,28 @@ interface ChatResponse {
 }
 
 interface Message {
-  sender: string;
-  text: string;
+  id?: string;
+  content: string;
+  sender_type?: 'user' | 'ai' | 'system';
+  sender?: string;
+  timestamp?: string | Date;
+  created_at?: string;
 }
+
 
 interface ChatRequest {
   message: string;
   history?: Message[];
+  session_id?: string | null;
 }
+
+interface StreamResponse {
+  newSessionId: string;
+}
+
+const getToken = () => {
+  return localStorage.getItem('token');
+};
 
 export const useChat = () => {
   const sendMessage = async (message: string) => {
@@ -29,12 +43,13 @@ export const useChat = () => {
 
   const sendStreamMessage = async (
     message: string,
-    history: Message[] = [],
-    onMessage: (text: string) => void,
+    sessionId: string | undefined,
+    type: string,
+    onChunk: (content: string) => void,
     onError: (error: any) => void
-  ) => {
+  ): Promise<StreamResponse> => {
     try {
-      const response = await fetch(`http://localhost:5000/api/v1/chat/stream`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/chat/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -42,58 +57,39 @@ export const useChat = () => {
         },
         body: JSON.stringify({
           message,
-          history,
+          session_id: sessionId || undefined,
+          session_type: type
         }),
+        credentials: 'include'
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'ストリーミングリクエストに失敗しました');
-      }
-
       const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('レスポンスボディを読み取れません');
-      }
-
       const decoder = new TextDecoder();
-      let buffer = '';
+
+      if (!reader) {
+        throw new Error('Response body is null');
+      }
 
       while (true) {
-        const { done, value } = await reader.read();
+        const { value, done } = await reader.read();
         if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        
-        buffer = lines.pop() || '';
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
 
         for (const line of lines) {
-          if (line.trim() === '') continue;
-          if (!line.startsWith('data: ')) continue;
-
-          const data = line.replace('data: ', '');
-          if (data === '[DONE]') return;
-
-          try {
-            onMessage(data);
-          } catch (e) {
-            console.error('メッセージの処理中にエラーが発生しました:', e);
+          if (line.startsWith('data: ')) {
+            const content = line.slice(6);
+            if (content === '[DONE]') continue;
+            
+            onChunk(content);
           }
         }
       }
-
-      if (buffer.trim() && buffer.startsWith('data: ')) {
-        const data = buffer.replace('data: ', '');
-        if (data !== '[DONE]') {
-          onMessage(data);
-        }
-      }
-
     } catch (error) {
-      console.error('ストリーミングチャットでエラーが発生しました:', error);
       onError(error);
     }
+    return { newSessionId: "新しいセッションID" };
   };
 
   return { sendMessage, sendStreamMessage };

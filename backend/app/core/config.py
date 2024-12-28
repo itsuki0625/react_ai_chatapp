@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = os.getenv("DATABASE_URL")
     
     # Security
-    SECRET_KEY: str = os.getenv("SECRET_KEY")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key")
     
     # OpenAI
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY")
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # CORS
     ALLOWED_ORIGINS: List[str] = [
         "http://localhost:3000",
-        "http://localhost:80",
+        "http://127.0.0.1:3000",
     ]
     
     # Application Settings

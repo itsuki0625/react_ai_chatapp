@@ -12,7 +12,21 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# CORSの設定を最初に行う
+# ミドルウェアの順序が重要：
+# 1. 認証ミドルウェア（最後に実行される）
+app.add_middleware(AuthMiddleware)
+
+# 2. セッションミドルウェア（認証の前に実行される）
+app.add_middleware(
+    SessionMiddleware, 
+    secret_key=settings.SECRET_KEY,
+    session_cookie="session",
+    max_age=3600,  # 1時間
+    same_site="lax",  # CSRF対策
+    https_only=False,  # 開発環境ではFalse
+)
+
+# 3. CORSミドルウェア（最初に実行される）
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -24,19 +38,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# セッション設定
-app.add_middleware(
-    SessionMiddleware, 
-    secret_key=settings.SECRET_KEY,
-    session_cookie="session",
-    max_age=3600,
-    same_site="lax",
-    https_only=False
-)
-
-# 認証ミドルウェア
-app.add_middleware(AuthMiddleware)
 
 # ルーターの登録
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])

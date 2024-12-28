@@ -2,8 +2,10 @@
 
 import React, { useState, FormEvent } from 'react';
 import { Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 const SignupPage = () => {
+  const router = useRouter();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -34,7 +36,43 @@ const SignupPage = () => {
     try {
       // ここにサインアップ処理を実装
       console.log('Signup attempt with:', formData);
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/signup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+          name: formData.name
+        }),
+      });
+      console.log("response : ", response)
+      console.log("response.status : ", response.status)
+
+      // 200じゃない場合はエラー
+      if (response.status != 200) {
+        const errorData = await response.json();
+        console.log("errorData : ", errorData)
+        setError(errorData.message || 'アカウントの作成に失敗しました。もう一度お試しください。');
+        return;
+      }
+      
+      const data = await response.json();
+      console.log("Signup successful:", data);
+
+      // roleで場合分けをしてログイン画面にリダイレクト
+      if (data.user.role == "student") {
+        router.push('/dashboard');
+      } else if (data.user.role == "teacher") {
+        router.push('/teacher/dashboard');
+      } else if (data.user.role == "admin") {
+        router.push('/admin/dashboard');
+      }
+
     } catch (err) {
+      console.error("Signup error:", err);
       setError('アカウントの作成に失敗しました。もう一度お試しください。');
     }
   };

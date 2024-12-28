@@ -31,8 +31,6 @@ class LoginResponse(BaseModel):
 class SignUpRequest(BaseModel):
     email: EmailStr
     password: str
-    full_name: str 
-    role_id: UUID
-    school_id: Optional[UUID] = None
+    name: str 
 
 

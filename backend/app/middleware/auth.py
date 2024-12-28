@@ -11,24 +11,28 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if request.url.path in [
             "/api/v1/auth/login",
             "/api/v1/auth/logout",
+            "/api/v1/auth/signup",
             "/docs",
-            "/openapi.json"
+            "/openapi.json",
+            # "/api/v1/chat/stream",
+            # "/api/v1/chat/sessions",
+            # "/api/v1/chat/sessions/{session_id}/messages"
         ]:
             return await call_next(request)
 
         try:
-            # セッションからユーザー情報を確認
-            if "session" not in request.scope:
+            # セッションの確認（修正）
+            if not hasattr(request, "session"):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Session not found"
+                    detail="セッションが見つかりません"
                 )
 
             if "user_id" not in request.session:
                 if request.url.path.startswith("/api/"):
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Not authenticated"
+                        detail="認証が必要です"
                     )
 
             response = await call_next(request)
