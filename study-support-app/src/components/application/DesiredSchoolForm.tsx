@@ -53,6 +53,22 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
     priority: initialData?.priority || 1,
     notes: initialData?.notes || ''
   });
+  const [error, setError] = useState<string>('');
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        await Promise.all([
+          fetchUniversities(),
+          fetchAdmissionMethods()
+        ]);
+      } catch (error) {
+        console.error('Error fetching initial data:', error);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   useEffect(() => {
     if (initialData) {
@@ -66,11 +82,6 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
       setSelectedUniversity(initialData.university_id);
     }
   }, [initialData]);
-
-  useEffect(() => {
-    fetchUniversities();
-    fetchAdmissionMethods();
-  }, []);
 
   const fetchUniversities = async () => {
     try {
@@ -92,17 +103,29 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
   const fetchAdmissionMethods = async () => {
     try {
       const token = getToken();
-      const response = await fetch(`${API_BASE_URL}/api/v1/admission-methods/`,{
+      const response = await fetch(`${API_BASE_URL}/api/v1/admission/`, {
         headers: {
           'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
         credentials: 'include',
       });
-      if (!response.ok) throw new Error('Failed to fetch admission methods');
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(
+          errorData?.detail || 
+          `入試方式の取得に失敗しました。(ステータス: ${response.status})`
+        );
+      }
+
       const data = await response.json();
+      console.log('Admission methods:', data);
       setAdmissionMethods(data);
+      setError('');
     } catch (error) {
       console.error('Error fetching admission methods:', error);
+      setError(error instanceof Error ? error.message : '入試方式の取得中にエラーが発生しました。');
     }
   };
 
@@ -135,6 +158,11 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {error && (
+        <div className="p-4 text-red-700 bg-red-100 rounded-md">
+          {error}
+        </div>
+      )}
       <div className="space-y-1">
         <label className="text-sm font-medium text-gray-700">大学</label>
         <select

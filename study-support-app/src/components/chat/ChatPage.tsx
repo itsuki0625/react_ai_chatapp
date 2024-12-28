@@ -314,6 +314,15 @@ export default function ChatPage() {
     fetchArchivedSessions();
   }, []);
 
+  const handleTextAreaInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const textarea = e.target;
+    setNewMessage(textarea.value);
+    
+    // テキストエリアの高さを自動調整
+    textarea.style.height = 'auto';  // 一度リセット
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  };
+
   return (
     <div className="flex h-screen">
       {/* セッション一覧サイドバー */}
@@ -451,7 +460,7 @@ export default function ChatPage() {
                           : 'bg-white border border-gray-200'
                       }`}
                     >
-                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                      <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
                       <span className="text-xs text-gray-400 mt-1 block">
                         {formatTimestamp(message.created_at || message.timestamp)}
                       </span>
@@ -473,18 +482,18 @@ export default function ChatPage() {
 
         {/* メッセージ入力エリア */}
         <footer className="flex-none bg-white border-t border-gray-200 px-4 py-4">
-          <form onSubmit={handleSendMessage} className="flex space-x-4">
-            <input
-              type="text"
+          <form onSubmit={handleSendMessage} className="flex space-x-4 items-start">
+            <textarea
               value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
+              onChange={handleTextAreaInput}
               placeholder="メッセージを入力..."
-              className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              rows={1}
+              className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[40px] max-h-[200px] overflow-y-auto"
             />
             <button
               type="submit"
               disabled={!newMessage.trim() || isLoading}
-              className="bg-blue-600 text-white rounded-lg px-6 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-blue-600"
+              className="h-[40px] w-[40px] flex items-center justify-center bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-blue-600"
             >
               {isLoading ? (
                 <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
