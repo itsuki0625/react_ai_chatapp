@@ -1,10 +1,25 @@
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, ClassVar
 import os
 from dotenv import load_dotenv
 import openai
 
 load_dotenv()
+
+# クラスの外で instruction.md を読み込む
+def load_instruction() -> str:
+    try:
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        instruction_path = os.path.join(base_dir, 'app', 'core', 'instruction.md')
+        
+        with open(instruction_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        print(f"instruction.md が見つかりません。検索パス: {instruction_path}")
+        return ""
+    except Exception as e:
+        print(f"インストラクションファイルの読み込み中にエラーが発生しました: {str(e)}")
+        return ""
 
 class Settings(BaseSettings):
     # Database
@@ -23,12 +38,7 @@ class Settings(BaseSettings):
     ]
     
     # Application Settings
-    INSTRUCTION: str = ""
-    try:
-        with open('./instruction.md', 'r', encoding='utf-8') as f:
-            INSTRUCTION = f.read()
-    except FileNotFoundError:
-        pass
+    INSTRUCTION: str = load_instruction()
 
     # JWT設定
     ALGORITHM: str = "HS256"
@@ -41,5 +51,3 @@ settings = Settings()
 
 # OpenAI APIキーの設定
 openai.api_key = settings.OPENAI_API_KEY
-
-settings = Settings() 

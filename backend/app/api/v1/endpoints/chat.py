@@ -35,6 +35,7 @@ async def chat_stream(
         ]
         
         system_message = settings.INSTRUCTION
+        logger.info(f"System message: {system_message}")
         
         messages = [
             {"role": "system", "content": system_message},
