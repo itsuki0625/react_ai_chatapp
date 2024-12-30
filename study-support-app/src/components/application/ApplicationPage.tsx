@@ -1,160 +1,179 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar, FileCheck, School, Clock, Plus, ChevronDown, Edit2, Trash2, AlertCircle } from 'lucide-react';
+import { DesiredSchoolForm } from '@/components/application/DesiredSchoolForm';
 
-interface School {
+interface Application {
   id: string;
-  name: string;
-  faculty: string;
-  department: string;
-  examType: '総合型' | '学校推薦型' | '一般';
-  status: '準備中' | '出願済み' | '合格' | '不合格';
+  university_id: string;
+  department_id: string;
+  admission_method_id: string;
   priority: number;
+  university_name: string;
+  department_name: string;
+  admission_method_name: string;
+  status: string;
   documents: {
     id: string;
     name: string;
-    status: '未着手' | '作成中' | '完了';
-    deadline: Date;
+    status: 'DRAFT' | 'SUBMITTED' | 'REVIEWED' | 'APPROVED';
+    deadline: string;
+    notes?: string;
   }[];
-  schedule: {
+  schedules: {
     id: string;
-    eventName: string;
-    date: Date;
-    type: '出願期間' | '試験日' | '面接' | '結果発表';
-    completed: boolean;
+    event_name: string;
+    date: string;
+    event_type: string;
+    notes?: string;
   }[];
 }
 
-const ApplicationPage = () => {
-  const [schools, setSchools] = useState<School[]>([
-    {
-      id: '1',
-      name: '慶應義塾大学',
-      faculty: '環境情報学部',
-      department: '環境情報学科',
-      examType: '総合型',
-      status: '準備中',
-      priority: 1,
-      documents: [
-        {
-          id: 'd1',
-          name: '志望理由書',
-          status: '完了',
-          deadline: new Date('2024-12-31'),
-        },
-        {
-          id: 'd2',
-          name: '自由記述',
-          status: '作成中',
-          deadline: new Date('2024-12-31'),
-        },
-        {
-            id: 'd3',
-            name: '志願者評価',
-            status: '未着手',
-            deadline: new Date('2024-12-31'),
-        },
-        {
-            id: 'd4',
-            name: '任意提出資料',
-            status: '未着手',
-            deadline: new Date('2024-12-31'),
-        },
-      ],
-      schedule: [
-        {
-          id: 's1',
-          eventName: '出願期間',
-          date: new Date('2024-12-01'),
-          type: '出願期間',
-          completed: false,
-        },
-        {
-          id: 's2',
-          eventName: '面接試験',
-          date: new Date('2025-01-15'),
-          type: '面接',
-          completed: false,
-        }
-      ]
-    },
-    {
-        id: '2',
-        name: '筑波大学',
-        faculty: '情報学群',
-        department: '情報科学類',
-        examType: '総合型',
-        status: '準備中',
-        priority: 2,
-        documents: [
-          {
-            id: 'd1',
-            name: '志望理由書',
-            status: '完了',
-            deadline: new Date('2024-12-31'),
-          },
-          {
-            id: 'd2',
-            name: '自己推薦書',
-            status: '作成中',
-            deadline: new Date('2024-12-31'),
-          },
-          {
-              id: 'd3',
-              name: '調査書',
-              status: '未着手',
-              deadline: new Date('2024-12-31'),
-          },
-          {
-              id: 'd4',
-              name: '入学志願書',
-              status: '未着手',
-              deadline: new Date('2024-12-31'),
-          },
-        ],
-        schedule: [
-          {
-            id: 's1',
-            eventName: '出願期間',
-            date: new Date('2024-12-01'),
-            type: '出願期間',
-            completed: false,
-          },
-          {
-            id: 's2',
-            eventName: '面接・口述試験',
-            date: new Date('2025-01-15'),
-            type: '面接',
-            completed: false,
-          }
-        ]
-      },
-    // 他の大学のデータ...
-  ]);
+const getToken = () => {
+  return localStorage.getItem('token');
+};
 
-  const getStatusColor = (status: School['status']) => {
+export default function ApplicationPage() {
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [editingApplication, setEditingApplication] = useState<Application | null>(null);
+
+  useEffect(() => {
+    fetchApplications();
+  }, []);
+
+  const fetchApplications = async () => {
+    try {
+      const token = getToken();
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/applications/`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch applications');
+      }
+
+      const data = await response.json();
+      setApplications(data);
+    } catch (error) {
+      setError('志望校情報の取得に失敗しました');
+      console.error('Error fetching applications:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCreateApplication = async (formData: any) => {
+    try {
+      const token = getToken();
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/applications/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include',
+        body: JSON.stringify(formData)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create application');
+      }
+
+      await fetchApplications();
+      setShowForm(false);
+    } catch (error) {
+      setError('志望校の登録に失敗しました');
+      console.error('Error creating application:', error);
+    }
+  };
+
+  const handleDeleteApplication = async (id: string) => {
+    try {
+      const token = getToken();
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/applications/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete application');
+      }
+
+      await fetchApplications();
+    } catch (error) {
+      setError('志望校の削除に失敗しました');
+      console.error('Error deleting application:', error);
+    }
+  };
+
+  const handleEditApplication = async (id: string, formData: any) => {
+    try {
+      const token = getToken();
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/applications/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include',
+        body: JSON.stringify(formData)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update application');
+      }
+
+      await fetchApplications();
+      setEditingApplication(null);
+    } catch (error) {
+      setError('志望校の更新に失敗しました');
+      console.error('Error updating application:', error);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
     switch (status) {
-      case '準備中': return 'bg-yellow-100 text-yellow-800';
-      case '出願済み': return 'bg-blue-100 text-blue-800';
-      case '合格': return 'bg-green-100 text-green-800';
-      case '不合格': return 'bg-red-100 text-red-800';
+      case 'DRAFT': return 'bg-yellow-100 text-yellow-800';
+      case 'SUBMITTED': return 'bg-blue-100 text-blue-800';
+      case 'APPROVED': return 'bg-green-100 text-green-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
   const getDocumentStatusColor = (status: string) => {
     switch (status) {
-      case '未着手': return 'bg-gray-100 text-gray-800';
-      case '作成中': return 'bg-yellow-100 text-yellow-800';
-      case '完了': return 'bg-green-100 text-green-800';
+      case 'DRAFT': return 'bg-gray-100 text-gray-800';
+      case 'SUBMITTED': return 'bg-yellow-100 text-yellow-800';
+      case 'REVIEWED': return 'bg-blue-100 text-blue-800';
+      case 'APPROVED': return 'bg-green-100 text-green-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const isUpcoming = (date: Date) => {
+  const isUpcoming = (date: string) => {
+    const eventDate = new Date(date);
     const now = new Date();
-    const diff = date.getTime() - now.getTime();
+    const diff = eventDate.getTime() - now.getTime();
     return diff > 0 && diff < 7 * 24 * 60 * 60 * 1000; // 1週間以内
   };
+
+  if (isLoading) {
+    return <div className="p-6">Loading...</div>;
+  }
+
+  if (error) {
+    return <div className="p-6 text-red-500">{error}</div>;
+  }
 
   return (
     <div className="p-6">
@@ -166,7 +185,10 @@ const ApplicationPage = () => {
             志望校の情報や出願書類を管理できます
           </p>
         </div>
-        <button className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+        <button
+          onClick={() => setShowForm(true)}
+          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+        >
           <Plus className="h-5 w-5 mr-2" />
           志望校を追加
         </button>
@@ -178,66 +200,43 @@ const ApplicationPage = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">志望校数</p>
-              <p className="text-2xl font-bold">{schools.length}</p>
+              <p className="text-2xl font-bold">{applications.length}</p>
             </div>
             <School className="h-8 w-8 text-blue-500" />
           </div>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">提出期限が近い書類</p>
-              <p className="text-2xl font-bold">3</p>
-            </div>
-            <FileCheck className="h-8 w-8 text-yellow-500" />
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">今週の予定</p>
-              <p className="text-2xl font-bold">2</p>
-            </div>
-            <Calendar className="h-8 w-8 text-green-500" />
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">出願済み</p>
-              <p className="text-2xl font-bold">1</p>
-            </div>
-            <Clock className="h-8 w-8 text-purple-500" />
-          </div>
-        </div>
+        {/* 他のサマリー情報... */}
       </div>
 
       {/* 志望校リスト */}
-      <div className="bg-white rounded-lg shadow mb-6">
-        {schools.map((school) => (
-          <div key={school.id} className="border-b border-gray-200 last:border-b-0">
+      <div className="bg-white rounded-lg shadow">
+        {applications.map((app) => (
+          <div key={app.id} className="border-b border-gray-200 last:border-b-0">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center space-x-4">
                   <span className="text-lg font-semibold text-gray-900">
-                    {school.priority}志望
+                    {app.priority}志望
                   </span>
                   <h3 className="text-lg font-medium text-gray-900">
-                    {school.name} {school.faculty} {school.department}
+                    {app.university_name} {app.department_name}
                   </h3>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(school.status)}`}>
-                    {school.status}
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(app.status)}`}>
+                    {app.admission_method_name}
                   </span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <button className="p-2 text-gray-400 hover:text-blue-600">
+                  <button
+                    onClick={() => setEditingApplication(app)}
+                    className="p-2 text-gray-400 hover:text-blue-600"
+                  >
                     <Edit2 className="h-5 w-5" />
                   </button>
-                  <button className="p-2 text-gray-400 hover:text-red-600">
+                  <button
+                    onClick={() => handleDeleteApplication(app.id)}
+                    className="p-2 text-gray-400 hover:text-red-600"
+                  >
                     <Trash2 className="h-5 w-5" />
-                  </button>
-                  <button className="p-2 text-gray-400">
-                    <ChevronDown className="h-5 w-5" />
                   </button>
                 </div>
               </div>
@@ -246,12 +245,12 @@ const ApplicationPage = () => {
               <div className="mb-4">
                 <h4 className="text-sm font-medium text-gray-700 mb-2">提出書類</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {school.documents.map((doc) => (
+                  {app.documents.map((doc) => (
                     <div key={doc.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-md">
                       <div>
                         <p className="text-sm font-medium text-gray-900">{doc.name}</p>
                         <p className="text-xs text-gray-500">
-                          提出期限: {doc.deadline.toLocaleDateString()}
+                          提出期限: {new Date(doc.deadline).toLocaleDateString()}
                         </p>
                       </div>
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${getDocumentStatusColor(doc.status)}`}>
@@ -266,12 +265,12 @@ const ApplicationPage = () => {
               <div>
                 <h4 className="text-sm font-medium text-gray-700 mb-2">スケジュール</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {school.schedule.map((event) => (
+                  {app.schedules.map((event) => (
                     <div key={event.id} className="flex items-center bg-gray-50 p-3 rounded-md">
                       <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-900">{event.eventName}</p>
+                        <p className="text-sm font-medium text-gray-900">{event.event_name}</p>
                         <p className="text-xs text-gray-500">
-                          {event.date.toLocaleDateString()}
+                          {new Date(event.date).toLocaleDateString()}
                         </p>
                       </div>
                       {isUpcoming(event.date) && (
@@ -285,8 +284,28 @@ const ApplicationPage = () => {
           </div>
         ))}
       </div>
+
+      {/* 志望校追加/編集フォーム */}
+      {(showForm || editingApplication) && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg max-w-2xl w-full mx-4">
+            <h2 className="text-xl font-bold mb-4">
+              {editingApplication ? '志望校を編集' : '志望校を追加'}
+            </h2>
+            <DesiredSchoolForm
+              onSubmit={editingApplication 
+                ? (data) => handleEditApplication(editingApplication.id, data)
+                : handleCreateApplication
+              }
+              onCancel={() => {
+                setShowForm(false);
+                setEditingApplication(null);
+              }}
+              initialData={editingApplication}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
-};
-
-export default ApplicationPage;
+}

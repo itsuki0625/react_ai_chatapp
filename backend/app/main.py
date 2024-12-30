@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from app.core.config import settings
-from app.api.v1.endpoints import chat, auth
+from app.api.v1.endpoints import chat, auth, statement, application, university, admission
 from app.middleware.auth import AuthMiddleware
 import logging
 
@@ -29,19 +29,35 @@ app.add_middleware(
 # 3. CORSミドルウェア（最初に実行される）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://192.168.40.*:3000",
-    ],
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # 全HTTPメソッドを許可
+    allow_headers=["*"],  # 全ヘッダーを許可
 )
 
 # ルーターの登録
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
+app.include_router(
+    statement.router,
+    prefix="/api/v1/statements",
+    tags=["statements"]
+)
+app.include_router(
+    application.router,
+    prefix="/api/v1/applications",
+    tags=["applications"]
+)
+app.include_router(
+    university.router,
+    prefix="/api/v1/universities",
+    tags=["universities"]
+)
+app.include_router(
+    admission.router,
+    prefix="/api/v1/admission-methods",
+    tags=["admission-methods"]
+)
 
 if __name__ == "__main__":
     import uvicorn

@@ -9,9 +9,10 @@ from .user import (
     UserCreate, UserUpdate, UserResponse,
     UserLogin, Token, TokenData
 )
-from .desired_school import (
-    DesiredSchoolCreate, DesiredSchoolUpdate, DesiredSchoolResponse,
-    DesiredDepartmentCreate, DesiredDepartmentUpdate, DesiredDepartmentResponse
+from .application import (
+    ApplicationCreate, ApplicationUpdate, ApplicationResponse,
+    ApplicationDetailResponse, DocumentCreate, DocumentUpdate, DocumentResponse,
+    ScheduleCreate, ScheduleUpdate, ScheduleResponse
 )
 from .personal_statement import (
     PersonalStatementCreate, PersonalStatementUpdate, PersonalStatementResponse,
@@ -31,12 +32,16 @@ __all__ = [
     "UserLogin",
     "Token",
     "TokenData",
-    "DesiredSchoolCreate",
-    "DesiredSchoolUpdate",
-    "DesiredSchoolResponse",
-    "DesiredDepartmentCreate",
-    "DesiredDepartmentUpdate",
-    "DesiredDepartmentResponse",
+    "ApplicationCreate",
+    "ApplicationUpdate",
+    "ApplicationResponse",
+    "ApplicationDetailResponse",
+    "DocumentCreate",
+    "DocumentUpdate",
+    "DocumentResponse",
+    "ScheduleCreate",
+    "ScheduleUpdate",
+    "ScheduleResponse",
     "PersonalStatementCreate",
     "PersonalStatementUpdate",
     "PersonalStatementResponse",

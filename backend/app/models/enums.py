@@ -27,11 +27,11 @@ class DocumentStatus(enum.Enum):
     REVIEWED = "reviewed"
     APPROVED = "approved"
 
-class PersonalStatementStatus(enum.Enum):
-    DRAFT = "draft"
-    IN_REVIEW = "in_review"
-    REVIEWED = "reviewed"
-    FINAL = "final"
+class PersonalStatementStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    REVIEW = "REVIEW"
+    REVIEWED = "REVIEWED"
+    FINAL = "FINAL"
 
 class UserRole(str, enum.Enum):
     ADMIN = "admin"

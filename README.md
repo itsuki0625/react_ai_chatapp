@@ -14,6 +14,8 @@
 
 1. データベースの設定を行う
     - docker-compose up -d
+2. 初回のマイグレーションを行う
+    - docker-compose run --rm backend alembic revision --autogenerate -m "Initial migration"   
 2. マイグレーションを行う
     - docker-compose exec backend alembic upgrade head
 4. アプリケーションを起動する

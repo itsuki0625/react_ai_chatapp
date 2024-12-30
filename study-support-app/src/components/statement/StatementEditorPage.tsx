@@ -1,155 +1,214 @@
 "use client";
 
-import React, { useState } from 'react';
-import { Save, ArrowLeft, Send } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/common/Button';
 
-interface Statement {
-    title: string;
-    university: string;
-    faculty: string;
+enum PersonalStatementStatus {
+  DRAFT = "DRAFT",
+  REVIEW = "REVIEW",
+  REVIEWED = "REVIEWED",
+  FINAL = "FINAL"
+}
+
+interface DesiredDepartment {
+  id: string;
+  desired_department_id: string;
+  department: {
+    id: string;
+    name: string;
+    university: {
+      name: string;
+    };
+  };
+  priority: number;
+}
+
+interface Props {
+  id?: string;
+  initialData?: {
+    id: string;
     content: string;
+    status: PersonalStatementStatus;
+    desired_department_id?: string;
+    desired_department?: {
+      id: string;
+      department: {
+        id: string;
+        name: string;
+        university: {
+          name: string;
+        };
+      };
+    };
+  };
 }
 
-interface StatementEditorPageProps {
-    id?: string;  // 新規作成時はidがないのでoptionalに
-    initialData?: any;  // 初期データの型は実際のデータ構造に合わせて定義してください
-}
+const getToken = () => {
+  return localStorage.getItem('token');
+};
 
-const StatementEditorPage: React.FC<StatementEditorPageProps> = ({id,initialData}) => {
-  const [formData, setFormData] = useState({
-    title: '第一志望大学志望理由書',
-    university: '東京大学',
-    faculty: '理学部',
-    content: ''
-  });
+export default function StatementEditorPage({ id, initialData }: Props) {
+  const router = useRouter();
+  const [content, setContent] = useState(initialData?.content || '');
+  const [status, setStatus] = useState<PersonalStatementStatus>(initialData?.status || 'DRAFT');
+  const [desiredDepartments, setDesiredDepartments] = useState<DesiredDepartment[]>([]);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState(initialData?.desired_department_id || '');
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchDesiredDepartments(controller.signal);
+    return () => controller.abort();
+  }, []);
+
+  const fetchDesiredDepartments = async (signal?: AbortSignal) => {
+    try {
+      const token = getToken();
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/applications/`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          credentials: 'include',
+          signal,
+        }
+      );
+      if (!response.ok) throw new Error('Failed to fetch desired departments');
+      const data = await response.json();
+
+      const formattedData = data.map((app: any) => {
+        const desiredDept = app.desired_departments?.[0];
+        if (!desiredDept) return null;
+
+        return {
+          id: app.id,
+          desired_department_id: desiredDept.id,
+          department: {
+            id: app.department_id,
+            name: app.department_name,
+            university: {
+              name: app.university_name
+            }
+          },
+          priority: app.priority
+        };
+      })
+      .filter((item: any) => item !== null)
+      .sort((a: DesiredDepartment, b: DesiredDepartment) => a.priority - b.priority);
+
+      setDesiredDepartments(formattedData);
+    } catch (error) {
+      if (error instanceof Error && error.name !== 'AbortError') {
+        console.error('Error fetching desired departments:', error);
+      }
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Save statement:', formData);
+    
+    try {
+      const url = id
+        ? `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/statements/${id}`
+        : `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/statements/`;
+
+      const token = getToken();
+      
+      const requestData = {
+        content,
+        status,
+        desired_department_id: selectedDepartmentId,
+      };
+      console.log('Request Data:', requestData);
+      
+      const response = await fetch(url, {
+        method: id ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include',
+        body: JSON.stringify(requestData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Failed to save statement: ${JSON.stringify(errorData)}`);
+      }
+      
+      router.push('/statement');
+    } catch (error) {
+      console.error('Error saving statement:', error);
+    }
   };
 
   return (
-    <div className="h-[calc(100vh-32px)] flex flex-col bg-gray-50">
-      {/* ヘッダー */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <button className="p-2 hover:bg-gray-100 rounded-full">
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <div>
-              <h1 className="text-xl font-semibold text-gray-900">志望理由書編集</h1>
-              <p className="text-sm text-gray-500">下書きを保存しました - 2024/12/21 10:30</p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-3">
-            <button className="flex items-center px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-              <Save className="h-5 w-5 mr-2" />
-              保存
-            </button>
-            <button className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-              <Send className="h-5 w-5 mr-2" />
-              添削リクエスト
-            </button>
-          </div>
+    <div className="max-w-4xl mx-auto p-6">
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">
+        {id ? '志望理由書を編集' : '新しい志望理由書を作成'}
+      </h1>
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            志望校・学部（志望順位順）
+          </label>
+          <select
+            value={selectedDepartmentId}
+            onChange={(e) => setSelectedDepartmentId(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">選択してください</option>
+            {desiredDepartments.map((dept) => (
+              <option key={dept.id} value={dept.desired_department_id}>
+                {`${dept.priority}. ${dept.department.university.name} - ${dept.department.name}`}
+              </option>
+            ))}
+          </select>
         </div>
-      </header>
 
-      {/* エディタ本体 */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-          <form onSubmit={handleSubmit} className="space-y-6 bg-white p-6 rounded-lg shadow">
-            {/* 基本情報 */}
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              <div>
-                <label htmlFor="title" className="block text-sm font-medium text-gray-700">
-                  タイトル
-                </label>
-                <input
-                  type="text"
-                  id="title"
-                  name="title"
-                  value={formData.title}
-                  onChange={handleChange}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="university" className="block text-sm font-medium text-gray-700">
-                  志望大学
-                </label>
-                <input
-                  type="text"
-                  id="university"
-                  name="university"
-                  value={formData.university}
-                  onChange={handleChange}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="faculty" className="block text-sm font-medium text-gray-700">
-                  学部・学科
-                </label>
-                <input
-                  type="text"
-                  id="faculty"
-                  name="faculty"
-                  value={formData.faculty}
-                  onChange={handleChange}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                />
-              </div>
-            </div>
-
-            {/* 本文エディタ */}
-            <div>
-              <label htmlFor="content" className="block text-sm font-medium text-gray-700">
-                本文
-              </label>
-              <div className="mt-1">
-                <textarea
-                  id="content"
-                  name="content"
-                  rows={15}
-                  value={formData.content}
-                  onChange={handleChange}
-                  placeholder="志望理由を入力してください..."
-                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                />
-              </div>
-              <p className="mt-2 text-sm text-gray-500">
-                文字数: {formData.content.length} 文字
-              </p>
-            </div>
-
-            {/* ガイドライン */}
-            <div className="bg-blue-50 rounded-md p-4">
-              <h3 className="text-sm font-medium text-blue-800">作成のポイント</h3>
-              <ul className="mt-2 text-sm text-blue-700 list-disc list-inside">
-                <li>学びたい内容を具体的に記述する</li>
-                <li>志望動機が明確に伝わるようにする</li>
-                <li>高校時代の経験と結びつける</li>
-                <li>将来の展望について触れる</li>
-              </ul>
-            </div>
-          </form>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            志望理由
+          </label>
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            rows={15}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            placeholder="志望理由を入力してください..."
+          />
         </div>
-      </main>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            ステータス
+          </label>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value as PersonalStatementStatus)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="DRAFT">下書き</option>
+            <option value="REVIEW">レビュー依頼</option>
+            <option value="REVIEWED">レビュー済み</option>
+            <option value="FINAL">完成</option>
+          </select>
+        </div>
+
+        <div className="flex justify-end space-x-4">
+          <Button
+            variant="outline"
+            onClick={() => router.push('/statement')}
+          >
+            キャンセル
+          </Button>
+          <Button type="submit">
+            {id ? '更新' : '作成'}
+          </Button>
+        </div>
+      </form>
     </div>
   );
-};
-
-export default StatementEditorPage;
+}
