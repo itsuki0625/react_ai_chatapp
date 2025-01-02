@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, User, Bot, MoreVertical, Archive, RotateCcw } from 'lucide-react';
 import { useChat } from '@/hooks/useChat';
 import { Menu } from '@headlessui/react';
+import { ChecklistEvaluation } from './ChecklistEvaluation';
 
 interface Message {
   id?: string;
@@ -308,7 +309,7 @@ export default function ChatPage() {
   }, []);
 
   return (
-    <div className="h-[calc(100vh-32px)] flex">
+    <div className="flex h-screen">
       {/* セッション一覧サイドバー */}
       <div className="w-64 border-r border-gray-200 bg-white flex flex-col">
         <div className="p-4">
@@ -485,6 +486,13 @@ export default function ChatPage() {
           </form>
         </footer>
       </div>
+
+      {/* チェックリスト部分 (FAQチャット以外の場合のみ表示) */}
+      {activeSession?.title !== 'FAQ' && (
+        <div className="w-80 border-l bg-gray-50 p-4 overflow-y-auto">
+          <ChecklistEvaluation chatId={activeSession?.id || ''} />
+        </div>
+      )}
     </div>
   );
 }

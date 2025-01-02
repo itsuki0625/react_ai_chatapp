@@ -12,7 +12,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/api/v1/auth/login",
             "/api/v1/auth/logout",
             "/api/v1/auth/signup",
-            "/docs",
+            "/api/v1/docs",
             "/openapi.json",
             # "/api/v1/chat/stream",
             # "/api/v1/chat/sessions",

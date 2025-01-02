@@ -18,6 +18,7 @@ class ChatSession(Base, TimestampMixin):
     # Relationships
     user = relationship("User", back_populates="chat_sessions")
     messages = relationship("ChatMessage", back_populates="session")
+    checklist_evaluation = relationship("ChecklistEvaluation", back_populates="chat", uselist=False)
 
 class ChatMessage(Base, TimestampMixin):
     __tablename__ = 'chat_messages'

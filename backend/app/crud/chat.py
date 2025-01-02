@@ -2,10 +2,14 @@ from sqlalchemy.orm import Session
 from app.models.chat import ChatSession, ChatMessage
 from app.models.enums import SessionStatus, SessionType
 from uuid import UUID
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 import uuid
 from fastapi import HTTPException
+import logging
+
+# ロガーの設定
+logger = logging.getLogger(__name__)
 
 async def get_or_create_chat_session(
     db: Session,
@@ -222,3 +226,21 @@ async def get_archived_chat_sessions(
         ChatSession.status == SessionStatus.ARCHIVED,
         ChatSession.session_type == session_type_enum
     ).order_by(ChatSession.updated_at.desc()).all()
+
+async def get_chat_messages(db: Session, session_id: str) -> List[Dict]:
+    """チャット履歴を取得"""
+    try:
+        messages = db.query(ChatMessage).filter(
+            ChatMessage.session_id == session_id
+        ).order_by(ChatMessage.created_at.asc()).all()
+        
+        return [
+            {
+                "role": msg.sender_type.lower(),
+                "content": msg.content,
+                "timestamp": msg.created_at
+            } for msg in messages
+        ]
+    except Exception as e:
+        logger.error(f"Error getting chat messages: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

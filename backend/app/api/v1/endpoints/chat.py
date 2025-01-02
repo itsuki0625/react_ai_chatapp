@@ -1,9 +1,9 @@
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from typing import List, Dict
 from datetime import datetime
 import logging
-from app.schemas.chat import ChatRequest, ChatResponse, Message
+from app.schemas.chat import ChatRequest, ChatResponse, Message, ChatMessageCreate
 from app.core.config import settings
 from app.services.openai_service import stream_openai_response
 import uuid
@@ -13,11 +13,20 @@ from sqlalchemy.orm import Session
 from app.database.database import get_db
 from app.crud.chat import get_or_create_chat_session, get_session_messages, save_chat_message, get_user_chat_sessions, update_session_title, update_session_status, get_archived_chat_sessions
 from fastapi.middleware.cors import CORSMiddleware
+from app.crud.checklist import (
+    ChecklistEvaluator, 
+    create_evaluation, 
+    get_evaluation_by_chat_id,
+    update_evaluation
+)
+from uuid import UUID
 
 router = APIRouter()
 
 # ロギング設定
 logger = logging.getLogger(__name__)
+
+checklist_evaluator = ChecklistEvaluator()
 
 @router.options("/chat/stream")
 async def chat_stream_options():
@@ -27,6 +36,7 @@ async def chat_stream_options():
 async def chat_stream(
     request: Request,
     chat_request: ChatRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -89,9 +99,26 @@ async def chat_stream(
         if chat_request.session_type == "FAQ":
             system_message = "あなたは総合型選抜に関する質問に答えるFAQボットです。"
         else:
-            system_message = settings.INSTRUCTION
-        print("システムメッセージの設定に成功しました")
-        
+            base_instruction = settings.INSTRUCTION
+            
+            # チェックリストの評価結果を取得
+            evaluation = get_evaluation_by_chat_id(db, UUID(session_id))
+            if evaluation:
+                checklist_status = "\n\n現在の進捗状況:\n"
+                for item in evaluation.checklist_items:
+                    checklist_status += f"- {item['item']}: {item['status']}\n"
+                    if item['status'] != "完了":
+                        checklist_status += f"  次の質問: {item['next_question']}\n"
+                
+                checklist_status += f"\n全体的な状況: {evaluation.completion_status}"
+                
+                system_message = f"{base_instruction}\n{checklist_status}"
+            else:
+                system_message = base_instruction
+
+        logger.info("システムメッセージの設定に成功しました")
+        logger.info(f"System message: {system_message}")
+
         messages = [
             {"role": "system", "content": system_message},
             *formatted_history,
@@ -119,6 +146,41 @@ async def chat_stream(
             ai_message.content = full_response.replace("[DONE]", "").strip()
             db.add(ai_message)
             db.commit()
+
+            # 志望理由書相談チャットの場合のみチェックリスト評価を実行
+            if chat_request.session_type == "CONSULTATION":
+                try:
+                    # 新しいセッションでメッセージを再取得
+                    fresh_messages = await get_session_messages(
+                        db, 
+                        session_id, 
+                        current_user.id,
+                        chat_request.session_type
+                    )
+                    
+                    chat_history = [
+                        {
+                            "role": str(msg.sender_type).split('.')[-1].lower(),
+                            "content": msg.content,
+                            "timestamp": msg.created_at
+                        } for msg in fresh_messages
+                    ]
+                    logger.info(f"Chat history for evaluation: {chat_history}")
+                    
+                    evaluation_result = await checklist_evaluator.evaluate_chat(chat_history)
+                    logger.info(f"Evaluation result: {evaluation_result}")
+                    
+                    if evaluation_result:
+                        existing_evaluation = get_evaluation_by_chat_id(db, UUID(session_id))
+                        if existing_evaluation:
+                            update_evaluation(db, existing_evaluation.id, evaluation_result)
+                        else:
+                            create_evaluation(db, UUID(session_id), evaluation_result)
+                        logger.info("Evaluation created/updated successfully")
+                    else:
+                        logger.error("Evaluation result is None")
+                except Exception as e:
+                    logger.error(f"Error in evaluate_checklist: {str(e)}")
             
             # 終了を示すメッセージ
             yield 'data: [DONE]\n\n'
@@ -296,3 +358,22 @@ async def restore_chat_session(
     except Exception as e:
         logger.error(f"Error restoring chat session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/chat/{chat_id}/checklist")
+async def get_checklist_evaluation(
+    chat_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    session_type: str = "CONSULTATION"
+):
+    # FAQチャットの場合はエラーを返す
+    if session_type != "CONSULTATION":
+        raise HTTPException(
+            status_code=400, 
+            detail="Checklist evaluation is only available for consultation chats"
+        )
+    
+    evaluation = get_evaluation_by_chat_id(db, chat_id)
+    if not evaluation:
+        raise HTTPException(status_code=404, detail="Checklist evaluation not found")
+    return evaluation

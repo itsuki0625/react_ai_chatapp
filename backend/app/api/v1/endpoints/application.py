@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from typing import List
 from app.api.deps import get_current_user, get_db
 from app.models.user import User
+from app.models.document import Document
+from app.models.schedule import ScheduleEvent
 from app.schemas.application import (
     ApplicationCreate,
     ApplicationUpdate,
@@ -12,6 +14,8 @@ from app.schemas.application import (
     DocumentResponse,
     ScheduleCreate,
     ScheduleResponse,
+    DocumentUpdate,
+    ScheduleUpdate,
 )
 from app.crud.application import (
     create_application,
@@ -23,6 +27,10 @@ from app.crud.application import (
     create_schedule,
     get_application_documents,
     get_application_schedules,
+    update_document_by_id,
+    update_schedule_by_id,
+    delete_document_by_id,
+    delete_schedule_by_id,
 )
 
 router = APIRouter()
@@ -217,3 +225,115 @@ async def add_schedule(
         schedule=schedule, 
         department_id=school.desired_departments[0].id
     )
+
+@router.put("/{application_id}/documents/{document_id}", response_model=DocumentResponse)
+async def update_document(
+    application_id: str,
+    document_id: str,
+    document: DocumentUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """書類を更新"""
+    # 志望校の存在確認と権限チェック
+    school = get_application(db=db, school_id=application_id)
+    if not school or school.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="志望校が見つかりません")
+
+    # 書類の存在確認
+    existing_document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.desired_department_id == school.desired_departments[0].id
+    ).first()
+    
+    if not existing_document:
+        raise HTTPException(status_code=404, detail="書類が見つかりません")
+
+    # 書類の更新
+    return update_document_by_id(
+        db=db,
+        document_id=document_id,
+        document_update=document
+    )
+
+@router.put("/{application_id}/schedules/{schedule_id}", response_model=ScheduleResponse)
+async def update_schedule(
+    application_id: str,
+    schedule_id: str,
+    schedule: ScheduleUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """スケジュールを更新"""
+    # 志望校の存在確認と権限チェック
+    school = get_application(db=db, school_id=application_id)
+    if not school or school.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="志望校が見つかりません")
+
+    # スケジュールの存在確認
+    existing_schedule = db.query(ScheduleEvent).filter(
+        ScheduleEvent.id == schedule_id,
+        ScheduleEvent.desired_department_id == school.desired_departments[0].id
+    ).first()
+    
+    if not existing_schedule:
+        raise HTTPException(status_code=404, detail="スケジュールが見つかりません")
+
+    # スケジュールの更新
+    return update_schedule_by_id(
+        db=db,
+        schedule_id=schedule_id,
+        schedule_update=schedule
+    )
+
+@router.delete("/{application_id}/documents/{document_id}")
+async def delete_document(
+    application_id: str,
+    document_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """書類を削除"""
+    # 志望校の存在確認と権限チェック
+    school = get_application(db=db, school_id=application_id)
+    if not school or school.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="志望校が見つかりません")
+
+    # 書類の存在確認
+    existing_document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.desired_department_id == school.desired_departments[0].id
+    ).first()
+    
+    if not existing_document:
+        raise HTTPException(status_code=404, detail="書類が見つかりません")
+
+    # 書類の削除
+    delete_document_by_id(db=db, document_id=document_id)
+    return {"message": "書類が削除されました"}
+
+@router.delete("/{application_id}/schedules/{schedule_id}")
+async def delete_schedule(
+    application_id: str,
+    schedule_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """スケジュールを削除"""
+    # 志望校の存在確認と権限チェック
+    school = get_application(db=db, school_id=application_id)
+    if not school or school.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="志望校が見つかりません")
+
+    # スケジュールの存在確認
+    existing_schedule = db.query(ScheduleEvent).filter(
+        ScheduleEvent.id == schedule_id,
+        ScheduleEvent.desired_department_id == school.desired_departments[0].id
+    ).first()
+    
+    if not existing_schedule:
+        raise HTTPException(status_code=404, detail="スケジュールが見つかりません")
+
+    # スケジュールの削除
+    delete_schedule_by_id(db=db, schedule_id=schedule_id)
+    return {"message": "スケジュールが削除されました"}

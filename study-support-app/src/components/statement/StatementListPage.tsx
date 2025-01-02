@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Plus, FileText, Edit2, Trash2, MessageSquare } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
+import { API_BASE_URL } from '@/lib/config';
 
 interface PersonalStatement {
   id: string;
@@ -45,7 +46,7 @@ export default function StatementListPage() {
     try {
       const token = getToken();
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/statements/`,
+        `${API_BASE_URL}/api/v1/statements/`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -85,7 +86,7 @@ export default function StatementListPage() {
 
     try {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/statements/${id}/`,
+        `${API_BASE_URL}/api/v1/statements/${id}/`,
         {
           method: 'DELETE',
           credentials: 'include',

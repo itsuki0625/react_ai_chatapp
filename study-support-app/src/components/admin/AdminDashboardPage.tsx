@@ -13,6 +13,7 @@ import {
   Search,
   MoreVertical
 } from 'lucide-react';
+import { ContentManagement } from '@/components/admin/ContentManagement';
 
 interface UserStats {
   totalStudents: number;
@@ -171,6 +172,11 @@ const AdminDashboard = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* コンテンツ管理セクションを追加 */}
+      <div className="mt-6">
+        <ContentManagement />
       </div>
     </div>
   );

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/common/Button';
+import { API_BASE_URL } from '@/lib/config';
 
 enum PersonalStatementStatus {
   DRAFT = "DRAFT",
@@ -65,7 +66,7 @@ export default function StatementEditorPage({ id, initialData }: Props) {
     try {
       const token = getToken();
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/applications/`,
+        `${API_BASE_URL}/api/v1/applications/`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -110,8 +111,8 @@ export default function StatementEditorPage({ id, initialData }: Props) {
     
     try {
       const url = id
-        ? `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/statements/${id}`
-        : `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/statements/`;
+        ? `${API_BASE_URL}/api/v1/statements/${id}`
+        : `${API_BASE_URL}/api/v1/statements/`;
 
       const token = getToken();
       

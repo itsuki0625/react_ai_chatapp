@@ -22,10 +22,10 @@ class MessageType(enum.Enum):
     FILE = "file"
 
 class DocumentStatus(enum.Enum):
-    DRAFT = "draft"
-    SUBMITTED = "submitted"
-    REVIEWED = "reviewed"
-    APPROVED = "approved"
+    DRAFT = "DRAFT"
+    SUBMITTED = "SUBMITTED"
+    REVIEWED = "REVIEWED"
+    APPROVED = "APPROVED"
 
 class PersonalStatementStatus(str, enum.Enum):
     DRAFT = "DRAFT"

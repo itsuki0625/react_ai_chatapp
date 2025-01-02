@@ -6,10 +6,13 @@ from app.schemas.application import (
     ApplicationCreate, 
     ApplicationUpdate,
     DocumentCreate,
-    ScheduleCreate
+    ScheduleCreate,
+    DocumentUpdate,
+    ScheduleUpdate
 )
 from uuid import UUID
 from typing import List, Optional
+from fastapi import HTTPException
 
 def create_application(
     db: Session,
@@ -119,7 +122,7 @@ def create_schedule(
         desired_department_id=department_id,
         event_name=schedule.event_name,
         date=schedule.date,
-        type=schedule.event_type
+        type=schedule.type
     )
     db.add(db_schedule)
     db.commit()
@@ -133,3 +136,57 @@ def get_application_schedules(
     return db.query(ScheduleEvent).filter(
         ScheduleEvent.desired_department_id == department_id
     ).all()
+
+def update_document_by_id(
+    db: Session,
+    document_id: str,
+    document_update: DocumentUpdate
+) -> Document:
+    """書類を更新"""
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="書類が見つかりません")
+
+    for key, value in document_update.dict(exclude_unset=True).items():
+        setattr(document, key, value)
+
+    db.commit()
+    db.refresh(document)
+    return document
+
+def update_schedule_by_id(
+    db: Session,
+    schedule_id: str,
+    schedule_update: ScheduleUpdate
+) -> ScheduleEvent:
+    """スケジュールを更新"""
+    schedule = db.query(ScheduleEvent).filter(ScheduleEvent.id == schedule_id).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="スケジュールが見つかりません")
+
+    for key, value in schedule_update.dict(exclude_unset=True).items():
+        setattr(schedule, key, value)
+
+    db.commit()
+    db.refresh(schedule)
+    return schedule
+
+def delete_document_by_id(
+    db: Session,
+    document_id: str
+) -> None:
+    """書類を削除"""
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if document:
+        db.delete(document)
+        db.commit()
+
+def delete_schedule_by_id(
+    db: Session,
+    schedule_id: str
+) -> None:
+    """スケジュールを削除"""
+    schedule = db.query(ScheduleEvent).filter(ScheduleEvent.id == schedule_id).first()
+    if schedule:
+        db.delete(schedule)
+        db.commit()

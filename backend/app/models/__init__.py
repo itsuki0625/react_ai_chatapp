@@ -1,4 +1,5 @@
-from .base import Base, TimestampMixin
+from app.models.base import Base
+from app.models.content import Content, ContentType
 from .user import User, Role
 from .school import School
 from .university import University, Department
@@ -17,6 +18,7 @@ from .enums import (
     DocumentStatus,
     PersonalStatementStatus
 )
+from .checklist import ChecklistEvaluation
 
 __all__ = [
     "Base",
@@ -44,5 +46,8 @@ __all__ = [
     "SenderType",
     "MessageType",
     "DocumentStatus",
-    "PersonalStatementStatus"
+    "PersonalStatementStatus",
+    "ContentType",
+    "Content",
+    "ChecklistEvaluation"
 ]

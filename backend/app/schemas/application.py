@@ -55,8 +55,7 @@ class DocumentResponse(DocumentBase):
 class ScheduleBase(BaseModel):
     event_name: str
     date: datetime
-    event_type: str
-    notes: Optional[str] = None
+    type: str
 
 class ScheduleCreate(ScheduleBase):
     pass
@@ -66,9 +65,9 @@ class ScheduleUpdate(ScheduleBase):
 
 class ScheduleResponse(ScheduleBase):
     id: UUID
-    desired_department_id: UUID
-    created_at: datetime
-    updated_at: datetime
+    event_name: str
+    date: datetime
+    type: str
 
     class Config:
         from_attributes = True

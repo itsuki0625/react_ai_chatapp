@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
-async def stream_openai_response(messages: List[Dict], session_id: str):
+async def stream_openai_response(messages: List[Dict], session_id: str) -> AsyncGenerator[str, None]:
     try:
         response = await client.chat.completions.create(
             model="gpt-4o",

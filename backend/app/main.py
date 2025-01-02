@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from app.core.config import settings
-from app.api.v1.endpoints import chat, auth, statement, application, university, admission
+from app.api.v1.endpoints import chat, auth, statement, application, university, admission, content
 from app.middleware.auth import AuthMiddleware
 import logging
 
@@ -10,7 +10,12 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+app = FastAPI(
+    title="Study Support API",
+    description="志望校管理と志望理由書作成支援のためのAPI",
+    version="1.0.0",
+    docs_url="/api/v1/docs",  
+)
 
 # ミドルウェアの順序が重要：
 # 1. 認証ミドルウェア（最後に実行される）
@@ -29,7 +34,7 @@ app.add_middleware(
 # 3. CORSミドルウェア（最初に実行される）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],  # 全HTTPメソッドを許可
     allow_headers=["*"],  # 全ヘッダーを許可
@@ -37,7 +42,11 @@ app.add_middleware(
 
 # ルーターの登録
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
-app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
+app.include_router(
+    chat.router,
+    prefix="/api/v1",
+    tags=["chat"]
+)
 app.include_router(
     statement.router,
     prefix="/api/v1/statements",
@@ -57,6 +66,11 @@ app.include_router(
     admission.router,
     prefix="/api/v1/admission-methods",
     tags=["admission-methods"]
+)
+app.include_router(
+    content.router,
+    prefix="/api/v1/contents",
+    tags=["contents"]
 )
 
 if __name__ == "__main__":

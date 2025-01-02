@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
+import { API_BASE_URL } from '@/lib/config';
 
 interface University {
   id: string;
@@ -74,7 +75,7 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
   const fetchUniversities = async () => {
     try {
       const token = getToken();
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/universities/`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/universities/`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -91,7 +92,7 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
   const fetchAdmissionMethods = async () => {
     try {
       const token = getToken();
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/admission-methods/`,{
+      const response = await fetch(`${API_BASE_URL}/api/v1/admission-methods/`,{
         headers: {
           'Authorization': `Bearer ${token}`,
         },

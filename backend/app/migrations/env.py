@@ -8,6 +8,7 @@ import sys
 from app.models import Base
 from app.core.config import settings
 from app.migrations.demo_data import insert_demo_data
+from app.models.base import Base
 
 # Alembicの設定ファイルのディレクトリをPYTHONPATHに追加
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

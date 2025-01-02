@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Bell, User, Shield, LogOut } from 'lucide-react';
 import LogoutButton from '@/components/common/LogoutButton';
+import { API_BASE_URL } from '@/lib/config';
 
 const SettingsPage = () => {
   const [userSettings, setUserSettings] = useState({

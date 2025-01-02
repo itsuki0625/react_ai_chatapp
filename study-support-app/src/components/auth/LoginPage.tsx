@@ -3,9 +3,10 @@
 import React, { useState, FormEvent } from 'react';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { API_BASE_URL } from '@/lib/config';
 
 // APIのURLを直接指定してデバッグ
-const API_URL = 'http://localhost:5000';  // 開発環境用
+// const API_URL = 'http://localhost:5000';  // 開発環境用
 
 const LoginPage = () => {
   const router = useRouter();
@@ -26,9 +27,9 @@ const LoginPage = () => {
       formData.append('username', email);
       formData.append('password', password);
 
-      console.log('Sending request to:', `${API_URL}/api/v1/auth/login`);  // URLを確認
+      console.log('Sending request to:', `${API_BASE_URL}/api/v1/auth/login`);  // URLを確認
 
-      const response = await fetch(`${API_URL}/api/v1/auth/login`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',

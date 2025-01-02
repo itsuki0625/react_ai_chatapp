@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 
 class Message(BaseModel):
@@ -26,3 +26,8 @@ class ChatMessageResponse(BaseModel):
     
     class Config:
         from_attributes = True 
+
+class ChatMessageCreate(BaseModel):
+    content: str
+    message_type: str = "TEXT"
+    meta_data: Optional[Dict] = None 

@@ -10,7 +10,9 @@ import {
   MessageSquare,
   FileText,
   User,
-  Settings
+  Settings,
+  SquarePlay,
+  CircleHelp
 } from 'lucide-react';
 
 interface NavItem {
@@ -22,10 +24,10 @@ interface NavItem {
 const navigation: NavItem[] = [
   { name: 'ダッシュボード', href: '/dashboard', icon: Home },
   { name: 'AIチャット', href: '/chat', icon: MessageSquare },
-  { name: 'FAQチャット', href: '/faq', icon: MessageSquare },
+  { name: 'FAQチャット', href: '/faq', icon: CircleHelp },
   { name: '志望校管理', href: '/application', icon: User },
   { name: '志望理由書', href: '/statement', icon: FileText },
-  { name: 'コンテンツ', href: '/content', icon: FileText },
+  { name: 'コンテンツ', href: '/contents', icon: SquarePlay },
   { name: '設定', href: '/settings', icon: Settings },
 ];
 
