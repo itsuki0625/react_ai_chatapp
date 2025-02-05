@@ -2,9 +2,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from app.core.config import settings
-from app.api.v1.endpoints import chat, auth, statement, application, university, admission, content
+from app.api.v1.endpoints import (
+    auth,
+    chat,
+    university,
+    admission,
+    application,
+    statement,
+    content
+)
 from app.middleware.auth import AuthMiddleware
 import logging
+from fastapi import APIRouter
 
 # ロギング設定
 logging.basicConfig(level=logging.INFO)
@@ -40,38 +49,21 @@ app.add_middleware(
     allow_headers=["*"],  # 全ヘッダーを許可
 )
 
-# ルーターの登録
-app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
-app.include_router(
-    chat.router,
-    prefix="/api/v1",
-    tags=["chat"]
-)
-app.include_router(
-    statement.router,
-    prefix="/api/v1/statements",
-    tags=["statements"]
-)
-app.include_router(
-    application.router,
-    prefix="/api/v1/applications",
-    tags=["applications"]
-)
-app.include_router(
-    university.router,
-    prefix="/api/v1/universities",
-    tags=["universities"]
-)
-app.include_router(
-    admission.router,
-    prefix="/api/v1/admission-methods",
-    tags=["admission-methods"]
-)
-app.include_router(
-    content.router,
-    prefix="/api/v1/contents",
-    tags=["contents"]
-)
+# APIルーターの設定
+api_router = APIRouter()
+api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
+api_router.include_router(university.router, prefix="/universities", tags=["universities"])
+api_router.include_router(admission.router, prefix="/admission", tags=["admission"])
+api_router.include_router(application.router, prefix="/applications", tags=["applications"])
+api_router.include_router(statement.router, prefix="/statements", tags=["statements"])
+api_router.include_router(content.router, prefix="/contents", tags=["contents"])
+
+app.include_router(api_router, prefix="/api/v1")
+
+# APIルーターの設定後に追加
+for route in app.routes:
+    logger.info(f"Registered route: {route.path}")
 
 if __name__ == "__main__":
     import uvicorn

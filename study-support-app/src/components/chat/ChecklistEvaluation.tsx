@@ -19,21 +19,24 @@ interface ChecklistData {
 
 interface Props {
   chatId: string;
+  sessionType?: string;
 }
 
 const getToken = () => {
     return localStorage.getItem('token');
   };
 
-export const ChecklistEvaluation = ({ chatId }: Props) => {
+export const ChecklistEvaluation = ({ chatId, sessionType = 'CONSULTATION' }: Props) => {
   const [checklistData, setChecklistData] = useState<ChecklistData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchChecklist = async () => {
+      if (!chatId) return;
+
       try {
         const response = await fetch(
-          `${API_BASE_URL}/api/v1/chat/${chatId}/checklist`,
+          `${API_BASE_URL}/api/v1/chat/${chatId}/checklist?session_type=${sessionType}`,
           {
             headers: {
               'Authorization': `Bearer ${getToken()}`
@@ -41,18 +44,25 @@ export const ChecklistEvaluation = ({ chatId }: Props) => {
             credentials: 'include',
           }
         );
+        
         if (!response.ok) {
+          if (response.status === 404) {
+            setError('チェックリストがまだ作成されていません');
+            return;
+          }
           throw new Error('Failed to fetch checklist');
         }
+        
         const data = await response.json();
         setChecklistData(data);
       } catch (error) {
         setError('チェックリストの取得に失敗しました');
+        console.error('Checklist fetch error:', error);
       }
     };
 
     fetchChecklist();
-  }, [chatId]);
+  }, [chatId, sessionType]);
 
   if (error) {
     return (
@@ -61,6 +71,14 @@ export const ChecklistEvaluation = ({ chatId }: Props) => {
           <AlertCircle className="h-5 w-5" />
           <p>{error}</p>
         </div>
+      </div>
+    );
+  }
+
+  if (!chatId) {
+    return (
+      <div className="p-4 bg-gray-50 rounded-lg">
+        <p className="text-gray-500">チャットを選択してください</p>
       </div>
     );
   }
@@ -83,7 +101,7 @@ export const ChecklistEvaluation = ({ chatId }: Props) => {
       <h3 className="text-lg font-medium mb-4">チェックリスト評価</h3>
       
       <div className="space-y-4 mb-6">
-        {Object.entries(checklistData.checklist).map(([key, item]) => (
+        {checklistData?.checklist && Object.entries(checklistData.checklist).map(([key, item]) => (
           <div key={key} className="flex items-start gap-3">
             {item.status ? (
               <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />

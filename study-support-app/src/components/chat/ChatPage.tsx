@@ -488,9 +488,12 @@ export default function ChatPage() {
       </div>
 
       {/* チェックリスト部分 (FAQチャット以外の場合のみ表示) */}
-      {activeSession?.title !== 'FAQ' && (
+      {activeSession && activeSession.title !== 'FAQ' && (
         <div className="w-80 border-l bg-gray-50 p-4 overflow-y-auto">
-          <ChecklistEvaluation chatId={activeSession?.id || ''} />
+          <ChecklistEvaluation 
+            chatId={activeSession.id} 
+            sessionType="CONSULTATION"
+          />
         </div>
       )}
     </div>

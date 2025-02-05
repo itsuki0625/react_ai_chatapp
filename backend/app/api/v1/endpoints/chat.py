@@ -28,11 +28,11 @@ logger = logging.getLogger(__name__)
 
 checklist_evaluator = ChecklistEvaluator()
 
-@router.options("/chat/stream")
+@router.options("/stream")
 async def chat_stream_options():
     return {"message": "OK"}
 
-@router.post("/chat/stream")
+@router.post("/stream")
 async def chat_stream(
     request: Request,
     chat_request: ChatRequest,
@@ -200,18 +200,12 @@ async def chat_stream(
         logger.error(f"Error in chat_stream: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/session")
-async def get_session(request: Request):
-    if "session_id" not in request.session:
-        request.session["session_id"] = str(uuid.uuid4())
-    return {"session_id": request.session["session_id"]}
-
-@router.delete("/session")
+@router.delete("/sessions")
 async def end_session(request: Request):
     request.session.clear()
     return {"message": "Session ended successfully"}
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("", response_model=ChatResponse)
 async def chat_with_ai(
     chat_request: ChatRequest,
     current_user: User = Depends(get_current_user),
@@ -260,26 +254,25 @@ async def chat_with_ai(
         logger.error(f"Error in chat_with_ai: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/chat/sessions")
-async def get_chat_sessions(
+@router.get("/sessions/archived")
+async def get_archived_chat_sessions_route(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     session_type: str = "CONSULTATION"
 ):
-    """ユーザーのチャットセッション一覧を取得"""
+    """アーカイブされたチャットセッションを取得"""
     try:
-        print(session_type)
-        sessions = await get_user_chat_sessions(
+        sessions = await get_archived_chat_sessions(
             db, 
             current_user.id,
             session_type
         )
         return sessions
     except Exception as e:
-        logger.error(f"Error getting chat sessions: {str(e)}")
+        logger.error(f"Error getting archived chat sessions: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/chat/sessions/{session_id}/messages")
+@router.get("/sessions/{session_id}/messages")
 async def get_chat_messages(
     session_id: str,
     current_user: User = Depends(get_current_user),
@@ -299,7 +292,7 @@ async def get_chat_messages(
         logger.error(f"Error getting chat messages: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.patch("/chat/sessions/{session_id}/archive")
+@router.patch("/sessions/{session_id}/archive")
 async def archive_chat_session(
     session_id: str,
     current_user: User = Depends(get_current_user),
@@ -320,46 +313,26 @@ async def archive_chat_session(
         logger.error(f"Error archiving chat session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/chat/sessions/archived")
-async def get_archived_chat_sessions_route(
+@router.get("/sessions")
+async def get_chat_sessions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     session_type: str = "CONSULTATION"
 ):
-    """アーカイブされたチャットセッションを取得"""
+    """ユーザーのチャットセッション一覧を取得"""
     try:
-        sessions = await get_archived_chat_sessions(
+        print(session_type)
+        sessions = await get_user_chat_sessions(
             db, 
             current_user.id,
             session_type
         )
         return sessions
     except Exception as e:
-        logger.error(f"Error getting archived chat sessions: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) 
-    
-@router.patch("/chat/sessions/{session_id}/restore")
-async def restore_chat_session(
-    session_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    session_type: str = "CONSULTATION"
-):
-    """チャットセッションをアクティブにする"""
-    try:
-        await update_session_status(
-            db, 
-            session_id, 
-            current_user.id, 
-            "ACTIVE",
-            session_type
-        )
-        return {"message": "Session restored successfully"}
-    except Exception as e:
-        logger.error(f"Error restoring chat session: {str(e)}")
+        logger.error(f"Error getting chat sessions: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/chat/{chat_id}/checklist")
+@router.get("/{chat_id}/checklist")
 async def get_checklist_evaluation(
     chat_id: UUID,
     db: Session = Depends(get_db),
