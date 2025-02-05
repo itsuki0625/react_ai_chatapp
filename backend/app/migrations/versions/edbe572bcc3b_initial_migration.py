@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: 346e8b81af84
+Revision ID: edbe572bcc3b
 Revises: 
-Create Date: 2024-12-23 18:34:46.891734
+Create Date: 2025-02-05 16:43:49.004380
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '346e8b81af84'
+revision: str = 'edbe572bcc3b'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -27,6 +27,19 @@ def upgrade() -> None:
     sa.Column('is_active', sa.Boolean(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.Column('updated_at', sa.DateTime(), nullable=True),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_table('contents',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('title', sa.String(length=255), nullable=False),
+    sa.Column('description', sa.Text(), nullable=True),
+    sa.Column('url', sa.String(length=1024), nullable=False),
+    sa.Column('content_type', sa.Enum('VIDEO', 'SLIDE', 'PDF', name='contenttype'), nullable=False),
+    sa.Column('thumbnail_url', sa.String(length=1024), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('updated_at', sa.DateTime(), nullable=True),
+    sa.Column('category', sa.String(length=100), nullable=True),
+    sa.Column('tags', sa.String(length=255), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('roles',
@@ -184,6 +197,15 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['session_id'], ['chat_sessions.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_table('checklist_evaluations',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('chat_id', sa.UUID(), nullable=True),
+    sa.Column('checklist_items', sa.JSON(), nullable=True),
+    sa.Column('completion_status', sa.String(), nullable=True),
+    sa.Column('ai_feedback', sa.Text(), nullable=True),
+    sa.ForeignKeyConstraint(['chat_id'], ['chat_sessions.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
     op.create_table('desired_departments',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('desired_school_id', sa.UUID(), nullable=True),
@@ -223,7 +245,7 @@ def upgrade() -> None:
     sa.Column('user_id', sa.UUID(), nullable=True),
     sa.Column('desired_department_id', sa.UUID(), nullable=True),
     sa.Column('content', sa.Text(), nullable=True),
-    sa.Column('status', sa.Enum('DRAFT', 'IN_REVIEW', 'REVIEWED', 'FINAL', name='personalstatementstatus'), nullable=True),
+    sa.Column('status', sa.Enum('DRAFT', 'REVIEW', 'REVIEWED', 'FINAL', name='personalstatementstatus'), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.Column('updated_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['desired_department_id'], ['desired_departments.id'], ),
@@ -264,6 +286,7 @@ def downgrade() -> None:
     op.drop_table('documents')
     op.drop_table('chat_attachments')
     op.drop_table('desired_departments')
+    op.drop_table('checklist_evaluations')
     op.drop_table('chat_messages')
     op.drop_table('system_settings')
     op.drop_table('system_logs')
@@ -275,5 +298,6 @@ def downgrade() -> None:
     op.drop_table('universities')
     op.drop_table('schools')
     op.drop_table('roles')
+    op.drop_table('contents')
     op.drop_table('admission_methods')
     # ### end Alembic commands ###
