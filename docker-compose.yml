@@ -4,7 +4,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - '5000:5000'
+      - '5050:5050'
     env_file:
       - ./.env
     networks:
@@ -34,7 +34,7 @@ services:
     command: npm run dev -- -p 3000
     environment:
       - HOST=0.0.0.0
-      - NEXT_PUBLIC_API_BASE_URL=http://192.168.40.2:5000
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:5050
 
   db:
     image: postgres:13

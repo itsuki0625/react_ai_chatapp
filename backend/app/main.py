@@ -34,7 +34,7 @@ app.add_middleware(
 # 3. CORSミドルウェア（最初に実行される）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.ALLOWED_ORIGINS,  # フロントエンドのURL
     allow_credentials=True,
     allow_methods=["*"],  # 全HTTPメソッドを許可
     allow_headers=["*"],  # 全ヘッダーを許可

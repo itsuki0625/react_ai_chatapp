@@ -24,7 +24,7 @@ ENV PYTHONPATH=/app
 RUN chmod +x /app/scripts/start.sh
 
 # ポート5000を開放
-EXPOSE 5000
+EXPOSE 5050
 
 # 起動コマンドを変更（start.shスクリプトを使用する場合）
 CMD ["/app/scripts/start.sh"]
