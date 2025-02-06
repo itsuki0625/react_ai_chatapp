@@ -6,8 +6,10 @@ WORKDIR /app
 # パッケージファイルをコピー
 COPY package*.json ./
 
-# 依存関係をインストール（開発用も含めて全て）
-RUN npm install --legacy-peer-deps
+# npmのキャッシュをクリアしてからインストールを実行
+RUN npm cache clean --force && \
+    npm install --legacy-peer-deps && \
+    npm install -g next
 
 # アプリケーションのソースコードをコピー
 COPY . .
@@ -16,5 +18,5 @@ COPY . .
 EXPOSE 3000
 
 # 開発モードで起動
-CMD ["npm", "run", "dev"]
+CMD ["npm", "run", "dev", "--", "-p", "3000"]
 

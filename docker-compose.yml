@@ -11,7 +11,6 @@ services:
       - app-network
     volumes:
       - ./backend:/app
-    command: ["/app/scripts/start.sh"]
     depends_on:
       db:
         condition: service_healthy
@@ -31,8 +30,9 @@ services:
     env_file:
       - ./.env
     restart: always
-    command: npm run dev -- -p 3000
+    command: npm run dev
     environment:
+      - PORT=3000
       - HOST=0.0.0.0
       - NEXT_PUBLIC_API_BASE_URL=http://localhost:5050
 
