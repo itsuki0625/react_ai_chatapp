@@ -18,10 +18,18 @@ async def get_admission_methods(
         AdmissionMethod.is_active == True
     ).all()
     
-    return [
+    # デバッグ用のログ
+    print("Fetched admission methods:", methods)
+    
+    response_data = [
         AdmissionMethodResponse(
             id=method.id,
             name=method.name
         )
         for method in methods
-    ] 
+    ]
+    
+    # デバッグ用のログ
+    print("Response data:", response_data)
+    
+    return response_data 
