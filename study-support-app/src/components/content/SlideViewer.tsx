@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Maximize2, Minimize2, MessageSquare } from 'lucide-react';
 import { getSlideProviderInfo } from '@/lib/slide';
+import { KeyboardEvent } from 'react';
 
 interface SlideViewerProps {
   url: string;
@@ -48,7 +49,7 @@ export const SlideViewer = ({
     }
   };
 
-  const handleKeyDown = (e: KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'ArrowRight') {
       handleSlideChange('next');
     } else if (e.key === 'ArrowLeft') {
@@ -65,8 +66,8 @@ export const SlideViewer = ({
     >
       <div className="flex flex-col lg:flex-row gap-4">
         {/* スライド表示エリア */}
-        <div className="flex-1">
-          <div className="relative aspect-[16/9]">
+        <div className="flex-1 min-w-0">
+          <div className="relative aspect-[16/9] w-full">
             <iframe
               src={embedUrl}
               title={title}

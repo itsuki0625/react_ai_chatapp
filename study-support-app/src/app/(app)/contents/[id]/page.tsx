@@ -1,5 +1,12 @@
 import ContentDetailPage from '@/components/content/ContentDetailPage';
 
-export default function Page({ params }: { params: { id: string } }) {
-  return <ContentDetailPage id={params.id} />;
+interface PageProps {
+  params: {
+    id: string;
+  };
+}
+
+export default async function Page({ params }: PageProps) {
+  const id = await Promise.resolve(params.id);
+  return <ContentDetailPage id={id} />;
 } 
