@@ -11,11 +11,16 @@ services:
       - app-network
     volumes:
       - ./backend:/app
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
       - PYTHONPATH=/app
+      # RDSへの接続を確実にするための追加設定
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   frontend:
     build: ./study-support-app
@@ -35,22 +40,6 @@ services:
       - PORT=3000
       - HOST=0.0.0.0
       - NEXT_PUBLIC_API_BASE_URL=http://localhost:5050
-
-  db:
-    image: postgres:13
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    env_file:
-      - ./.env
-    ports:
-      - "5020:5432"
-    networks:
-      - app-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d demo"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
 networks:
   app-network:

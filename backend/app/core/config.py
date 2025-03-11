@@ -1,29 +1,35 @@
 from pydantic_settings import BaseSettings
-from typing import List, ClassVar
+from typing import List
 import os
-from dotenv import load_dotenv
 import openai
+import logging
 
-load_dotenv()
+# ロギングの設定
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# クラスの外で instruction.md を読み込む
 def load_instruction() -> str:
-    try:
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        instruction_path = os.path.join(base_dir, 'app', 'core', 'instruction.md')
-        
-        with open(instruction_path, 'r', encoding='utf-8') as f:
+    instruction_path = os.path.join(os.path.dirname(__file__), "instruction.txt")
+    if os.path.exists(instruction_path):
+        with open(instruction_path, "r", encoding="utf-8") as f:
             return f.read()
-    except FileNotFoundError:
-        print(f"instruction.md が見つかりません。検索パス: {instruction_path}")
-        return ""
-    except Exception as e:
-        print(f"インストラクションファイルの読み込み中にエラーが発生しました: {str(e)}")
-        return ""
+    return ""
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL")
+    DB_HOST: str = os.getenv("DB_HOST", "localhost")
+    DB_PORT: str = os.getenv("DB_PORT", "5432")
+    DB_NAME: str = os.getenv("DB_NAME", "postgres")
+    DB_USER: str = os.getenv("DB_USER", "postgres")
+    DB_PASSWORD: str = os.getenv("DB_PASSWORD", "postgres")
+
+    @property
+    def DATABASE_URL(self) -> str:
+        url = f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        # SSL要件を一時的に無効化
+        url += "?sslmode=disable"
+        logger.info(f"Connecting to database at: {self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}")
+        return url
     
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key")
@@ -54,6 +60,11 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 settings = Settings()
+
+# 設定値のログ出力
+logger.info(f"Database Host: {settings.DB_HOST}")
+logger.info(f"Database Port: {settings.DB_PORT}")
+logger.info(f"Database Name: {settings.DB_NAME}")
 
 # OpenAI APIキーの設定
 openai.api_key = settings.OPENAI_API_KEY
