@@ -1,33 +1,33 @@
 version: '3.8'  # 最新のバージョンを使用することを推奨
 
-services:
-  backend-local:
-    build: ./backend
-    ports:
-      - '5050:5050'  # ローカルDB用のポート
-    env_file:
-      - ./.env
-    networks:
-      - app-network
-    volumes:
-      - ./backend:/app
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      - PYTHONPATH=/app
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=${POSTGRES_USER}
-      - DB_PASSWORD=${POSTGRES_PASSWORD}
-      - DB_NAME=${POSTGRES_DB}
-      - SERVER_PORT=5050
-      - CONNECTION_TYPE=local
+# services:
+#   backend-local:
+#     build: ./backend
+#     ports:
+#       - '5050:5050'  # ローカルDB用のポート
+#     env_file:
+#       - ./.env
+#     networks:
+#       - app-network
+#     volumes:
+#       - ./backend:/app
+#     depends_on:
+#       db:
+#         condition: service_healthy
+#     environment:
+#       - PYTHONPATH=/app
+#       - DB_HOST=db
+#       - DB_PORT=5432
+#       - DB_USER=${POSTGRES_USER}
+#       - DB_PASSWORD=${POSTGRES_PASSWORD}
+#       - DB_NAME=${POSTGRES_DB}
+#       - SERVER_PORT=5050
+#       - CONNECTION_TYPE=local
 
   backend-rds:
     build: ./backend
     ports:
-      - '5051:5051'  # AWS RDS用のポート
+      - '5050:5050'  # AWS RDS用のポート
     env_file:
       - ./.env
     networks:
