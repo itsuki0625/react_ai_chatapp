@@ -19,8 +19,49 @@ services:
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
+      # AWS RDS接続のための追加設定（直接接続する場合）
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+      # EC2を経由したSSHトンネリングを使用する場合の設定
+      # - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@host.docker.internal:15432/${DB_NAME}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # DNSとネットワーク設定を追加
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    dns_search: ap-northeast-1.compute.internal
+
+  db-tester:
+    image: postgres:14
+    command: /bin/bash -c "apt-get update && apt-get install -y netcat-openbsd traceroute && echo 'Testing connection to ${DB_HOST}:${DB_PORT}' && nc -zv ${DB_HOST} ${DB_PORT} || echo 'Failed standard connection test' && echo 'Testing direct IP connection to RDS...' && nc -zv rds-smartao-stg.c5qua266yvrm.ap-northeast-1.rds.amazonaws.com 5432 || echo 'Failed IP connection test' && echo 'Trying traceroute...' && traceroute ${DB_HOST}"
+    env_file:
+      - ./.env
+    networks:
+      - app-network
+
+  telnet-tester:
+    image: debian:bullseye-slim
+    command: /bin/bash -c "apt-get update && apt-get install -y telnet dnsutils && echo 'Testing DNS resolution...' && nslookup ${DB_HOST} && echo 'Testing telnet connection...' && (echo quit | telnet ${DB_HOST} ${DB_PORT}) || echo 'Telnet connection failed'"
+    env_file:
+      - ./.env
+    networks:
+      - app-network
+
+  python-tester:
+    image: python:3.9
+    command: sh -c "apt-get update && apt-get install -y telnet && echo 'Testing direct telnet connection...' && echo 'Trying host...' && (echo quit | telnet rds-smartao-stg.c5qua266yvrm.ap-northeast-1.rds.amazonaws.com 5432 || echo 'Failed connecting to host') && echo 'Trying IP...' && (echo quit | telnet 3.114.60.209 5432 || echo 'Failed connecting to IP')"
+    env_file:
+      - ./.env
+    networks:
+      - app-network
+
+  connection-test:
+    image: postgres:14
+    command: /bin/bash -c "apt-get update && apt-get install -y postgresql-client && echo 'Testing PostgreSQL connection to rds-smartao-stg.c5qua266yvrm.ap-northeast-1.rds.amazonaws.com:5432...' && PGPASSWORD=${DB_PASSWORD} psql -h rds-smartao-stg.c5qua266yvrm.ap-northeast-1.rds.amazonaws.com -p 5432 -U ${DB_USER} -d ${DB_NAME} -c 'SELECT 1;' && echo 'Connection successful!' || echo 'Connection failed.'"
+    env_file:
+      - ./.env
+    networks:
+      - app-network
 
   frontend:
     build: ./study-support-app
@@ -44,6 +85,3 @@ services:
 networks:
   app-network:
     driver: bridge
-
-volumes:
-  postgres_data:
