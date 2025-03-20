@@ -14,6 +14,7 @@ from app.api.v1.endpoints import (
 from app.middleware.auth import AuthMiddleware
 import logging
 from fastapi import APIRouter
+import os
 
 # ロギング設定
 logging.basicConfig(level=logging.INFO)
@@ -67,4 +68,7 @@ for route in app.routes:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # 環境変数からポート番号を取得（デフォルトは5050）
+    port = int(os.getenv("SERVER_PORT", 5050))
+    logger.info(f"Starting server on port {port} with connection type: {os.getenv('CONNECTION_TYPE', 'local')}")
+    uvicorn.run(app, host="0.0.0.0", port=port)

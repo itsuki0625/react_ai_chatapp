@@ -21,8 +21,11 @@ COPY . .
 
 ENV PYTHONPATH=/app
 
+# デフォルトポートの設定
+ENV SERVER_PORT=5050
 
-# ポート5050を開放
-EXPOSE 5050
+# ポートを動的に開放（SERVER_PORTを使用）
+EXPOSE ${SERVER_PORT}
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5050", "--reload"]
+# 環境変数からポート番号を取得して起動
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${SERVER_PORT} --reload

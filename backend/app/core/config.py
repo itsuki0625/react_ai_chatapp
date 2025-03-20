@@ -21,9 +21,32 @@ def load_instruction() -> str:
         print(f"インストラクションファイルの読み込み中にエラーが発生しました: {str(e)}")
         return ""
 
+def get_database_url() -> str:
+    """
+    環境変数に基づいて適切なデータベースURLを返す
+    """
+    connection_type = os.getenv("CONNECTION_TYPE", "local")
+    
+    if connection_type == "rds":
+        # AWS RDS接続用のURL
+        host = os.getenv("DB_HOST")
+        port = os.getenv("DB_PORT")
+        user = os.getenv("DB_USER")
+        password = os.getenv("DB_PASSWORD")
+        db_name = os.getenv("DB_NAME")
+        return f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
+    else:
+        # ローカルDB接続用のURL
+        host = os.getenv("DB_HOST", "db")
+        port = os.getenv("DB_PORT", "5432")
+        user = os.getenv("DB_USER", "postgres")
+        password = os.getenv("DB_PASSWORD", "postgres")
+        db_name = os.getenv("DB_NAME", "postgres")
+        return f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
+
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL")
+    DATABASE_URL: str = get_database_url()
     
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key")
