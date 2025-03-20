@@ -8,4 +8,6 @@ htmlcov/
 .env
 .env.*
 !.env.example
+secret/
 secret/*
+
