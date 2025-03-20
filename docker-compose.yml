@@ -27,7 +27,7 @@ services:
   backend-rds:
     build: ./backend
     ports:
-      - '5050:5050'  # AWS RDS用のポート
+      - '5051:5051'  # AWS RDS用のポート
     env_file:
       - ./.env
     networks:
