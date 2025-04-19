@@ -10,6 +10,7 @@ from .schedule import ScheduleEvent
 from .personal_statement import PersonalStatement, Feedback
 from .chat import ChatSession, ChatMessage, ChatAttachment
 from .system import SystemLog, SystemSetting, Notification
+from .subscription import Subscription, SubscriptionPlan, PaymentHistory, CampaignCode
 from .enums import (
     SessionType, 
     SessionStatus, 
@@ -49,5 +50,9 @@ __all__ = [
     "PersonalStatementStatus",
     "ContentType",
     "Content",
-    "ChecklistEvaluation"
+    "ChecklistEvaluation",
+    "Subscription",
+    "SubscriptionPlan",
+    "PaymentHistory",
+    "CampaignCode"
 ]

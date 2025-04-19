@@ -16,3 +16,4 @@ pandas
 openai
 passlib
 bcrypt
+stripe

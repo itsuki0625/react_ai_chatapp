@@ -1,8 +1,8 @@
-"""Initial migration
+"""first commit
 
-Revision ID: edbe572bcc3b
+Revision ID: 4e009e4cff56
 Revises: 
-Create Date: 2025-02-05 16:43:49.004380
+Create Date: 2025-04-19 06:41:55.110092
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'edbe572bcc3b'
+revision: str = '4e009e4cff56'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -69,6 +69,19 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('school_code')
     )
+    op.create_table('subscription_plans',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('name', sa.String(), nullable=False),
+    sa.Column('description', sa.String(), nullable=True),
+    sa.Column('price_id', sa.String(), nullable=False),
+    sa.Column('amount', sa.Integer(), nullable=False),
+    sa.Column('currency', sa.String(), nullable=True),
+    sa.Column('interval', sa.String(), nullable=False),
+    sa.Column('is_active', sa.Boolean(), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('updated_at', sa.DateTime(), nullable=True),
+    sa.PrimaryKeyConstraint('id')
+    )
     op.create_table('universities',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('name', sa.String(), nullable=False),
@@ -119,6 +132,24 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['school_id'], ['schools.id'], ),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('email')
+    )
+    op.create_table('campaign_codes',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('code', sa.String(), nullable=False),
+    sa.Column('description', sa.String(), nullable=True),
+    sa.Column('owner_id', sa.UUID(), nullable=True),
+    sa.Column('discount_type', sa.String(), nullable=False),
+    sa.Column('discount_value', sa.Float(), nullable=False),
+    sa.Column('max_uses', sa.Integer(), nullable=True),
+    sa.Column('used_count', sa.Integer(), nullable=True),
+    sa.Column('valid_from', sa.DateTime(), nullable=True),
+    sa.Column('valid_until', sa.DateTime(), nullable=True),
+    sa.Column('is_active', sa.Boolean(), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('updated_at', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('code')
     )
     op.create_table('chat_sessions',
     sa.Column('id', sa.UUID(), nullable=False),
@@ -218,6 +249,26 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['desired_school_id'], ['desired_schools.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_table('subscriptions',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('user_id', sa.UUID(), nullable=False),
+    sa.Column('stripe_customer_id', sa.String(), nullable=True),
+    sa.Column('stripe_subscription_id', sa.String(), nullable=True),
+    sa.Column('status', sa.String(), nullable=False),
+    sa.Column('plan_name', sa.String(), nullable=False),
+    sa.Column('price_id', sa.String(), nullable=False),
+    sa.Column('current_period_start', sa.DateTime(), nullable=True),
+    sa.Column('current_period_end', sa.DateTime(), nullable=True),
+    sa.Column('cancel_at', sa.DateTime(), nullable=True),
+    sa.Column('canceled_at', sa.DateTime(), nullable=True),
+    sa.Column('is_active', sa.Boolean(), nullable=True),
+    sa.Column('campaign_code_id', sa.UUID(), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('updated_at', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['campaign_code_id'], ['campaign_codes.id'], ),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
     op.create_table('chat_attachments',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('message_id', sa.UUID(), nullable=True),
@@ -238,6 +289,23 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.Column('updated_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['desired_department_id'], ['desired_departments.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_table('payment_history',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('user_id', sa.UUID(), nullable=False),
+    sa.Column('subscription_id', sa.UUID(), nullable=True),
+    sa.Column('stripe_payment_intent_id', sa.String(), nullable=True),
+    sa.Column('stripe_invoice_id', sa.String(), nullable=True),
+    sa.Column('amount', sa.Integer(), nullable=False),
+    sa.Column('currency', sa.String(), nullable=True),
+    sa.Column('status', sa.String(), nullable=False),
+    sa.Column('payment_method', sa.String(), nullable=True),
+    sa.Column('payment_date', sa.DateTime(), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('updated_at', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['subscription_id'], ['subscriptions.id'], ),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('personal_statements',
@@ -283,8 +351,10 @@ def downgrade() -> None:
     op.drop_table('feedbacks')
     op.drop_table('schedule_events')
     op.drop_table('personal_statements')
+    op.drop_table('payment_history')
     op.drop_table('documents')
     op.drop_table('chat_attachments')
+    op.drop_table('subscriptions')
     op.drop_table('desired_departments')
     op.drop_table('checklist_evaluations')
     op.drop_table('chat_messages')
@@ -293,9 +363,11 @@ def downgrade() -> None:
     op.drop_table('notifications')
     op.drop_table('desired_schools')
     op.drop_table('chat_sessions')
+    op.drop_table('campaign_codes')
     op.drop_table('users')
     op.drop_table('departments')
     op.drop_table('universities')
+    op.drop_table('subscription_plans')
     op.drop_table('schools')
     op.drop_table('roles')
     op.drop_table('contents')

@@ -1,0 +1,26 @@
+from fastapi import APIRouter
+
+# メインのv1ルーターを作成
+api_router = APIRouter()
+
+# 各エンドポイントルーターをインポート
+from app.api.v1.endpoints.admin import router as admin_router
+from app.api.v1.endpoints.subscription import router as subscription_router
+from app.api.v1.endpoints.admission import router as admission_router
+from app.api.v1.endpoints.application import router as application_router
+from app.api.v1.endpoints.statement import router as statement_router
+from app.api.v1.endpoints.university import router as university_router
+from app.api.v1.endpoints.auth import router as auth_router
+from app.api.v1.endpoints.chat import router as chat_router
+from app.api.v1.endpoints.content import router as content_router
+
+# 各ルーターをメインルーターに追加
+api_router.include_router(admin_router, prefix="/admin", tags=["admin"])
+api_router.include_router(subscription_router, prefix="/subscriptions", tags=["subscriptions"])
+api_router.include_router(admission_router, prefix="/admissions", tags=["admissions"])
+api_router.include_router(application_router, prefix="/applications", tags=["applications"])
+api_router.include_router(statement_router, prefix="/statements", tags=["statements"])
+api_router.include_router(university_router, prefix="/universities", tags=["universities"])
+api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
+api_router.include_router(chat_router, prefix="/chat", tags=["chat"])
+api_router.include_router(content_router, prefix="/content", tags=["content"])

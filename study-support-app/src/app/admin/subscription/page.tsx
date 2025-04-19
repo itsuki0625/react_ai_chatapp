@@ -1,25 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import AdminDashboard from '@/components/admin/AdminDashboardPage';
-import { useAuth } from '@/hooks/useAuth'; // 認証フックを作成する必要があります
+import { SubscriptionManagement } from '@/components/admin/SubscriptionManagement';
+import { useAuth } from '@/hooks/useAuth';
 
-export default function Page() {
+export default function SubscriptionManagementPage() {
   const router = useRouter();
   const { user, isLoading } = useAuth();
   const [isAuthorized, setIsAuthorized] = useState(false);
 
   useEffect(() => {
     if (!isLoading) {
-      // ユーザーが存在し、管理者権限を持っているか確認
       const isAdmin = user && 
                      user.role && 
                      user.role.permissions && 
                      user.role.permissions.includes('admin');
       
       if (!isAdmin) {
-        // 管理者でない場合はホームページにリダイレクト
         router.push('/');
       } else {
         setIsAuthorized(true);
@@ -27,10 +25,14 @@ export default function Page() {
     }
   }, [user, isLoading, router]);
 
-  // 読み込み中または未認証の場合はローディング表示
   if (isLoading || !isAuthorized) {
     return <div className="flex justify-center items-center h-screen">読み込み中...</div>;
   }
 
-  return <AdminDashboard />;
-}
+  return (
+    <div className="container mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-6">サブスクリプション管理</h1>
+      <SubscriptionManagement />
+    </div>
+  );
+} 

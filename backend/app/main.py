@@ -9,11 +9,14 @@ from app.api.v1.endpoints import (
     admission,
     application,
     statement,
-    content
+    content,
+    subscription,
+    admin
 )
 from app.middleware.auth import AuthMiddleware
 import logging
 from fastapi import APIRouter
+from app.database.database import Base, engine
 
 # ロギング設定
 logging.basicConfig(level=logging.INFO)
@@ -43,10 +46,13 @@ app.add_middleware(
 # 3. CORSミドルウェア（最初に実行される）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,  # フロントエンドのURL
-    allow_credentials=True,
-    allow_methods=["*"],  # 全HTTPメソッドを許可
-    allow_headers=["*"],  # 全ヘッダーを許可
+    allow_origins=[
+        "http://localhost:3000",  # 開発環境
+        "https://yourdomain.com",  # 本番環境（必要に応じて変更）
+    ],
+    allow_credentials=True,  # 認証情報を許可
+    allow_methods=["*"],  # すべてのHTTPメソッドを許可
+    allow_headers=["*"],  # すべてのヘッダーを許可
 )
 
 # APIルーターの設定
@@ -58,12 +64,21 @@ api_router.include_router(admission.router, prefix="/admission", tags=["admissio
 api_router.include_router(application.router, prefix="/applications", tags=["applications"])
 api_router.include_router(statement.router, prefix="/statements", tags=["statements"])
 api_router.include_router(content.router, prefix="/contents", tags=["contents"])
+api_router.include_router(subscription.router, prefix="/subscriptions", tags=["subscriptions"])
+api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 
 app.include_router(api_router, prefix="/api/v1")
 
 # APIルーターの設定後に追加
 for route in app.routes:
     logger.info(f"Registered route: {route.path}")
+
+# データベースモデルの作成
+# Base.metadata.create_all(bind=engine)  # Alembicを使用する場合はコメントアウト
+
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the API"}
 
 if __name__ == "__main__":
     import uvicorn

@@ -16,6 +16,8 @@ services:
         condition: service_healthy
     environment:
       - PYTHONPATH=/app
+    # コマンドを追加して起動時にマイグレーションを自動実行することも可能
+    # command: sh -c "alembic upgrade head && python -m app.main"
 
   frontend:
     build: ./study-support-app

@@ -5,7 +5,7 @@ from typing import Any
 from app.core.security import verify_password, get_password_hash
 from app.crud.user import get_user_by_email, create_user
 from app.api.deps import get_db
-from app.schemas.auth import Token, LoginResponse, SignUpRequest
+from app.schemas.auth import LoginResponse, SignUpRequest
 from app.api.deps import get_current_user, User
 from fastapi.responses import JSONResponse
 import logging
@@ -31,15 +31,20 @@ async def login(
                 detail="メールアドレスまたはパスワードが正しくありません",
             )
         
+        # ユーザーのロールが文字列の場合はリストに変換
+        role_permissions = user.role.permissions
+        if isinstance(role_permissions, str):
+            role_permissions = [role_permissions]
+        
         # セッションにユーザー情報を保存
         request.session["user_id"] = str(user.id)
         request.session["email"] = user.email
-        request.session["role"] = user.role.permissions
+        request.session["role"] = role_permissions
 
         return {
             "email": user.email,
             "full_name": user.full_name,
-            "role": user.role.permissions
+            "role": role_permissions  # リスト形式で返す
         }
     except Exception as e:
         logger.error(f"ログインエラー: {str(e)}")
@@ -63,10 +68,16 @@ async def read_users_me(request: Request) -> Any:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="認証が必要です"
         )
+    
+    # roleがリスト形式であることを確認
+    role = request.session["role"]
+    if isinstance(role, str):
+        role = [role]
+        
     return {
         "user_id": request.session["user_id"],
         "email": request.session["email"],
-        "role": request.session["role"]
+        "role": role
     }
 
 @router.get("/test-auth", response_model=dict)

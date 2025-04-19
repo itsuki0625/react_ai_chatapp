@@ -37,3 +37,6 @@ class User(Base, TimestampMixin):
     desired_schools = relationship("DesiredSchool", back_populates="user")
     role = relationship("Role", back_populates="users")
     school = relationship("School", back_populates="users")
+    subscriptions = relationship("Subscription", back_populates="user")
+    payment_history = relationship("PaymentHistory", back_populates="user")
+    owned_campaign_codes = relationship("CampaignCode", foreign_keys="[CampaignCode.owner_id]", back_populates="owner")

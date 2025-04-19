@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import List, ClassVar
+from typing import List, ClassVar, Optional
 import os
 from dotenv import load_dotenv
 import openai
@@ -22,22 +22,29 @@ def load_instruction() -> str:
         return ""
 
 class Settings(BaseSettings):
-    # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL")
+    # アプリケーション設定
+    PROJECT_NAME: str = "Study Support API"
+    API_V1_STR: str = "/api/v1"
     
-    # Security
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key")
+    # セキュリティ設定
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-here")
+    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
     
-    # OpenAI
-    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY")
+    # データベース設定
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL", 
+        "postgresql://postgres:postgres@db:5432/app_db"
+    )
     
-    # CORS
-    ALLOWED_ORIGINS: List[str] = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://192.168.40.*:3000",
-    ]
+    # OpenAI設定
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     
+    # Stripe設定
+    STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
+    STRIPE_PUBLISHABLE_KEY: str = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
+    STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    STRIPE_PRICE_ID: str = os.getenv("STRIPE_PRICE_ID", "")  # デフォルトの価格ID
+
     # Application Settings
     INSTRUCTION: str = load_instruction()
 
@@ -52,6 +59,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
 
 settings = Settings()
 
