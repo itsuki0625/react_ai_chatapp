@@ -1,38 +1,9 @@
 from sqlalchemy.orm import Session
-from app.models.subscription import Subscription, SubscriptionPlan, PaymentHistory, CampaignCode
-from app.schemas.subscription import SubscriptionCreate, SubscriptionPlanCreate, PaymentHistoryCreate, CampaignCodeCreate, CampaignCodeUpdate
+from app.models.subscription import Subscription, PaymentHistory, CampaignCode
+from app.schemas.subscription import SubscriptionCreate, PaymentHistoryCreate, CampaignCodeCreate, CampaignCodeUpdate
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
-
-# サブスクリプションプランのCRUD操作
-def create_subscription_plan(db: Session, plan: SubscriptionPlanCreate):
-    db_plan = SubscriptionPlan(**plan.dict())
-    db.add(db_plan)
-    db.commit()
-    db.refresh(db_plan)
-    return db_plan
-
-def get_subscription_plan(db: Session, plan_id: UUID):
-    return db.query(SubscriptionPlan).filter(SubscriptionPlan.id == plan_id).first()
-
-def get_subscription_plan_by_price_id(db: Session, price_id: str):
-    return db.query(SubscriptionPlan).filter(SubscriptionPlan.price_id == price_id).first()
-
-def get_all_subscription_plans(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(SubscriptionPlan).offset(skip).limit(limit).all()
-
-def get_active_subscription_plans(db: Session):
-    return db.query(SubscriptionPlan).filter(SubscriptionPlan.is_active == True).all()
-
-def update_subscription_plan(db: Session, plan_id: UUID, plan_data: dict):
-    db_plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.id == plan_id).first()
-    if db_plan:
-        for key, value in plan_data.items():
-            setattr(db_plan, key, value)
-        db.commit()
-        db.refresh(db_plan)
-    return db_plan
 
 # サブスクリプションのCRUD操作
 def create_subscription(db: Session, subscription: SubscriptionCreate):
@@ -156,7 +127,7 @@ def delete_campaign_code(db: Session, campaign_code_id: UUID):
     return False
 
 # キャンペーンコードの検証
-def verify_campaign_code(db: Session, code: str, plan_id: UUID) -> Dict[str, Any]:
+def verify_campaign_code(db: Session, code: str, price_id: str) -> Dict[str, Any]:
     db_campaign_code = get_campaign_code_by_code(db, code)
     
     # コードが存在しない場合
@@ -198,34 +169,11 @@ def verify_campaign_code(db: Session, code: str, plan_id: UUID) -> Dict[str, Any
                 "campaign_code_id": db_campaign_code.id
             }
     
-    # プランの存在確認
-    db_plan = get_subscription_plan(db, plan_id)
-    if not db_plan:
-        return {
-            "valid": False,
-            "message": "指定されたプランが見つかりません",
-            "campaign_code_id": db_campaign_code.id
-        }
-    
-    # 割引額の計算
-    original_amount = db_plan.amount
-    discounted_amount = original_amount
-    
-    if db_campaign_code.discount_type == "percentage":
-        discount = original_amount * (db_campaign_code.discount_value / 100)
-        discounted_amount = original_amount - int(discount)
-    elif db_campaign_code.discount_type == "fixed":
-        discounted_amount = original_amount - int(db_campaign_code.discount_value)
-        # 割引後の価格が0以下にならないよう調整
-        if discounted_amount < 0:
-            discounted_amount = 0
-    
+    # 価格情報の確認は上位層（API）で行われるため、ここでは結果のみを返す
     return {
         "valid": True,
         "message": "有効なキャンペーンコードです",
         "discount_type": db_campaign_code.discount_type,
         "discount_value": db_campaign_code.discount_value,
-        "original_amount": original_amount,
-        "discounted_amount": discounted_amount,
         "campaign_code_id": db_campaign_code.id
     } 

@@ -1,28 +1,26 @@
+'use client';
+
 import Link from 'next/link';
-import { useAuth } from '@/hooks/useAuth';
-import { User } from '@/types/auth';
+import { useSession } from 'next-auth/react';
 
 export const Navbar = () => {
-  const { user } = useAuth();
+  const { data: session, status } = useSession();
   
-  // 管理者権限を持つユーザーかどうかを確認
-  const isAdmin = user && 
-                 user.role && 
-                 user.role.permissions && 
-                 user.role.permissions.includes('admin');
+  const isAuthenticated = status === 'authenticated';
+  const isAdmin = session?.user?.isAdmin || false;
 
   return (
     <nav className="bg-white shadow">
       <div className="container mx-auto px-6 py-3">
         <div className="flex justify-between">
           <div className="flex items-center">
-            <Link href="/" className="text-xl font-bold text-gray-800">
+            <Link href={isAdmin ? "/admin/dashboard" : "/dashboard"} className="text-xl font-bold text-gray-800">
               Study Support
             </Link>
           </div>
           
           <div className="flex items-center space-x-4">
-            {user ? (
+            {isAuthenticated ? (
               <>
                 <Link href="/dashboard" className="text-gray-700 hover:text-blue-500">
                   ダッシュボード

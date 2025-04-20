@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Study Support API",
+    title="SmartAO API",
     description="志望校管理と志望理由書作成支援のためのAPI",
     version="1.0.0",
     docs_url="/api/v1/docs",  
@@ -38,21 +38,31 @@ app.add_middleware(
     SessionMiddleware, 
     secret_key=settings.SECRET_KEY,
     session_cookie="session",
-    max_age=3600,  # 1時間
+    max_age=86400,  # 24時間
     same_site="lax",  # CSRF対策
     https_only=False,  # 開発環境ではFalse
+    path="/"  # クッキーのパスを明示的に設定
 )
 
 # 3. CORSミドルウェア（最初に実行される）
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",  # 開発環境
+        "http://localhost:3000",  # ローカル開発環境
+        "http://localhost:5050",  # ローカルAPIサーバー
+        "http://backend:5050",    # Docker内部通信
+        "http://frontend:3000",   # Docker内部通信
+        "http://127.0.0.1:3000",  # 代替ローカル開発環境
+        "http://host.docker.internal:3000",  # Docker -> ホスト接続
+        "http://host.docker.internal:5050",  # Docker -> ホスト接続
         "https://yourdomain.com",  # 本番環境（必要に応じて変更）
+        # すべてのオリジンを許可 - 開発時のみ使用
+        "*"
     ],
     allow_credentials=True,  # 認証情報を許可
     allow_methods=["*"],  # すべてのHTTPメソッドを許可
     allow_headers=["*"],  # すべてのヘッダーを許可
+    expose_headers=["Set-Cookie", "X-Auth-Status"],  # 公開するヘッダー
 )
 
 # APIルーターの設定

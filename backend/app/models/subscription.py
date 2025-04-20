@@ -13,7 +13,7 @@ class Subscription(Base, TimestampMixin):
     stripe_subscription_id = Column(String, nullable=True)
     status = Column(String, nullable=False)  # 'active', 'past_due', 'canceled', 'unpaid', 'trialing'
     plan_name = Column(String, nullable=False)
-    price_id = Column(String, nullable=False)
+    price_id = Column(String, nullable=False)  # Stripeの価格ID
     current_period_start = Column(DateTime, nullable=True)
     current_period_end = Column(DateTime, nullable=True)
     cancel_at = Column(DateTime, nullable=True)
@@ -25,18 +25,6 @@ class Subscription(Base, TimestampMixin):
     user = relationship("User", back_populates="subscriptions")
     campaign_code = relationship("CampaignCode", back_populates="subscriptions")
     payment_history = relationship("PaymentHistory", back_populates="subscription")
-
-class SubscriptionPlan(Base, TimestampMixin):
-    __tablename__ = 'subscription_plans'
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String, nullable=False)
-    description = Column(String, nullable=True)
-    price_id = Column(String, nullable=False)  # Stripeの価格ID
-    amount = Column(Integer, nullable=False)  # 価格（円）
-    currency = Column(String, default='jpy')
-    interval = Column(String, nullable=False)  # 'month', 'year'
-    is_active = Column(Boolean, default=True)
 
 class PaymentHistory(Base, TimestampMixin):
     __tablename__ = 'payment_history'

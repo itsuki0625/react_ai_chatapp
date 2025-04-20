@@ -9,6 +9,7 @@ export interface SubscriptionPlan {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  features?: string[];
 }
 
 export interface Subscription {
@@ -70,13 +71,18 @@ export interface VerifyCampaignCodeResponse {
   campaign_code_id: string | null;
 }
 
+export interface CampaignCodeVerificationResult extends VerifyCampaignCodeResponse {
+  is_valid: boolean;
+}
+
 export interface CheckoutSession {
   session_id: string;
   url: string;
 }
 
 export interface CreateCheckoutRequest {
-  plan_id: string;
+  plan_id?: string;
+  price_id: string;
   success_url: string;
   cancel_url: string;
   campaign_code?: string;

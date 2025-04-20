@@ -5,7 +5,7 @@ from datetime import datetime
 # ベースモデル
 class SubscriptionBase(BaseModel):
     plan_name: str
-    price_id: str
+    price_id: str  # Stripeの価格ID
     status: str = "active"
     campaign_code_id: Optional[UUID4] = None
 
@@ -30,11 +30,11 @@ class SubscriptionResponse(SubscriptionBase):
     class Config:
         orm_mode = True
 
-# サブスクリプションプラン
+# サブスクリプションプラン (Stripeから直接取得するためDBモデルなし)
 class SubscriptionPlanBase(BaseModel):
     name: str
     description: Optional[str] = None
-    price_id: str
+    price_id: str  # Stripeの価格ID
     amount: int
     currency: str = "jpy"
     interval: str
@@ -44,12 +44,12 @@ class SubscriptionPlanCreate(SubscriptionPlanBase):
     pass
 
 class SubscriptionPlanResponse(SubscriptionPlanBase):
-    id: UUID4
+    id: str  # Stripe連携のため、StringとしてIDを保持（価格IDと同じ値）
     created_at: datetime
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        orm_mode = False  # DBモデルと紐づかないため、Falseに変更
 
 # 支払い履歴
 class PaymentHistoryBase(BaseModel):
@@ -149,7 +149,7 @@ class CampaignCodeUpdate(BaseModel):
 # キャンペーンコード検証リクエスト
 class VerifyCampaignCodeRequest(BaseModel):
     code: str
-    plan_id: UUID4
+    price_id: str  # plan_idからprice_idに変更（Stripeの価格ID）
 
 # キャンペーンコード検証レスポンス
 class VerifyCampaignCodeResponse(BaseModel):
@@ -163,7 +163,8 @@ class VerifyCampaignCodeResponse(BaseModel):
 
 # Stripeチェックアウトセッション作成リクエスト（キャンペーンコード対応）
 class CreateCheckoutSessionRequest(BaseModel):
-    plan_id: UUID4
+    price_id: str  # Stripeの価格ID
+    plan_id: Optional[str] = None  # 互換性のために残す（price_idと同じ値）
     success_url: str
     cancel_url: str
     campaign_code: Optional[str] = None
@@ -177,7 +178,8 @@ class CheckoutSessionResponse(BaseModel):
 class ManageSubscriptionRequest(BaseModel):
     subscription_id: UUID4
     action: str  # "cancel", "reactivate", "update"
-    plan_id: Optional[UUID4] = None  # updateの場合に使用
+    price_id: Optional[str] = None  # Stripeの価格ID
+    plan_id: Optional[str] = None  # 互換性のために残す（price_idと同じ値）
 
 # Webhookイベント検証
 class WebhookEventValidation(BaseModel):

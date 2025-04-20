@@ -9,8 +9,6 @@ from app.api.deps import get_current_superuser
 from app.schemas.subscription import (
     CampaignCodeCreate, 
     CampaignCodeResponse,
-    SubscriptionPlanCreate,
-    SubscriptionPlanResponse
 )
 from app.crud.subscription import (
     create_campaign_code,
@@ -18,10 +16,6 @@ from app.crud.subscription import (
     get_all_campaign_codes,
     update_campaign_code,
     delete_campaign_code,
-    create_subscription_plan,
-    get_subscription_plan,
-    get_all_subscription_plans,
-    update_subscription_plan
 )
 
 router = APIRouter(tags=["admin"])
@@ -110,12 +104,28 @@ async def delete_product(
     current_user: Dict = Depends(get_current_superuser)
 ):
     """
-    Stripeから商品を削除します。
+    Stripeから商品を削除（非アクティブ化）します。
     管理者専用エンドポイント。
+    商品を非アクティブにすると、関連する価格設定も非アクティブになります。
     """
     try:
-        product = stripe.Product.delete(product_id)
-        return {"data": product}
+        # まず商品に関連する価格を取得
+        prices = stripe.Price.list(product=product_id, active=True)
+        
+        # 関連する各価格を非アクティブ化
+        for price in prices.data:
+            stripe.Price.modify(
+                price.id,
+                active=False
+            )
+            
+        # Stripeでは商品の削除ではなく非アクティブ化が推奨されています
+        product = stripe.Product.modify(
+            product_id,
+            active=False
+        )
+        
+        return {"data": product, "message": f"商品と{len(prices.data)}件の関連価格設定が非アクティブ化されました"}
     except stripe.error.StripeError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -146,6 +156,8 @@ async def get_prices(current_user: Dict = Depends(get_current_superuser)):
                 
             price_dict = dict(price)
             price_dict['product_name'] = product_name
+            # plan_idをprice_idと同じ値にする(フロントエンドとの互換性のため)
+            price_dict['plan_id'] = price_dict['id']  
             prices_with_product_name.append(price_dict)
             
         return {"data": prices_with_product_name}
@@ -183,9 +195,12 @@ async def create_price(
                 detail="有効な価格を指定してください"
             )
             
+        # フロントエンドから円単位で受け取った金額をセント単位（Stripe用）に変換
+        stripe_unit_amount = int(unit_amount * 100)
+            
         price_data = {
             "product": product,
-            "unit_amount": int(unit_amount),  # Stripeは整数値を期待
+            "unit_amount": stripe_unit_amount,  # 100倍してStripeに送信
             "currency": currency,
             "metadata": metadata
         }
@@ -238,12 +253,20 @@ async def admin_get_campaign_codes(
     キャンペーンコード一覧を取得します。
     管理者専用エンドポイント。
     """
+    # owner_idが指定されている場合
     if owner_id:
         from uuid import UUID
-        campaign_codes = get_all_campaign_codes(db, skip=skip, limit=limit, owner_id=UUID(owner_id))
+        try:
+            uuid_owner_id = UUID(owner_id)
+            return get_user_campaign_codes(db, uuid_owner_id, skip, limit)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="無効なowner_id形式です"
+            )
+    # owner_idが指定されていない場合は全て取得
     else:
-        campaign_codes = get_all_campaign_codes(db, skip=skip, limit=limit)
-    return campaign_codes
+        return get_all_campaign_codes(db, skip, limit)
 
 @router.post("/campaign-codes", response_model=CampaignCodeResponse, status_code=status.HTTP_201_CREATED)
 async def admin_create_campaign_code(

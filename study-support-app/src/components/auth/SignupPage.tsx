@@ -3,6 +3,7 @@
 import React, { useState, FormEvent } from 'react';
 import { Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { signIn } from 'next-auth/react';
 
 const SignupPage = () => {
   const router = useRouter();
@@ -14,6 +15,7 @@ const SignupPage = () => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -26,16 +28,17 @@ const SignupPage = () => {
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
+    setIsLoading(true);
 
     // パスワード一致チェック
     if (formData.password !== formData.confirmPassword) {
       setError('パスワードが一致しません');
+      setIsLoading(false);
       return;
     }
 
     try {
-      // ここにサインアップ処理を実装
-      console.log('Signup attempt with:', formData);
+      // サインアップAPI呼び出し
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/signup`, {
         method: 'POST',
         headers: {
@@ -48,32 +51,39 @@ const SignupPage = () => {
           name: formData.name
         }),
       });
-      console.log("response : ", response)
-      console.log("response.status : ", response.status)
 
-      // 200じゃない場合はエラー
-      if (response.status != 200) {
+      if (!response.ok) {
         const errorData = await response.json();
-        console.log("errorData : ", errorData)
-        setError(errorData.message || 'アカウントの作成に失敗しました。もう一度お試しください。');
+        setError(errorData.detail || 'アカウントの作成に失敗しました。もう一度お試しください。');
+        setIsLoading(false);
         return;
       }
       
-      const data = await response.json();
-      console.log("Signup successful:", data);
+      // サインアップ成功後、NextAuthを使用して自動ログイン
+      const signInResult = await signIn('credentials', {
+        email: formData.email,
+        password: formData.password,
+        redirect: false,
+        callbackUrl: '/dashboard'
+      });
 
-      // roleで場合分けをしてログイン画面にリダイレクト
-      if (data.user.role == "student") {
-        router.push('/dashboard');
-      } else if (data.user.role == "teacher") {
-        router.push('/teacher/dashboard');
-      } else if (data.user.role == "admin") {
-        router.push('/admin/dashboard');
+      if (signInResult?.error) {
+        // ログインに失敗した場合は、ログインページにリダイレクト
+        router.push('/login');
+        return;
       }
+
+      // ログイン成功後、NextAuthのコールバックがユーザー情報を設定するまで少し待機
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // ダッシュボードにリダイレクト
+      router.push('/dashboard');
 
     } catch (err) {
       console.error("Signup error:", err);
       setError('アカウントの作成に失敗しました。もう一度お試しください。');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -87,7 +97,7 @@ const SignupPage = () => {
           </h2>
           <p className="mt-2 text-sm text-gray-600">
             すでにアカウントをお持ちの方は
-            <a href="/auth/login" className="font-medium text-blue-600 hover:text-blue-500">
+            <a href="/login" className="font-medium text-blue-600 hover:text-blue-500">
               ログイン
             </a>
           </p>
@@ -220,9 +230,12 @@ const SignupPage = () => {
           <div>
             <button
               type="submit"
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              disabled={isLoading}
+              className={`group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white ${
+                isLoading ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
+              } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
             >
-              アカウントを作成
+              {isLoading ? 'アカウント作成中...' : 'アカウントを作成'}
             </button>
           </div>
         </form>

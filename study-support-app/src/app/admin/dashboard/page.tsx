@@ -1,36 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import AdminDashboard from '@/components/admin/AdminDashboardPage';
-import { useAuth } from '@/hooks/useAuth'; // 認証フックを作成する必要があります
+import { AdminNavBar } from '@/components/common/AdminNavBar';
 
 export default function Page() {
-  const router = useRouter();
-  const { user, isLoading } = useAuth();
-  const [isAuthorized, setIsAuthorized] = useState(false);
-
-  useEffect(() => {
-    if (!isLoading) {
-      // ユーザーが存在し、管理者権限を持っているか確認
-      const isAdmin = user && 
-                     user.role && 
-                     user.role.permissions && 
-                     user.role.permissions.includes('admin');
-      
-      if (!isAdmin) {
-        // 管理者でない場合はホームページにリダイレクト
-        router.push('/');
-      } else {
-        setIsAuthorized(true);
-      }
-    }
-  }, [user, isLoading, router]);
-
-  // 読み込み中または未認証の場合はローディング表示
-  if (isLoading || !isAuthorized) {
-    return <div className="flex justify-center items-center h-screen">読み込み中...</div>;
-  }
-
-  return <AdminDashboard />;
+  return (
+    <div>
+      <AdminNavBar />
+      <AdminDashboard />
+    </div>
+  );
 }

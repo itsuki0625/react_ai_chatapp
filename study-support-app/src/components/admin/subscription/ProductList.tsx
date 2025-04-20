@@ -157,14 +157,21 @@ export const ProductList: React.FC = () => {
   };
 
   const handleDeleteProduct = async (productId: string) => {
-    if (!confirm('この商品を削除してもよろしいですか？関連する価格設定も削除されます。')) {
+    if (!confirm('この商品を非アクティブにしてもよろしいですか？\n\n注意: 商品を非アクティブ化すると、関連するすべての価格設定も自動的に非アクティブになります。この操作は元に戻せません。')) {
       return;
     }
 
     try {
-      await adminService.deleteProduct(productId);
+      const response = await adminService.deleteProduct(productId);
       // 成功したら商品リストを更新
       fetchProducts();
+      
+      // バックエンドからのメッセージがあれば表示、なければデフォルトメッセージを表示
+      const message = response && response.message
+        ? response.message
+        : '商品とそれに関連するすべての価格設定が非アクティブ化されました';
+      
+      alert(message);
     } catch (err) {
       console.error('商品の削除中にエラーが発生しました:', err);
       alert(err instanceof Error ? err.message : '商品の削除中にエラーが発生しました');
@@ -305,50 +312,106 @@ export const ProductList: React.FC = () => {
       );
     }
 
+    // アクティブな商品と非アクティブな商品を分ける
+    const activeProducts = products.filter(product => product.active);
+    const inactiveProducts = products.filter(product => !product.active);
+
     return (
-      <div className="grid gap-4">
-        {products.map((product) => (
-          <Card key={product.id} className="overflow-hidden">
-            <CardContent className="p-0">
-              <div className="p-4 flex justify-between items-center">
-                <div>
-                  <h3 className="font-medium text-lg">{product.name}</h3>
-                  {product.description && (
-                    <p className="text-gray-500 text-sm mt-1">{product.description}</p>
-                  )}
-                  <div className="flex items-center mt-2">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      product.active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {product.active ? '有効' : '無効'}
-                    </span>
-                    <span className="text-xs text-gray-500 ml-2">
-                      ID: {product.id}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleEditProduct(product)}
-                  >
-                    <Edit className="h-4 w-4 mr-1" />
-                    編集
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleDeleteProduct(product.id)}
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    削除
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="space-y-6">
+        {/* アクティブな商品セクション */}
+        <div>
+          <h3 className="text-lg font-medium mb-3">有効な商品 ({activeProducts.length}件)</h3>
+          {activeProducts.length > 0 ? (
+            <div className="grid gap-4">
+              {activeProducts.map((product) => (
+                <Card key={product.id} className="overflow-hidden border-l-4 border-l-green-500">
+                  <CardContent className="p-0">
+                    <div className="p-4 flex justify-between items-center">
+                      <div>
+                        <h3 className="font-medium text-lg">{product.name}</h3>
+                        {product.description && (
+                          <p className="text-gray-500 text-sm mt-1">{product.description}</p>
+                        )}
+                        <div className="flex items-center mt-2">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            有効
+                          </span>
+                          <span className="text-xs text-gray-500 ml-2">
+                            ID: {product.id}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditProduct(product)}
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
+                          編集
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDeleteProduct(product.id)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          非アクティブ化
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-gray-500 bg-gray-50 rounded-md">
+              有効な商品はありません
+            </div>
+          )}
+        </div>
+
+        {/* 非アクティブな商品セクション */}
+        {inactiveProducts.length > 0 && (
+          <div>
+            <h3 className="text-lg font-medium mb-3 text-gray-600">非アクティブな商品 ({inactiveProducts.length}件)</h3>
+            <div className="grid gap-4">
+              {inactiveProducts.map((product) => (
+                <Card key={product.id} className="overflow-hidden border border-gray-200 bg-gray-50 opacity-75">
+                  <CardContent className="p-0">
+                    <div className="p-4 flex justify-between items-center">
+                      <div>
+                        <h3 className="font-medium text-lg text-gray-500">{product.name}</h3>
+                        {product.description && (
+                          <p className="text-gray-400 text-sm mt-1">{product.description}</p>
+                        )}
+                        <div className="flex items-center mt-2">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
+                            非アクティブ
+                          </span>
+                          <span className="text-xs text-gray-400 ml-2">
+                            ID: {product.id}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditProduct(product)}
+                          className="opacity-75"
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
+                          詳細
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   };

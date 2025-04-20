@@ -2,7 +2,7 @@ fastapi
 uvicorn
 httpx
 python-dotenv
-
+PyJWT==2.8.0
 fastapi-sessions
 python-jose
 cryptography

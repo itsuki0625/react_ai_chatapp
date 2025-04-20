@@ -113,6 +113,14 @@ export const PriceList: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [currentPrice, setCurrentPrice] = useState<StripePrice | null>(null);
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
+  const [showInactivePrices, setShowInactivePrices] = useState(() => {
+    // ローカルストレージから設定を読み込む（デフォルトはtrue）
+    if (typeof window !== 'undefined') {
+      const savedSetting = localStorage.getItem('showInactivePrices');
+      return savedSetting === null ? true : savedSetting === 'true';
+    }
+    return true;
+  });
   
   // 新規価格設定のフォーム状態
   const [newPrice, setNewPrice] = useState({
@@ -121,20 +129,38 @@ export const PriceList: React.FC = () => {
     currency: 'jpy',
     type: 'recurring',
     interval: 'month',
-    interval_count: '1'
+    interval_count: '1',
+    nickname: ''
   });
 
   useEffect(() => {
     Promise.all([fetchPrices(), fetchProducts()]);
   }, []);
 
+  // 表示設定が変更されたらローカルストレージに保存
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('showInactivePrices', String(showInactivePrices));
+    }
+  }, [showInactivePrices]);
+
   const fetchPrices = async () => {
     try {
       setIsLoading(true);
       const data = await adminService.getPrices();
-      setPrices(data || []);
+      
+      // データが配列であることを確認
+      if (Array.isArray(data)) {
+        setPrices(data);
+      } else {
+        console.error('予期せぬAPIレスポンス形式です:', data);
+        // データが配列でない場合は空配列を設定
+        setPrices([]);
+        setError('価格データの形式が不正です。管理者に連絡してください。');
+      }
     } catch (err) {
       console.error('価格の取得中にエラーが発生しました:', err);
+      setPrices([]); // エラー時は空配列を設定
       setError(err instanceof Error ? err.message : '価格の取得中にエラーが発生しました');
     } finally {
       setIsLoading(false);
@@ -157,7 +183,8 @@ export const PriceList: React.FC = () => {
       currency: 'jpy',
       type: 'recurring',
       interval: 'month',
-      interval_count: '1'
+      interval_count: '1',
+      nickname: ''
     });
     setFormErrors({});
   };
@@ -173,11 +200,12 @@ export const PriceList: React.FC = () => {
     // 編集フォームの初期値を設定
     setNewPrice({
       product: price.product,
-      unit_amount: String(price.unit_amount / 100), // Stripeは最小単位（円/セント）で保存されているため100で割る
+      unit_amount: String(price.unit_amount / 100), // Stripeの値（セント単位）を円単位に変換
       currency: price.currency,
       type: price.type,
       interval: price.recurring?.interval || 'month',
-      interval_count: String(price.recurring?.interval_count || 1)
+      interval_count: String(price.recurring?.interval_count || 1),
+      nickname: price.nickname || ''
     });
     
     setFormErrors({});
@@ -185,7 +213,7 @@ export const PriceList: React.FC = () => {
   };
 
   const handleDeletePrice = async (priceId: string) => {
-    if (!confirm('この価格設定を削除してもよろしいですか？')) {
+    if (!confirm('この価格設定を非アクティブにしてもよろしいですか？\n\n注意: Stripeでは価格設定を完全に削除することはできないため、非アクティブ化されます。')) {
       return;
     }
 
@@ -193,10 +221,16 @@ export const PriceList: React.FC = () => {
       await adminService.deletePrice(priceId);
       // 成功したら価格リストを更新
       fetchPrices();
+      alert('価格設定が非アクティブ化されました');
     } catch (err) {
       console.error('価格設定の削除中にエラーが発生しました:', err);
       alert(err instanceof Error ? err.message : '価格設定の削除中にエラーが発生しました');
     }
+  };
+
+  // 非アクティブ価格の表示/非表示を切り替える
+  const toggleInactivePrices = () => {
+    setShowInactivePrices(prev => !prev);
   };
 
   // フォームの入力値変更ハンドラ
@@ -225,10 +259,8 @@ export const PriceList: React.FC = () => {
       errors.product = '商品を選択してください';
     }
     
-    if (!newPrice.unit_amount) {
-      errors.unit_amount = '金額を入力してください';
-    } else if (Number(newPrice.unit_amount) <= 0) {
-      errors.unit_amount = '金額は0より大きい値を入力してください';
+    if (!newPrice.unit_amount || Number(newPrice.unit_amount) <= 0) {
+      errors.unit_amount = '0より大きい金額を入力してください';
     }
     
     if (newPrice.type === 'recurring') {
@@ -249,23 +281,28 @@ export const PriceList: React.FC = () => {
     try {
       const priceData = {
         product: newPrice.product,
-        unit_amount: Math.round(Number(newPrice.unit_amount) * 100), // 円/セント単位に変換
-        currency: newPrice.currency,
-        ...(newPrice.type === 'recurring' ? {
-          recurring: {
-            interval: newPrice.interval as 'day' | 'week' | 'month' | 'year',
-            interval_count: Number(newPrice.interval_count)
-          }
-        } : {})
+        nickname: newPrice.nickname,
+        currency: 'jpy',
+        unit_amount: Number(newPrice.unit_amount), // ユーザーが入力した金額（円単位）を送信
+        interval: newPrice.interval as 'day' | 'week' | 'month' | 'year',
+        active: true
       };
       
       if (isEditModalOpen && currentPrice) {
-        // 価格の更新はStripeでは直接サポートされていないため、
-        // 通常は古い価格を非アクティブにして新しい価格を作成する
+        // 1. 新しい価格を作成
         await adminService.createPrice(priceData);
-        // 古い価格を削除または非アクティブにするロジックが必要な場合はここに追加
+        
+        // 2. 古い価格を非アクティブ化
+        await adminService.deletePrice(currentPrice.id);
+        
+        // 成功メッセージを表示
+        alert('価格設定が更新されました。古い価格設定は非アクティブ化されました。');
       } else {
+        // 新規作成の場合
         await adminService.createPrice(priceData);
+        
+        // 成功メッセージを表示
+        alert('新しい価格設定が作成されました。');
       }
       
       // モーダルを閉じて価格リストを更新
@@ -281,12 +318,14 @@ export const PriceList: React.FC = () => {
 
   // 金額を表示用にフォーマット
   const formatAmount = (amount: number, currency: string) => {
+    // Stripeから受け取った金額（セント単位）を円単位に変換して表示
+    const normalizedAmount = currency.toLowerCase() === 'jpy' ? amount / 100 : amount / 100;
     const formatter = new Intl.NumberFormat('ja-JP', {
       style: 'currency',
       currency: currency.toUpperCase(),
       minimumFractionDigits: 0
     });
-    return formatter.format(amount / 100); // Stripeは金額を最小単位（円/セント）で保存
+    return formatter.format(normalizedAmount);
   };
 
   // 商品名を取得
@@ -429,6 +468,16 @@ export const PriceList: React.FC = () => {
       );
     }
 
+    // prices が配列であることを確認
+    if (!Array.isArray(prices)) {
+      return (
+        <div className="bg-yellow-50 text-yellow-700 p-4 rounded-lg flex items-start">
+          <AlertCircle className="h-5 w-5 mr-2 mt-0.5" />
+          <span>価格データの形式が不正です。管理者に連絡してください。</span>
+        </div>
+      );
+    }
+
     if (prices.length === 0) {
       return (
         <div className="text-center py-8 text-gray-500">
@@ -437,69 +486,181 @@ export const PriceList: React.FC = () => {
       );
     }
 
+    // アクティブな価格と非アクティブな価格を分ける
+    const activePrices = prices.filter(price => price.active);
+    const inactivePrices = prices.filter(price => !price.active);
+
     return (
-      <div className="grid gap-4">
-        {prices.map((price) => (
-          <Card key={price.id} className="overflow-hidden">
-            <CardContent className="p-0">
-              <div className="p-4 flex justify-between items-center">
-                <div>
-                  <h3 className="font-medium text-lg">
-                    {formatAmount(price.unit_amount, price.currency)}
-                    {price.type === 'recurring' && price.recurring && (
-                      <span className="text-sm font-normal text-gray-500 ml-1">
-                        / {price.recurring.interval_count > 1 ? `${price.recurring.interval_count} ` : ''}
-                        {price.recurring.interval === 'month' ? '月' : 
-                         price.recurring.interval === 'year' ? '年' : 
-                         price.recurring.interval === 'week' ? '週' : '日'}
-                      </span>
-                    )}
-                  </h3>
-                  <p className="text-gray-500 text-sm mt-1">
-                    商品: {price.product_name || getProductName(price.product)}
-                  </p>
-                  <div className="flex items-center mt-2">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      price.active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {price.active ? '有効' : '無効'}
-                    </span>
-                    <span className="text-xs text-gray-500 ml-2">
-                      ID: {price.id}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleEditPrice(price)}
-                  >
-                    <Edit className="h-4 w-4 mr-1" />
-                    編集
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleDeletePrice(price.id)}
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    削除
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="space-y-6">
+        {/* アクティブな価格セクション */}
+        <div>
+          <h3 className="text-lg font-medium mb-3">有効な価格設定 ({activePrices.length}件)</h3>
+          {activePrices.length > 0 ? (
+            <div className="grid gap-4">
+              {activePrices.map((price) => (
+                <Card key={price.id} className="overflow-hidden border-l-4 border-l-green-500">
+                  <CardContent className="p-0">
+                    <div className="p-4 flex justify-between items-center">
+                      <div>
+                        <h3 className="font-medium text-lg">
+                          {formatAmount(price.unit_amount, price.currency)}
+                          {price.type === 'recurring' && price.recurring && (
+                            <span className="text-sm font-normal text-gray-500 ml-1">
+                              / {price.recurring.interval_count > 1 ? `${price.recurring.interval_count} ` : ''}
+                              {price.recurring.interval === 'month' ? '月' : 
+                               price.recurring.interval === 'year' ? '年' : 
+                               price.recurring.interval === 'week' ? '週' : '日'}
+                            </span>
+                          )}
+                        </h3>
+                        <p className="text-gray-500 text-sm mt-1">
+                          商品: {price.product_name || getProductName(price.product)}
+                        </p>
+                        <div className="flex items-center mt-2">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            有効
+                          </span>
+                          <span className="text-xs text-gray-500 ml-2">
+                            ID: {price.id}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditPrice(price)}
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
+                          編集
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDeletePrice(price.id)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          非アクティブ化
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-gray-500 bg-gray-50 rounded-md">
+              有効な価格設定はありません
+            </div>
+          )}
+        </div>
+
+        {/* 非アクティブな価格の表示/非表示トグルボタン */}
+        {inactivePrices.length > 0 && (
+          <div className="mt-6 flex justify-between items-center">
+            <h3 className="text-lg font-medium text-gray-600">非アクティブな価格設定 ({inactivePrices.length}件)</h3>
+            <button
+              onClick={toggleInactivePrices}
+              className="px-3 py-1 text-sm rounded border border-gray-300 hover:bg-gray-50 transition-colors flex items-center"
+            >
+              {showInactivePrices ? (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                  </svg>
+                  非表示にする
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                  表示する
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* 非アクティブな価格セクション */}
+        {inactivePrices.length > 0 && showInactivePrices && (
+          <div className="mt-2">
+            <div className="grid gap-4">
+              {inactivePrices.map((price) => (
+                <Card key={price.id} className="overflow-hidden border border-gray-200 bg-gray-50 opacity-75">
+                  <CardContent className="p-0">
+                    <div className="p-4 flex justify-between items-center">
+                      <div>
+                        <h3 className="font-medium text-lg text-gray-500">
+                          {formatAmount(price.unit_amount, price.currency)}
+                          {price.type === 'recurring' && price.recurring && (
+                            <span className="text-sm font-normal text-gray-400 ml-1">
+                              / {price.recurring.interval_count > 1 ? `${price.recurring.interval_count} ` : ''}
+                              {price.recurring.interval === 'month' ? '月' : 
+                               price.recurring.interval === 'year' ? '年' : 
+                               price.recurring.interval === 'week' ? '週' : '日'}
+                            </span>
+                          )}
+                        </h3>
+                        <p className="text-gray-400 text-sm mt-1">
+                          商品: {price.product_name || getProductName(price.product)}
+                        </p>
+                        <div className="flex items-center mt-2">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
+                            非アクティブ
+                          </span>
+                          <span className="text-xs text-gray-400 ml-2">
+                            ID: {price.id}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditPrice(price)}
+                          className="opacity-75"
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
+                          詳細
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   };
 
   return (
     <div>
+      {/* Stripe API設定エラーの通知 */}
+      {error && error.includes('Stripe') && (
+        <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 p-4 rounded-lg mb-6">
+          <h3 className="text-lg font-medium flex items-center">
+            <AlertCircle className="h-5 w-5 mr-2" />
+            Stripe API設定に問題があります
+          </h3>
+          <p className="mt-2 text-sm">
+            Stripe APIとの連携に問題が発生しています。この機能を使用するには、バックエンドでStripe APIキーの設定が必要です。
+            <br />
+            詳細なエラー: {error}
+          </p>
+          <p className="mt-3 text-sm font-medium">
+            管理者向けの他の機能（キャンペーンコード管理など）は引き続き利用可能です。
+          </p>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-semibold">価格設定</h2>
-        <Button variant="primary" onClick={handleAddPrice}>
+        <Button variant="primary" onClick={handleAddPrice} disabled={!!error}>
           <PlusCircle className="h-4 w-4 mr-2" />
           価格を追加
         </Button>

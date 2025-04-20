@@ -1,27 +1,38 @@
 import React, { useState } from 'react';
-import { VerifyCampaignCodeResponse } from '@/types/subscription';
+import { VerifyCampaignCodeResponse, CampaignCodeVerificationResult } from '@/types/subscription';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
 
 interface CampaignCodeFormProps {
-  onSubmit: (code: string) => Promise<VerifyCampaignCodeResponse>;
-  onApply: (response: VerifyCampaignCodeResponse) => void;
-  originalAmount: number;
-  currency: string;
+  onSubmit: (code: string) => Promise<VerifyCampaignCodeResponse | CampaignCodeVerificationResult>;
+  onApply?: (response: VerifyCampaignCodeResponse | CampaignCodeVerificationResult) => void;
+  originalAmount?: number;
+  currency?: string;
+  initialCode?: string;
+  onCodeChange?: (code: string) => void;
 }
 
 export const CampaignCodeForm: React.FC<CampaignCodeFormProps> = ({
   onSubmit,
   onApply,
-  originalAmount,
-  currency
+  originalAmount = 0,
+  currency = 'jpy',
+  initialCode = '',
+  onCodeChange
 }) => {
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(initialCode);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [verificationResult, setVerificationResult] = useState<VerifyCampaignCodeResponse | null>(null);
+  const [verificationResult, setVerificationResult] = useState<VerifyCampaignCodeResponse | CampaignCodeVerificationResult | null>(null);
   
-  // 金額をフォーマット
+  const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newCode = e.target.value;
+    setCode(newCode);
+    if (onCodeChange) {
+      onCodeChange(newCode);
+    }
+  };
+  
   const formatAmount = (amount: number, curr: string): string => {
     return new Intl.NumberFormat('ja-JP', {
       style: 'currency',
@@ -41,8 +52,10 @@ export const CampaignCodeForm: React.FC<CampaignCodeFormProps> = ({
       const result = await onSubmit(code);
       setVerificationResult(result);
       
-      if (result.valid) {
-        onApply(result);
+      if (result.valid || ('is_valid' in result && result.is_valid)) {
+        if (onApply) {
+          onApply(result);
+        }
       } else {
         setError(result.message);
       }
@@ -54,6 +67,12 @@ export const CampaignCodeForm: React.FC<CampaignCodeFormProps> = ({
     }
   };
   
+  // 結果が有効かどうかをチェックする関数
+  const isResultValid = (result: VerifyCampaignCodeResponse | CampaignCodeVerificationResult | null) => {
+    if (!result) return false;
+    return result.valid || ('is_valid' in result && result.is_valid);
+  };
+  
   return (
     <div className="mt-4 border border-gray-200 rounded-lg p-4">
       <h4 className="font-medium mb-2">キャンペーンコード</h4>
@@ -62,15 +81,15 @@ export const CampaignCodeForm: React.FC<CampaignCodeFormProps> = ({
         <div className="flex-grow">
           <Input
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={handleCodeChange}
             placeholder="コードを入力"
-            disabled={isLoading || !!verificationResult?.valid}
+            disabled={isLoading || isResultValid(verificationResult)}
           />
         </div>
         <Button
           type="submit"
           variant="secondary"
-          disabled={!code || isLoading || !!verificationResult?.valid}
+          disabled={!code || isLoading || isResultValid(verificationResult)}
         >
           {isLoading ? '検証中...' : '適用'}
         </Button>
@@ -78,7 +97,7 @@ export const CampaignCodeForm: React.FC<CampaignCodeFormProps> = ({
       
       {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
       
-      {verificationResult?.valid && (
+      {isResultValid(verificationResult) && verificationResult && (
         <div className="mt-4 bg-green-50 p-3 rounded-md">
           <p className="text-green-700 font-medium">
             キャンペーンコード「{code}」が適用されました

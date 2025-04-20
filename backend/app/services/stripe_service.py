@@ -1,7 +1,7 @@
 import stripe
 from app.core.config import settings
 from app.schemas.subscription import CheckoutSessionResponse
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from uuid import UUID
 import logging
 
@@ -69,6 +69,46 @@ class StripeService:
             )
         except Exception as e:
             logger.error(f"チェックアウトセッション作成エラー: {str(e)}")
+            raise
+
+    @staticmethod
+    def list_prices(active: bool = True, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Stripeから価格リストを取得する
+        """
+        try:
+            prices = stripe.Price.list(
+                active=active,
+                limit=limit,
+                expand=['data.product']
+            )
+            return prices.data
+        except Exception as e:
+            logger.error(f"価格一覧取得エラー: {str(e)}")
+            raise
+
+    @staticmethod
+    def get_product(product_id: str) -> Dict[str, Any]:
+        """
+        Stripeから商品情報を取得する
+        """
+        try:
+            # 型チェック: product_idが文字列ではない場合の対応
+            if not isinstance(product_id, str):
+                if hasattr(product_id, 'id'):
+                    # オブジェクトからIDを取得
+                    product_id = product_id.id
+                elif isinstance(product_id, dict) and 'id' in product_id:
+                    # 辞書からIDを取得
+                    product_id = product_id['id']
+                else:
+                    # 対応できない型の場合はエラー
+                    raise ValueError(f"product_idは文字列である必要があります。受け取った型: {type(product_id)}")
+            
+            product = stripe.Product.retrieve(product_id)
+            return product
+        except Exception as e:
+            logger.error(f"商品情報取得エラー: {str(e)}")
             raise
 
     @staticmethod

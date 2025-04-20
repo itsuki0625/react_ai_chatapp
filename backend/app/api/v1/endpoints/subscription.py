@@ -20,19 +20,156 @@ from datetime import datetime
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.get("/plans", response_model=List[SubscriptionPlanResponse])
-async def get_subscription_plans(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+@router.get("/stripe-plans", response_model=List[SubscriptionPlanResponse])
+async def get_stripe_plans(
+    db: Session = Depends(get_db)
 ):
     """
-    利用可能なサブスクリプションプランの一覧を取得する
+    Stripeから直接サブスクリプションプラン情報を取得する（パブリックエンドポイント）
     """
     try:
-        plans = crud.get_active_subscription_plans(db)
+        # Stripeから直接プラン情報を取得
+        logger.info("Stripeからプラン情報を取得します")
+        stripe_prices = StripeService.list_prices(active=True)
+        logger.info(f"取得したプラン数: {len(stripe_prices)}")
+        
+        # Stripeのレスポンスを必要な形式に変換
+        plans = []
+        for price in stripe_prices:
+            try:
+                # デバッグ情報
+                price_id = price.get("id", "不明")
+                logger.debug(f"プラン処理中: {price_id}")
+                
+                # プラン全体の構造をデバッグ出力
+                logger.debug(f"Price データ構造: {type(price)}")
+                if isinstance(price, dict):
+                    logger.debug(f"Price キー一覧: {list(price.keys())}")
+                    # unitの有無をチェック
+                    if price.get("unit_amount") is None:
+                        logger.warning(f"プラン {price_id} のunit_amountがありません")
+                
+                # プロダクト情報を取得（すでに展開されている場合とIDのみの場合を処理）
+                product_data = price.get("product")
+                if product_data:
+                    logger.debug(f"Product data type: {type(product_data)}")
+                else:
+                    logger.warning(f"プラン {price_id} のproduct情報がありません")
+                
+                product = None
+                
+                # productがオブジェクトかどうかをチェック
+                if isinstance(product_data, dict) and "name" in product_data:
+                    # すでに展開されたプロダクトデータを使用
+                    product = product_data
+                    logger.debug(f"プラン {price_id} は展開済みのproduct情報を持っています: {product.get('name')}")
+                elif isinstance(product_data, str):
+                    # IDのみの場合は商品情報を取得
+                    try:
+                        logger.debug(f"プラン {price_id} のproduct IDから商品情報を取得: {product_data}")
+                        product = StripeService.get_product(product_data)
+                    except Exception as e:
+                        logger.error(f"商品情報取得エラー（ID: {product_data}）: {str(e)}")
+                        continue
+                else:
+                    # 型が不明な場合はログに記録してスキップ
+                    logger.error(f"不明なproduct型: {type(product_data)} 値: {product_data}")
+                    continue
+                
+                # 必要なデータを抽出
+                if product is None:
+                    logger.error(f"プロダクト情報がNullです。price_id: {price_id}")
+                    continue
+                
+                # 安全に値を取得（存在しない場合はデフォルト値を使用）
+                plan_id = price.get("id", "")
+                plan_name = product.get("name", "不明なプラン")
+                plan_description = product.get("description") or "詳細情報なし"
+                
+                # 金額情報の安全な取得（unitは任意/なしの場合は0設定）
+                unit_amount = price.get("unit_amount")
+                if unit_amount is not None:
+                    plan_amount = unit_amount
+                else:
+                    logger.warning(f"プラン {plan_id} の金額情報がありません。0として扱います。")
+                    plan_amount = 0
+                
+                plan_currency = price.get("currency", "jpy")
+                
+                # recurring が None の場合があるのでさらに安全に取得
+                recurring = price.get("recurring")
+                if recurring is not None and isinstance(recurring, dict):
+                    plan_interval = recurring.get("interval", "month")
+                else:
+                    plan_interval = "month"  # デフォルト値
+                
+                plan_is_active = price.get("active", True)
+                
+                logger.debug(f"プラン情報: id={plan_id}, name={plan_name}, amount={plan_amount}")
+                
+                # タイムスタンプの安全な取得
+                created_timestamp = price.get("created")
+                if created_timestamp:
+                    created_at = datetime.fromtimestamp(created_timestamp)
+                    updated_at = datetime.fromtimestamp(created_timestamp)
+                else:
+                    current_time = datetime.utcnow()
+                    created_at = current_time
+                    updated_at = current_time
+                
+                plan = SubscriptionPlanResponse(
+                    id=plan_id,
+                    name=plan_name,
+                    description=plan_description,
+                    price_id=plan_id,
+                    amount=plan_amount,
+                    currency=plan_currency,
+                    interval=plan_interval,
+                    is_active=plan_is_active,
+                    created_at=created_at,
+                    updated_at=updated_at
+                )
+                plans.append(plan)
+                logger.debug(f"プラン '{plan_name}' を追加しました")
+            except Exception as e:
+                logger.error(f"プラン情報変換エラー: {str(e)}", exc_info=True)
+                continue
+            
+        # プランが取得できなかった場合はデモデータを返す
+        if not plans:
+            logger.warning("Stripeからプランを取得できませんでした。デモデータを使用します。")
+            now = datetime.utcnow()
+            plans = [
+                SubscriptionPlanResponse(
+                    id="price_demo_standard",  # Stripeの命名規則に合わせて修正
+                    name="スタンダードプラン",
+                    description="ベーシックな機能が使えるスタンダードなプランです。",
+                    price_id="price_demo_standard",
+                    amount=1980,
+                    currency="jpy",
+                    interval="month",
+                    is_active=True,
+                    created_at=now,
+                    updated_at=now
+                ),
+                SubscriptionPlanResponse(
+                    id="price_demo_premium",  # Stripeの命名規則に合わせて修正
+                    name="プレミアムプラン",
+                    description="全ての機能が使える高機能なプランです。",
+                    price_id="price_demo_premium",
+                    amount=3980,
+                    currency="jpy",
+                    interval="month",
+                    is_active=True,
+                    created_at=now,
+                    updated_at=now
+                )
+            ]
+        
+        logger.info(f"返却するプラン数: {len(plans)}")
         return plans
     except Exception as e:
-        logger.error(f"サブスクリプションプラン取得エラー: {str(e)}")
+        logger.error(f"Stripeプラン取得エラー: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="サブスクリプションプランの取得中にエラーが発生しました"
@@ -80,24 +217,70 @@ async def get_payment_history(
 async def verify_campaign_code(
     request: VerifyCampaignCodeRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user)
 ):
     """
     キャンペーンコードの有効性を検証する
     """
     try:
-        # キャンペーンコードを検証
-        result = crud.verify_campaign_code(db, request.code, request.plan_id)
+        # Stripeから直接価格情報を取得
+        price = None
+        price_id = request.price_id
         
+        try:
+            price = StripeService.get_price(price_id)
+        except Exception as e:
+            logger.error(f"Stripe価格情報取得エラー: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"指定された価格ID({price_id})は無効です"
+            )
+            
+        # 金額の取得
+        original_amount = price.get("unit_amount")
+        if original_amount is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="価格情報から金額を取得できませんでした"
+            )
+            
+        # キャンペーンコードを検証
+        result = crud.verify_campaign_code(db, request.code, request.price_id)
+        
+        # 有効な場合は割引を計算
+        if result.get("valid"):
+            discount_type = result.get("discount_type", "percentage")
+            discount_value = result.get("discount_value", 0)
+            
+            # 割引額の計算
+            discounted_amount = original_amount
+            if discount_type == "percentage":
+                # 割合による割引
+                discount = int(original_amount * discount_value / 100)
+                discounted_amount = original_amount - discount
+            elif discount_type == "fixed":
+                # 固定額割引
+                discounted_amount = max(0, original_amount - int(discount_value))
+            
+            # レスポンスを作成
+            return VerifyCampaignCodeResponse(
+                valid=True,
+                message="キャンペーンコードは有効です",
+                discount_type=discount_type,
+                discount_value=discount_value,
+                original_amount=original_amount,
+                discounted_amount=discounted_amount,
+                campaign_code_id=result.get("campaign_code_id")
+            )
+        
+        # 無効な場合はエラーメッセージを返す
         return VerifyCampaignCodeResponse(
-            valid=result["valid"],
-            message=result["message"],
-            discount_type=result.get("discount_type"),
-            discount_value=result.get("discount_value"),
-            original_amount=result.get("original_amount"),
-            discounted_amount=result.get("discounted_amount"),
+            valid=False,
+            message=result.get("message", "キャンペーンコードは無効です"),
             campaign_code_id=result.get("campaign_code_id")
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"キャンペーンコード検証エラー: {str(e)}")
         raise HTTPException(
@@ -112,110 +295,157 @@ async def create_checkout_session(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Stripeのチェックアウトセッションを作成する
+    Stripeチェックアウトセッションを作成する
     """
     try:
-        # 既存のアクティブなサブスクリプションがあるか確認
-        existing_subscription = crud.get_active_user_subscription(db, current_user.id)
-        if existing_subscription:
+        # price_idの検証（必須）
+        if not request.price_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="既にアクティブなサブスクリプションがあります"
+                detail="価格IDは必須です"
             )
-        
-        # プランの存在確認
-        plan = crud.get_subscription_plan(db, request.plan_id)
-        if not plan:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="指定されたプランが見つかりません"
-            )
-        
-        # Stripeカスタマーの作成または取得
-        stripe_customer_id = None
-        for subscription in crud.get_user_subscriptions(db, current_user.id):
-            if subscription.stripe_customer_id:
-                stripe_customer_id = subscription.stripe_customer_id
-                break
-        
-        if not stripe_customer_id:
-            stripe_customer_id = StripeService.create_customer(
-                email=current_user.email,
-                name=current_user.full_name,
-                metadata={"user_id": str(current_user.id)}
-            )
-        
-        # セッションメタデータを準備
-        metadata = {
-            "user_id": str(current_user.id),
-            "plan_id": str(plan.id),
-            "plan_name": plan.name
-        }
-        
-        # キャンペーンコードの処理
-        campaign_code_id = None
-        discounts = None
-        
-        if request.campaign_code:
-            # キャンペーンコードを検証
-            verification = crud.verify_campaign_code(db, request.campaign_code, request.plan_id)
             
-            if not verification["valid"]:
+        stripe_price_id = request.price_id
+        
+        # Stripeから直接価格情報を取得して検証
+        try:
+            price = StripeService.get_price(stripe_price_id)
+            logger.debug(f"取得した価格情報: {price}")
+            if not price.get("active", False):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=verification["message"]
+                    detail="指定された価格は現在無効です"
                 )
+        except Exception as e:
+            logger.error(f"Stripe価格情報取得エラー: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail=f"指定された価格ID({stripe_price_id})は無効です"
+            )
+        
+        # キャンペーンコードの処理
+        coupon_id = None
+        if request.campaign_code:
+            # キャンペーンコードを検証
+            result = crud.verify_campaign_code(db, request.campaign_code, request.price_id)
+            
+            # キャンペーンコードが有効な場合
+            if result.get("valid") and result.get("campaign_code_id"):
+                campaign_code_id = result.get("campaign_code_id")
+                db_campaign_code = crud.get_campaign_code(db, campaign_code_id)
                 
-            campaign_code_id = verification["campaign_code_id"]
-            metadata["campaign_code_id"] = str(campaign_code_id)
-            
-            # 割引情報を作成
-            db_campaign_code = crud.get_campaign_code(db, campaign_code_id)
-            
-            # Stripeクーポンの作成
+                if db_campaign_code:
+                    # Stripe上にクーポンを作成
+                    try:
+                        coupon_data = {
+                            "duration": "once",  # 一回だけ適用
+                            "id": f"camp_{db_campaign_code.code}",  # クーポンID
+                        }
+                        
+                        # 割引タイプに応じたパラメータ設定
+                        if db_campaign_code.discount_type == "percentage":
+                            coupon_data["percent_off"] = db_campaign_code.discount_value
+                        else:  # fixed
+                            coupon_data["amount_off"] = int(db_campaign_code.discount_value)
+                            coupon_data["currency"] = "jpy"
+                            
+                        # クーポン作成（または既存のものを取得）
+                        try:
+                            coupon = StripeService.create_coupon(coupon_data)
+                            coupon_id = coupon.get("id")
+                            logger.info(f"Stripeクーポン作成成功: {coupon_id}")
+                        except Exception as e:
+                            if "already exists" in str(e):
+                                # 既に存在する場合は既存のクーポンを使用
+                                coupon_id = coupon_data["id"]
+                                logger.info(f"既存のStripeクーポンを使用: {coupon_id}")
+                            else:
+                                raise
+                                
+                        # キャンペーンコードの使用回数をインクリメント
+                        crud.increment_campaign_code_usage(db, campaign_code_id)
+                        
+                    except Exception as e:
+                        logger.error(f"Stripeクーポン作成エラー: {str(e)}")
+                        # クーポンが作成できなくても処理は続行するが、割引は適用されない
+            else:
+                logger.warning(f"キャンペーンコード '{request.campaign_code}' は無効です: {result.get('message')}")
+        
+        # 顧客情報の取得または作成
+        stripe_customer_id = None
+        active_subscription = crud.get_active_user_subscription(db, current_user.id)
+        
+        if active_subscription and active_subscription.stripe_customer_id:
+            # 既存の顧客IDを使用
+            stripe_customer_id = active_subscription.stripe_customer_id
+            logger.debug(f"既存の顧客IDを使用: {stripe_customer_id}")
+        else:
+            # 新規顧客を作成
             try:
-                discount_type = "percentage" if db_campaign_code.discount_type == "percentage" else "fixed"
-                
-                coupon = StripeService.create_coupon(
-                    discount_type=discount_type,
-                    discount_value=db_campaign_code.discount_value,
-                    duration="once",
-                    currency="jpy",
-                    name=f"キャンペーンコード: {db_campaign_code.code}",
-                    metadata={
-                        "campaign_code_id": str(campaign_code_id),
-                        "owner_id": str(db_campaign_code.owner_id) if db_campaign_code.owner_id else None
+                customer = StripeService.create_customer({
+                    "email": current_user.email,
+                    "name": current_user.fullname,
+                    "metadata": {
+                        "user_id": str(current_user.id)
                     }
-                )
-                
-                # 割引を適用
-                discounts = [{"coupon": coupon.id}]
-                
+                })
+                stripe_customer_id = customer.get("id")
+                logger.debug(f"新規顧客作成: {stripe_customer_id}")
             except Exception as e:
-                logger.error(f"Stripeクーポン作成エラー: {str(e)}")
+                logger.error(f"Stripe顧客作成エラー: {str(e)}")
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="割引処理中にエラーが発生しました"
+                    detail="顧客情報の作成中にエラーが発生しました"
                 )
         
-        # チェックアウトセッションの作成
-        checkout_session = StripeService.create_checkout_session(
-            customer_id=stripe_customer_id,
-            price_id=plan.price_id,
-            success_url=request.success_url,
-            cancel_url=request.cancel_url,
-            metadata=metadata,
-            discounts=discounts
-        )
+        # 成功URL確認
+        success_url = request.success_url
+        if "{CHECKOUT_SESSION_ID}" not in success_url:
+            logger.warning("success_urlに{CHECKOUT_SESSION_ID}が含まれていません")
+            success_url = f"{success_url}?session_id={{CHECKOUT_SESSION_ID}}"
         
-        return checkout_session
+        # チェックアウトセッション作成
+        try:
+            session_data = {
+                "success_url": success_url,
+                "cancel_url": request.cancel_url,
+                "mode": "subscription",
+                "customer": stripe_customer_id,
+                "line_items": [
+                    {
+                        "price": stripe_price_id,
+                        "quantity": 1
+                    }
+                ],
+                "metadata": {
+                    "user_id": str(current_user.id)
+                }
+            }
+            
+            # クーポンがある場合は追加
+            if coupon_id:
+                session_data["discounts"] = [{"coupon": coupon_id}]
+                
+            # セッション作成
+            session = StripeService.create_checkout_session(session_data)
+            
+            return CheckoutSessionResponse(
+                session_id=session.get("id"),
+                url=session.get("url")
+            )
+        except Exception as e:
+            logger.error(f"チェックアウトセッション作成エラー: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="チェックアウトセッションの作成中にエラーが発生しました"
+            )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"チェックアウトセッション作成エラー: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="チェックアウトセッションの作成中にエラーが発生しました"
+            detail="チェックアウトセッションの作成中に予期せぬエラーが発生しました"
         )
 
 @router.post("/create-portal-session")
@@ -289,24 +519,32 @@ async def manage_subscription(
             return {"message": "サブスクリプションが正常に再開されました"}
             
         elif request.action == "update":
-            if not request.plan_id:
+            # price_idまたはplan_idが必要 (plan_idが指定された場合はそれをprice_idとして使用)
+            price_id = request.price_id or request.plan_id
+            if not price_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="プラン変更には新しいプランIDが必要です"
+                    detail="プラン変更には新しい価格IDが必要です"
                 )
                 
-            # 新しいプランの存在確認
-            new_plan = crud.get_subscription_plan(db, request.plan_id)
-            if not new_plan:
+            # Stripeから価格情報を取得
+            try:
+                price_info = StripeService.get_price(price_id)
+                # 商品情報も取得
+                product_info = StripeService.get_product(price_info.get('product'))
+                plan_name = product_info.get('name', '不明なプラン')
+            except Exception as e:
+                logger.error(f"Stripe価格情報取得エラー: {str(e)}")
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="指定された新しいプランが見つかりません"
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"指定された価格ID({price_id})は無効です"
                 )
                 
-            result = StripeService.update_subscription(subscription.stripe_subscription_id, new_plan.price_id)
+            # Stripeサブスクリプション更新
+            result = StripeService.update_subscription(subscription.stripe_subscription_id, price_id)
             crud.update_subscription(db, subscription.id, {
-                "plan_name": new_plan.name,
-                "price_id": new_plan.price_id
+                "plan_name": plan_name,
+                "price_id": price_id
             })
             return {"message": "サブスクリプションプランが正常に更新されました"}
         

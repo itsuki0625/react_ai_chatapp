@@ -1,31 +1,42 @@
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { auth } from '@/auth';
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 
-// 認証が必要なパス
-const protectedPaths = ['/dashboard', '/settings']
-// 認証済みユーザーがアクセスできないパス
-const authPaths = ['/login', '/signup']
+// NextAuthのミドルウェアをエクスポート
+export default auth((req) => {
+  // auth コールバックが認証をチェックした後に実行されるミドルウェア
+  const { nextUrl, auth: authObj } = req;
+  const { pathname } = nextUrl;
 
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl
-  
-  // セッションクッキーの存在を確認（実際の認証状態確認方法はプロジェクトによって異なる）
-  const isAuthenticated = request.cookies.has('session')
-  
-  // 認証が必要なパスに未認証でアクセスした場合
-  if (protectedPaths.some(path => pathname.startsWith(path)) && !isAuthenticated) {
-    return NextResponse.redirect(new URL('/login', request.url))
+  // 未認証でアクセスを試みた場合、元のURLのクエリパラメータにリダイレクト先を含めて認証ページへ
+  if (!authObj && (
+      pathname.startsWith('/dashboard') || 
+      pathname.startsWith('/settings') || 
+      pathname.startsWith('/admin'))) {
+    const redirectUrl = new URL('/login', nextUrl.origin);
+    redirectUrl.searchParams.set('redirect', pathname);
+    return NextResponse.redirect(redirectUrl);
   }
-  
-  // 認証済みユーザーが認証ページにアクセスした場合
-  if (authPaths.some(path => pathname.startsWith(path)) && isAuthenticated) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+
+  // 管理者パスへのアクセスチェック（追加のセキュリティとして）
+  if (pathname.startsWith('/admin')) {
+    const isAdmin = authObj?.user?.role?.includes('admin');
+    if (!isAdmin) {
+      // 管理者以外は一般ユーザーダッシュボードへリダイレクト
+      return NextResponse.redirect(new URL('/dashboard', nextUrl.origin));
+    }
   }
-  
-  return NextResponse.next()
-}
+
+  return NextResponse.next();
+});
 
 // ミドルウェアを適用するパスを設定
 export const config = {
-  matcher: [...protectedPaths, ...authPaths],
-}
+  matcher: [
+    /*
+     * / (ホームページ)と/api、public、_nextのような静的ファイルへのリクエストをスキップ
+     * ただし、/login, /signup, /dashboard, /settings, /adminのパスにはマッチさせる
+     */
+    '/((?!api|_next/static|_next/image|favicon.ico|public).*)',
+  ],
+};

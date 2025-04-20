@@ -81,7 +81,7 @@ const TeacherDashboard = () => {
     <div className="p-6">
       {/* ヘッダー */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">先生ダッシュボード</h1>
+        <h1 className="text-2xl font-bold text-gray-900">講師ダッシュボード</h1>
         <p className="mt-1 text-sm text-gray-500">
           生徒の進捗状況と添削リクエストを管理できます
         </p>
