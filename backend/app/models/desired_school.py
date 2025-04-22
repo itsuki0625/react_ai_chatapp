@@ -7,9 +7,9 @@ class DesiredSchool(Base, TimestampMixin):
     __tablename__ = 'desired_schools'
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id'))
-    university_id = Column(UUID(as_uuid=True), ForeignKey('universities.id'))
-    preference_order = Column(Integer)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=False)
+    university_id = Column(UUID(as_uuid=True), ForeignKey('universities.id'), nullable=False)
+    preference_order = Column(Integer, nullable=False)
 
     # Relationships
     user = relationship("User", back_populates="desired_schools")
@@ -20,9 +20,9 @@ class DesiredDepartment(Base, TimestampMixin):
     __tablename__ = 'desired_departments'
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    desired_school_id = Column(UUID(as_uuid=True), ForeignKey('desired_schools.id'))
-    department_id = Column(UUID(as_uuid=True), ForeignKey('departments.id'))
-    admission_method_id = Column(UUID(as_uuid=True), ForeignKey('admission_methods.id'))
+    desired_school_id = Column(UUID(as_uuid=True), ForeignKey('desired_schools.id'), nullable=False)
+    department_id = Column(UUID(as_uuid=True), ForeignKey('departments.id'), nullable=False)
+    admission_method_id = Column(UUID(as_uuid=True), ForeignKey('admission_methods.id'), nullable=False)
 
     # Relationships
     desired_school = relationship("DesiredSchool", back_populates="desired_departments")

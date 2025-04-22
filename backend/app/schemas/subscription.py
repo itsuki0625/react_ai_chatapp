@@ -1,22 +1,24 @@
 from pydantic import BaseModel, UUID4, Field, validator
 from typing import Optional, List
 from datetime import datetime
+from uuid import UUID
+from .base import TimestampMixin
 
 # ベースモデル
 class SubscriptionBase(BaseModel):
     plan_name: str
     price_id: str  # Stripeの価格ID
     status: str = "active"
-    campaign_code_id: Optional[UUID4] = None
+    campaign_code_id: Optional[UUID] = None
 
 # 作成リクエスト
 class SubscriptionCreate(SubscriptionBase):
-    user_id: UUID4
+    user_id: UUID
 
 # データベースからの応答
-class SubscriptionResponse(SubscriptionBase):
-    id: UUID4
-    user_id: UUID4
+class SubscriptionResponse(SubscriptionBase, TimestampMixin):
+    id: UUID
+    user_id: UUID
     stripe_customer_id: Optional[str] = None
     stripe_subscription_id: Optional[str] = None
     current_period_start: Optional[datetime] = None
@@ -24,11 +26,9 @@ class SubscriptionResponse(SubscriptionBase):
     cancel_at: Optional[datetime] = None
     canceled_at: Optional[datetime] = None
     is_active: bool
-    created_at: datetime
-    updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # サブスクリプションプラン (Stripeから直接取得するためDBモデルなし)
 class SubscriptionPlanBase(BaseModel):
@@ -49,34 +49,32 @@ class SubscriptionPlanResponse(SubscriptionPlanBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = False  # DBモデルと紐づかないため、Falseに変更
+        from_attributes = False  # DBモデルと紐づかないため、Falseに変更
 
 # 支払い履歴
 class PaymentHistoryBase(BaseModel):
-    user_id: UUID4
+    user_id: UUID
     amount: int
     currency: str = "jpy"
     status: str
 
 class PaymentHistoryCreate(PaymentHistoryBase):
-    subscription_id: Optional[UUID4] = None
+    subscription_id: Optional[UUID] = None
     stripe_payment_intent_id: Optional[str] = None
     stripe_invoice_id: Optional[str] = None
     payment_method: Optional[str] = None
     payment_date: datetime = Field(default_factory=datetime.utcnow)
 
-class PaymentHistoryResponse(PaymentHistoryBase):
-    id: UUID4
-    subscription_id: Optional[UUID4] = None
+class PaymentHistoryResponse(PaymentHistoryBase, TimestampMixin):
+    id: UUID
+    subscription_id: Optional[UUID] = None
     stripe_payment_intent_id: Optional[str] = None
     stripe_invoice_id: Optional[str] = None
     payment_method: Optional[str] = None
     payment_date: datetime
-    created_at: datetime
-    updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # キャンペーンコード
 class CampaignCodeBase(BaseModel):
@@ -90,7 +88,7 @@ class CampaignCodeBase(BaseModel):
     is_active: bool = True
 
 class CampaignCodeCreate(CampaignCodeBase):
-    owner_id: Optional[UUID4] = None
+    owner_id: Optional[UUID] = None
 
     @validator('discount_type')
     def validate_discount_type(cls, v):
@@ -106,18 +104,14 @@ class CampaignCodeCreate(CampaignCodeBase):
             raise ValueError('割引額は0より大きい必要があります')
         return v
 
-class CampaignCodeResponse(CampaignCodeBase):
-    id: UUID4
-    owner_id: Optional[UUID4] = None
+class CampaignCodeResponse(CampaignCodeBase, TimestampMixin):
+    id: UUID
+    owner_id: Optional[UUID] = None
     used_count: int
-    created_at: datetime
-    updated_at: datetime
-    
-    # 有効かどうかの追加フィールド
     is_valid: bool
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class CampaignCodeUpdate(BaseModel):
     description: Optional[str] = None
@@ -159,7 +153,7 @@ class VerifyCampaignCodeResponse(BaseModel):
     discount_value: Optional[float] = None
     original_amount: Optional[int] = None
     discounted_amount: Optional[int] = None
-    campaign_code_id: Optional[UUID4] = None
+    campaign_code_id: Optional[UUID] = None
 
 # Stripeチェックアウトセッション作成リクエスト（キャンペーンコード対応）
 class CreateCheckoutSessionRequest(BaseModel):
@@ -176,7 +170,7 @@ class CheckoutSessionResponse(BaseModel):
 
 # サブスクリプション管理リクエスト
 class ManageSubscriptionRequest(BaseModel):
-    subscription_id: UUID4
+    subscription_id: UUID
     action: str  # "cancel", "reactivate", "update"
     price_id: Optional[str] = None  # Stripeの価格ID
     plan_id: Optional[str] = None  # 互換性のために残す（price_idと同じ値）

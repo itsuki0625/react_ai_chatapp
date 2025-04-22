@@ -13,6 +13,7 @@ from app.api.v1.endpoints.university import router as university_router
 from app.api.v1.endpoints.auth import router as auth_router
 from app.api.v1.endpoints.chat import router as chat_router
 from app.api.v1.endpoints.content import router as content_router
+from app.api.v1.endpoints.quiz import router as quiz_router
 
 # 各ルーターをメインルーターに追加
 api_router.include_router(admin_router, prefix="/admin", tags=["admin"])
@@ -24,3 +25,4 @@ api_router.include_router(university_router, prefix="/universities", tags=["univ
 api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
 api_router.include_router(chat_router, prefix="/chat", tags=["chat"])
 api_router.include_router(content_router, prefix="/content", tags=["content"])
+api_router.include_router(quiz_router, prefix="/quizzes", tags=["quizzes"])

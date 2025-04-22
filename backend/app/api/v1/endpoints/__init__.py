@@ -10,6 +10,10 @@ from app.api.v1.endpoints.university import router as university_router
 from app.api.v1.endpoints.auth import router as auth_router
 from app.api.v1.endpoints.chat import router as chat_router
 from app.api.v1.endpoints.content import router as content_router
+from app.api.v1.endpoints.quiz import router as quiz_router
+from app.api.v1.endpoints.roles import router as roles_router
+from app.api.v1.endpoints.study_plans import router as study_plans_router
+from app.api.v1.endpoints.communication import router as communication_router
 
 # 各ルーターをエクスポート
 __all__ = [
@@ -22,4 +26,8 @@ __all__ = [
     "auth_router",
     "chat_router",
     "content_router",
+    "quiz_router",
+    "roles_router",
+    "study_plans_router",
+    "communication_router",
 ]

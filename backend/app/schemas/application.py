@@ -1,8 +1,9 @@
-from pydantic import BaseModel
-from typing import Optional, List
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict
 from datetime import datetime
 from uuid import UUID
 from app.models.enums import DocumentStatus
+from .base import TimestampMixin
 
 class ApplicationBase(BaseModel):
     university_id: UUID
@@ -14,14 +15,16 @@ class ApplicationBase(BaseModel):
 class ApplicationCreate(ApplicationBase):
     pass
 
-class ApplicationUpdate(ApplicationBase):
-    pass
+class ApplicationUpdate(BaseModel):
+    university_id: Optional[UUID] = None
+    department_id: Optional[UUID] = None
+    admission_method_id: Optional[UUID] = None
+    priority: Optional[int] = None
+    notes: Optional[str] = None
 
-class ApplicationResponse(ApplicationBase):
+class ApplicationResponse(ApplicationBase, TimestampMixin):
     id: UUID
     user_id: UUID
-    created_at: datetime
-    updated_at: datetime
     university_name: str
     department_name: str
     admission_method_name: str
@@ -37,16 +40,17 @@ class DocumentBase(BaseModel):
     notes: Optional[str] = None
 
 class DocumentCreate(DocumentBase):
-    pass
+    application_id: UUID
 
-class DocumentUpdate(DocumentBase):
-    pass
+class DocumentUpdate(BaseModel):
+    name: Optional[str] = None
+    status: Optional[DocumentStatus] = None
+    deadline: Optional[datetime] = None
+    notes: Optional[str] = None
 
-class DocumentResponse(DocumentBase):
+class DocumentResponse(DocumentBase, TimestampMixin):
     id: UUID
-    desired_department_id: UUID
-    created_at: datetime
-    updated_at: datetime
+    application_id: UUID
 
     class Config:
         from_attributes = True
@@ -56,32 +60,37 @@ class ScheduleBase(BaseModel):
     event_name: str
     date: datetime
     type: str
+    location: Optional[str] = None
+    description: Optional[str] = None
 
 class ScheduleCreate(ScheduleBase):
-    pass
+    application_id: UUID
 
-class ScheduleUpdate(ScheduleBase):
-    pass
+class ScheduleUpdate(BaseModel):
+    event_name: Optional[str] = None
+    date: Optional[datetime] = None
+    type: Optional[str] = None
+    location: Optional[str] = None
+    description: Optional[str] = None
 
-class ScheduleResponse(ScheduleBase):
+class ScheduleResponse(ScheduleBase, TimestampMixin):
     id: UUID
-    event_name: str
-    date: datetime
-    type: str
+    application_id: UUID
 
     class Config:
         from_attributes = True
 
-# 拡張されたApplicationResponse
-class DesiredDepartmentInfo(BaseModel):
+# 志望校詳細レスポンス
+class ApplicationDepartmentInfo(BaseModel):
     id: UUID
     department_id: UUID
     department_name: str
+    faculty_name: str
 
 class ApplicationDetailResponse(ApplicationResponse):
     documents: List[DocumentResponse]
     schedules: List[ScheduleResponse]
-    desired_departments: List[DesiredDepartmentInfo]
+    department_details: List[ApplicationDepartmentInfo]
 
     class Config:
         from_attributes = True
@@ -99,4 +108,8 @@ class DesiredDepartmentResponse(BaseModel):
     department: DepartmentResponse
 
     class Config:
-        from_attributes = True 
+        from_attributes = True
+
+# 志望校の優先順位を更新するためのスキーマ
+class ReorderApplications(BaseModel):
+    application_order: Dict[str, int]  # 志望校ID: 優先順位 

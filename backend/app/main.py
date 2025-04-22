@@ -11,16 +11,55 @@ from app.api.v1.endpoints import (
     statement,
     content,
     subscription,
-    admin
+    admin,
+    quiz,
+    roles,
+    study_plans,
+    communication
 )
 from app.middleware.auth import AuthMiddleware
 import logging
 from fastapi import APIRouter
 from app.database.database import Base, engine
+from fastapi.background import BackgroundTasks
+from app.crud.token import remove_expired_tokens
+from sqlalchemy.orm import Session
+from contextlib import contextmanager
+import asyncio
+import time
 
 # ロギング設定
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# データベースセッションコンテキスト
+@contextmanager
+def get_db_session():
+    """
+    データベースセッションのコンテキストマネージャー
+    """
+    from app.database.database import SessionLocal
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# 期限切れトークンのクリーンアップ
+async def cleanup_expired_tokens():
+    """
+    期限切れのブラックリストトークンを定期的に削除
+    """
+    while True:
+        try:
+            with get_db_session() as db:
+                removed = remove_expired_tokens(db)
+                logger.info(f"期限切れトークンのクリーンアップ: {removed}件削除")
+        except Exception as e:
+            logger.error(f"トークンクリーンアップエラー: {str(e)}")
+        
+        # 1時間に1回実行（本番環境では調整が必要）
+        await asyncio.sleep(3600)  # 1時間 = 3600秒
 
 app = FastAPI(
     title="SmartAO API",
@@ -76,6 +115,10 @@ api_router.include_router(statement.router, prefix="/statements", tags=["stateme
 api_router.include_router(content.router, prefix="/contents", tags=["contents"])
 api_router.include_router(subscription.router, prefix="/subscriptions", tags=["subscriptions"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
+api_router.include_router(quiz.router, prefix="/quizzes", tags=["quizzes"])
+api_router.include_router(roles.router, prefix="/roles", tags=["roles"])
+api_router.include_router(study_plans.router, prefix="/study-plans", tags=["study-plans"])
+api_router.include_router(communication.router, prefix="/communication", tags=["communication"])
 
 app.include_router(api_router, prefix="/api/v1")
 
@@ -85,6 +128,13 @@ for route in app.routes:
 
 # データベースモデルの作成
 # Base.metadata.create_all(bind=engine)  # Alembicを使用する場合はコメントアウト
+
+# 起動時にバックグラウンドタスクを開始
+@app.on_event("startup")
+async def startup_event():
+    # 期限切れトークンのクリーンアップタスク
+    asyncio.create_task(cleanup_expired_tokens())
+    logger.info("バックグラウンド期限切れトークンクリーンアップタスクを開始しました")
 
 @app.get("/")
 def read_root():

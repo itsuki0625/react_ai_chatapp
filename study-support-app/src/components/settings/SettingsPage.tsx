@@ -8,7 +8,7 @@ import { toast } from 'react-hot-toast';
 import { useSession } from 'next-auth/react';
 
 const SettingsPage = () => {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [userSettings, setUserSettings] = useState({
     email: '',
     name: '',
@@ -19,99 +19,121 @@ const SettingsPage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // ユーザー情報の取得
-  useEffect(() => {
-    const fetchUserSettings = async () => {
-      try {
-        setLoading(true);
-        
-        console.log('API接続先:', API_BASE_URL);
-        console.log('セッション情報:', session);
+  // Function to fetch user settings (now assumes session and accessToken are ready)
+  const fetchUserSettings = async () => {
+    // This function is now called only when status is 'authenticated' and session.accessToken exists
+    if (!session || !session.accessToken) {
+        console.error('fetchUserSettings called without valid session/accessToken');
+        setLoading(false); // Stop loading if something went wrong
+        return;
+    }
+    try {
+      // setLoading(true); // setLoading is handled in the useEffect now
+      console.log('API接続先:', API_BASE_URL);
+      console.log('セッション情報 (fetchUserSettings):', session);
 
-        // セッションがない場合はデモデータを使用
-        const demoData = {
-          email: session?.user?.email || 'demo@example.com',
-          name: session?.user?.name || 'デモユーザー',
-          emailNotifications: true,
-          browserNotifications: false,
-          theme: 'light'
-        };
+      try {
+        // APIからのデータ取得を試みる
+        const response = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.accessToken}`
+          },
+        });
+
+        console.log('ユーザー情報レスポンスステータス:', response.status);
         
-        // 未認証の場合はデモデータを使用
-        if (!session) {
-          setUserSettings(demoData);
-          setLoading(false);
-          return;
-        }
-        
-        try {
-          // APIからのデータ取得を試みる
-          const response = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
+        if (response.ok) {
+          const userData = await response.json();
+          console.log('取得したユーザーデータ:', userData);
+          
+          // ユーザーの詳細情報を取得
+          const userDetailResponse = await fetch(`${API_BASE_URL}/api/v1/auth/user-settings`, {
             method: 'GET',
             credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.user.id}`
+              'Authorization': `Bearer ${session.accessToken}`
             },
           });
 
-          console.log('ユーザー情報レスポンスステータス:', response.status);
-          
-          if (response.ok) {
-            const userData = await response.json();
-            console.log('取得したユーザーデータ:', userData);
+          console.log('設定情報レスポンスステータス:', userDetailResponse.status);
+
+          if (userDetailResponse.ok) {
+            const userDetailData = await userDetailResponse.json();
+            console.log('取得した設定データ:', userDetailData);
             
-            // ユーザーの詳細情報を取得
-            const userDetailResponse = await fetch(`${API_BASE_URL}/api/v1/auth/user-settings`, {
-              method: 'GET',
-              credentials: 'include',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.user.id}`
-              },
+            setUserSettings({
+              email: userData.email || '',
+              name: userDetailData.full_name || '',
+              emailNotifications: userDetailData.email_notifications || false,
+              browserNotifications: userDetailData.browser_notifications || false,
+              theme: userDetailData.theme || 'light'
             });
-
-            console.log('設定情報レスポンスステータス:', userDetailResponse.status);
-
-            if (userDetailResponse.ok) {
-              const userDetailData = await userDetailResponse.json();
-              console.log('取得した設定データ:', userDetailData);
-              
-              setUserSettings({
-                email: userData.email || '',
-                name: userDetailData.full_name || '',
-                emailNotifications: userDetailData.email_notifications || false,
-                browserNotifications: userDetailData.browser_notifications || false,
-                theme: userDetailData.theme || 'light'
-              });
-            } else {
-              // 詳細情報の取得に失敗した場合は基本情報だけセット
-              setUserSettings({
-                email: userData.email || '',
-                name: userData.full_name || '',
-                emailNotifications: true,
-                browserNotifications: false,
-                theme: 'light'
-              });
-            }
           } else {
-            // バックエンドAPIが見つからない場合はデモデータを使用
-            setUserSettings(demoData);
+            // 詳細情報の取得に失敗した場合のフォールバック
+            console.warn('Failed to fetch user details, using basic info.');
+            setUserSettings({
+              email: userData.email || '',
+              name: userData.full_name || '' , // Fallback name from /me if available?
+              emailNotifications: true, // Default fallback
+              browserNotifications: false,
+              theme: 'light'
+            });
           }
-        } catch (apiError) {
-          // APIが利用できない場合はデモデータを使用
-          console.warn('API接続エラー - デモデータを使用します');
-          setUserSettings(demoData);
+        } else {
+          // /api/v1/auth/me の取得に失敗した場合
+          console.error(`Failed to fetch /me endpoint: ${response.status}`);
+          // ここでエラー処理（例：ログインページへリダイレクト、エラー表示）
+          // setUserSettings({...demoData}); // Or handle error state
+          toast.error('ユーザー情報の取得に失敗しました。');
         }
-      } catch (error) {
-        console.error('ユーザー設定の取得エラー:', error);
-      } finally {
-        setLoading(false);
+      } catch (apiError) {
+        console.error('API接続エラー:', apiError);
+        // setUserSettings({...demoData}); // Or handle error state
+        toast.error('APIへの接続中にエラーが発生しました。');
       }
-    };
+    } catch (error) {
+      console.error('ユーザー設定の取得エラー (outer):', error);
+    } finally {
+       setLoading(false); // Set loading to false after fetch attempt (success or fail)
+    }
+  };
 
-    fetchUserSettings();
-  }, [session]);
+  // useEffect hook to manage loading state and trigger fetch based on session status
+  useEffect(() => {
+    console.log('Session status:', status);
+    if (status === 'loading') {
+      setLoading(true);
+      return; // Wait until status is determined
+    }
+
+    if (status === 'authenticated') {
+      if (session?.accessToken) {
+        fetchUserSettings();
+      } else {
+        // This case should ideally not happen if status is authenticated
+        console.error('Authenticated status but no access token found.');
+        setLoading(false);
+        // Handle error appropriately, maybe redirect to login?
+        toast.error('認証エラーが発生しました。再ログインしてください。');
+      }
+    } else { // status === 'unauthenticated'
+      console.log('User is unauthenticated. Showing demo data or redirecting...');
+      // Optionally redirect to login or show demo data
+      setUserSettings({ // Set demo data
+        email: 'demo@example.com',
+        name: 'デモユーザー',
+        emailNotifications: true,
+        browserNotifications: false,
+        theme: 'light'
+      });
+      setLoading(false);
+      // Or redirect: router.push('/login?error=session_expired');
+    }
+  }, [session, status]); // Depend on session object and status
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -148,7 +170,7 @@ const SettingsPage = () => {
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.user.id}`
+          'Authorization': `Bearer ${session.accessToken}`
         },
         body: JSON.stringify(requestData),
       });
@@ -329,7 +351,7 @@ const SettingsPage = () => {
                     credentials: 'include',
                     headers: {
                       'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${session.user.id}`
+                      'Authorization': `Bearer ${session.accessToken}`
                     },
                   })
                   .then(response => {

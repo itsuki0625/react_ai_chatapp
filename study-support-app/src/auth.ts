@@ -2,11 +2,27 @@ import NextAuth from "next-auth";
 import { NextAuthConfig } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { API_BASE_URL } from "@/lib/config";
+import { jwtDecode } from "jwt-decode";
 
 // APIベースURLを取得
 const getBaseUrl = () => {
   return API_BASE_URL;
 };
+
+// JWT デコード結果の型定義
+interface DecodedToken {
+  sub?: string;
+  name?: string;
+  roles?: string[];
+  exp?: number;
+  [key: string]: any;
+}
+
+// 認証情報の型定義
+interface Credentials {
+  email: string;
+  password: string;
+}
 
 const authConfig: NextAuthConfig = {
   providers: [
@@ -16,21 +32,18 @@ const authConfig: NextAuthConfig = {
         email: { label: "メールアドレス", type: "email" },
         password: { label: "パスワード", type: "password" }
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.email || !credentials?.password) {
           return null;
         }
 
-        try {
-          // フォームデータを使用
-          const formData = new URLSearchParams();
-          formData.append('username', credentials.email as string);
-          formData.append('password', credentials.password as string);
+        const { email, password } = credentials as Credentials;
 
+        try {
           const baseUrl = getBaseUrl();
           console.log('使用するAPIエンドポイント:', baseUrl);
 
-          // クッキーを保持するための設定
+          // JWTベースの認証リクエスト
           const response = await fetch(
             `${baseUrl}/api/v1/auth/login`,
             {
@@ -38,7 +51,10 @@ const authConfig: NextAuthConfig = {
               headers: {
                 'Content-Type': 'application/x-www-form-urlencoded'
               },
-              body: formData.toString(),
+              body: new URLSearchParams({
+                username: email,
+                password: password
+              }).toString(),
               credentials: 'include'
             }
           );
@@ -48,68 +64,26 @@ const authConfig: NextAuthConfig = {
             return null;
           }
 
-          // レスポンスのクッキーヘッダーを確認（デバッグ用）
-          console.log('ログインレスポンスヘッダー:', response.headers);
+          const data = await response.json();
           
-          // Set-Cookieヘッダーを保存
-          const cookies = response.headers.get('set-cookie');
-          console.log('受信したクッキー:', cookies);
-
-          const userData = await response.json();
-          console.log('ログイン成功:', userData);
-
-          // セッションクッキーを明示的に確認
-          if (typeof window !== 'undefined') {
-            console.log('現在のクッキー:', document.cookie);
+          if (!data.token || !data.token.access_token) {
+            console.error('アクセストークンが返されませんでした');
+            return null;
           }
 
-          // 少し待機してセッションが確立されるようにする
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // アクセストークンをデコードしてユーザー情報を取得
+          const decodedToken = jwtDecode<DecodedToken>(data.token.access_token);
+          console.log('デコードされたトークン:', decodedToken);
 
-          // ユーザー情報を取得して管理者かどうかを確認
-          try {
-            const userResponse = await fetch(
-              `${baseUrl}/api/v1/auth/me`,
-              { 
-                credentials: 'include',
-                headers: {
-                  // セッションクッキーを明示的に送信
-                  'Cookie': cookies || 
-                    (typeof window !== 'undefined' ? document.cookie : '')
-                }
-              }
-            );
-
-            if (!userResponse.ok) {
-              console.error('ユーザー情報の取得に失敗しました:', await userResponse.text());
-              // クリティカルなエラーではなく、基本的な情報だけで進める
-              return {
-                id: userData.user_id || 'temp-id',
-                email: credentials.email as string,
-                role: userData.role || ['user'],
-                name: userData.full_name || credentials.email
-              };
-            }
-
-            const user = await userResponse.json();
-            console.log('ユーザー情報取得成功:', user);
-
-            return {
-              id: user.user_id || userData.user_id || 'temp-id',
-              email: user.email || userData.email,
-              role: user.role || userData.role || ['user'],
-              name: userData.full_name
-            };
-          } catch (userError) {
-            console.error('ユーザー情報取得中のエラー:', userError);
-            // エラーが発生しても、基本的な認証情報だけで進める
-            return {
-              id: 'temp-id',
-              email: credentials.email as string,
-              role: userData.role || ['user'],
-              name: userData.full_name || credentials.email
-            };
-          }
+          // トークンからユーザー情報を抽出
+          return {
+            id: decodedToken.sub || 'unknown',
+            email,
+            name: decodedToken.name || email,
+            role: decodedToken.roles || ['user'],
+            accessToken: data.token.access_token,
+            refreshToken: data.token.refresh_token
+          };
         } catch (error) {
           console.error('Auth error:', error);
           return null;
@@ -118,16 +92,73 @@ const authConfig: NextAuthConfig = {
     })
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
+      // 初回ログイン時にユーザー情報をトークンに追加
       if (user) {
-        token.role = user.role || [];
         token.id = user.id || '';
+        token.email = user.email || '';
+        token.role = user.role || [];
+        token.name = user.name || undefined;
+        token.accessToken = user.accessToken;
+        token.refreshToken = user.refreshToken;
+        token.accessTokenExpires = Date.now() + 15 * 60 * 1000; // 15分
       }
+
+      // アクセストークンの期限が切れている場合はリフレッシュ
+      const shouldRefreshTime = Math.round((token.accessTokenExpires as number) - 60 * 1000 - Date.now());
+      
+      if (shouldRefreshTime <= 0) {
+        console.log('トークンの有効期限が切れています。リフレッシュします...');
+        
+        try {
+          const baseUrl = getBaseUrl();
+          const response = await fetch(`${baseUrl}/api/v1/auth/refresh-token`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              refresh_token: token.refreshToken
+            }),
+            credentials: 'include'
+          });
+
+          if (!response.ok) {
+            console.error('トークンリフレッシュに失敗しました');
+            return { ...token, error: "RefreshAccessTokenError" };
+          }
+
+          const refreshedTokens = await response.json();
+          console.log('トークンがリフレッシュされました');
+
+          if (!refreshedTokens.access_token) {
+            console.error('新しいアクセストークンが返されませんでした');
+            return { ...token, error: "RefreshAccessTokenError" };
+          }
+
+          // 新しいトークン情報をデコード
+          const decodedRefreshedToken = jwtDecode<DecodedToken>(refreshedTokens.access_token);
+
+          return {
+            ...token,
+            accessToken: refreshedTokens.access_token,
+            refreshToken: refreshedTokens.refresh_token || token.refreshToken,
+            accessTokenExpires: Date.now() + 15 * 60 * 1000,
+            role: decodedRefreshedToken.roles || token.role
+          };
+        } catch (error) {
+          console.error('トークンリフレッシュエラー:', error);
+          return { ...token, error: "RefreshAccessTokenError" };
+        }
+      }
+
       return token;
     },
     async session({ session, token }) {
       if (token && session.user) {
         session.user.id = token.id as string;
+        session.user.email = token.email as string;
+        session.user.name = token.name as string;
         
         // ロールが配列であることを確認
         const roles = Array.isArray(token.role) 
@@ -136,14 +167,14 @@ const authConfig: NextAuthConfig = {
         
         session.user.role = roles;
         
-        // 管理者権限の確認
+        // 権限フラグを設定
         session.user.isAdmin = roles.includes('admin');
-        
-        // 講師権限の確認
         session.user.isTeacher = roles.includes('teacher');
-        
-        // 生徒権限の確認
         session.user.isStudent = roles.includes('student');
+        
+        // トークン情報をセッションに追加
+        session.accessToken = token.accessToken as string;
+        session.error = token.error as string;
       }
       return session;
     },
@@ -209,10 +240,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);
 declare module "next-auth" {
   interface User {
     id?: string;
+    email?: string | null;
+    name?: string | null;
     role?: string[];
-    isAdmin?: boolean;
-    isTeacher?: boolean;
-    isStudent?: boolean;
+    accessToken?: string;
+    refreshToken?: string;
   }
   
   interface Session {
@@ -225,6 +257,8 @@ declare module "next-auth" {
       isTeacher: boolean;
       isStudent: boolean;
     };
+    accessToken: string;
+    error?: string;
   }
 }
 
@@ -232,6 +266,12 @@ declare module "next-auth" {
 declare module "@auth/core/jwt" {
   interface JWT {
     id: string;
+    email: string;
+    name?: string | null;
     role: string[] | string;
+    accessToken?: string;
+    refreshToken?: string;
+    accessTokenExpires?: number;
+    error?: string;
   }
 } 

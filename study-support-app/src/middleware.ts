@@ -18,6 +18,14 @@ export default auth((req) => {
     return NextResponse.redirect(redirectUrl);
   }
 
+  // JWT認証エラーがセッションに含まれている場合
+  if (authObj?.error === "RefreshAccessTokenError") {
+    // リフレッシュトークンが無効な場合は強制ログアウト
+    const redirectUrl = new URL('/login', nextUrl.origin);
+    redirectUrl.searchParams.set('error', 'session_expired');
+    return NextResponse.redirect(redirectUrl);
+  }
+
   // 管理者パスへのアクセスチェック（追加のセキュリティとして）
   if (pathname.startsWith('/admin')) {
     const isAdmin = authObj?.user?.role?.includes('admin');

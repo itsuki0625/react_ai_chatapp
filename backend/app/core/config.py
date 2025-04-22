@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     # アプリケーション設定
     PROJECT_NAME: str = "Study Support API"
     API_V1_STR: str = "/api/v1"
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
     
     # セキュリティ設定
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-here")
@@ -38,6 +40,8 @@ class Settings(BaseSettings):
     
     # OpenAI設定
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")  # 小文字のプロパティも追加
+    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
     
     # Stripe設定
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
@@ -50,7 +54,26 @@ class Settings(BaseSettings):
 
     # JWT設定
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15  # 15分
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30    # 30日
+    
+    # Redis設定（トークンブラックリスト、レート制限など）
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://redis:6379/0")
+    
+    # メール設定
+    SMTP_SERVER: str = os.getenv("SMTP_SERVER", "smtp.example.com")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    FROM_EMAIL: str = os.getenv("FROM_EMAIL", "noreply@smartao.example.com")
+    
+    # 2FA設定
+    TOTP_ISSUER: str = "SmartAO"
+    
+    # レート制限設定
+    RATE_LIMIT_LOGIN: int = 5   # 15分間に5回までのログイン試行
+    RATE_LIMIT_SIGNUP: int = 3  # 1時間に3回までのサインアップ
+    RATE_LIMIT_2FA: int = 10    # 15分間に10回までの2FA試行
 
     # Session settings
     SESSION_COOKIE_NAME: str = "session"
