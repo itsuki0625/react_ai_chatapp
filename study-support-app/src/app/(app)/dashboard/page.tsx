@@ -1,5 +1,7 @@
-import DashboardPage from '@/components/dashboad/DashboardPage';
+"use client";
 
-export default function Page() {
-  return <DashboardPage />;
+import { StudentDashboard } from "@/components/dashboad/StudentDashboard";
+
+export default function DashboardPage() {
+  return <StudentDashboard />;
 }

@@ -22,7 +22,7 @@ class ForumCategory(Base, TimestampMixin):
     # リレーションシップ
     parent = relationship("ForumCategory", remote_side=[id], backref="subcategories")
     topics = relationship("ForumTopic", back_populates="category")
-    creator = relationship("User", foreign_keys=[created_by])
+    creator = relationship("User", foreign_keys=[created_by], back_populates="forum_categories")
 
 
 class ForumTopic(Base, TimestampMixin):
@@ -42,7 +42,7 @@ class ForumTopic(Base, TimestampMixin):
     # リレーションシップ
     category = relationship("ForumCategory", back_populates="topics")
     posts = relationship("ForumPost", back_populates="topic", cascade="all, delete-orphan")
-    creator = relationship("User", foreign_keys=[created_by])
+    creator = relationship("User", foreign_keys=[created_by], back_populates="forum_topics")
     views = relationship("ForumTopicView", back_populates="topic", cascade="all, delete-orphan")
 
     # インデックス
@@ -66,7 +66,7 @@ class ForumPost(Base, TimestampMixin):
     # リレーションシップ
     topic = relationship("ForumTopic", back_populates="posts")
     parent = relationship("ForumPost", remote_side=[id], backref="replies")
-    creator = relationship("User", foreign_keys=[created_by])
+    creator = relationship("User", foreign_keys=[created_by], back_populates="forum_posts")
     reactions = relationship("ForumPostReaction", back_populates="post", cascade="all, delete-orphan")
 
     # インデックス
@@ -111,7 +111,7 @@ class ForumTopicView(Base):
 
     # リレーションシップ
     topic = relationship("ForumTopic", back_populates="views")
-    user = relationship("User")
+    user = relationship("User", back_populates="forum_topic_views")
 
     # インデックス
     __table_args__ = (

@@ -7,16 +7,11 @@ import {
   School,
   FileText,
   Activity,
-  Settings,
   AlertTriangle,
-  TrendingUp,
-  Search,
-  MoreVertical,
   CreditCard
 } from 'lucide-react';
-import { ContentManagement } from '@/components/admin/ContentManagement';
-import { SubscriptionManagement } from '@/components/admin/SubscriptionManagement';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 interface UserStats {
   totalStudents: number;
@@ -48,9 +43,6 @@ const AdminDashboard = () => {
     systemUptime: '99.9%',
     activeChats: 24
   });
-
-  // 管理画面のセクション表示状態
-  const [activeSection, setActiveSection] = useState<'content' | 'subscription'>('content');
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -165,23 +157,21 @@ const AdminDashboard = () => {
           </div>
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <button className="flex items-center justify-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100">
+              <Link href="/admin/users" className="flex items-center justify-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100">
                 <Users className="h-6 w-6 text-gray-600 mr-2" />
                 <span className="text-sm font-medium text-gray-900">ユーザー管理</span>
-              </button>
+              </Link>
               <button className="flex items-center justify-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100">
                 <School className="h-6 w-6 text-gray-600 mr-2" />
                 <span className="text-sm font-medium text-gray-900">学校管理</span>
               </button>
-              <button
-                className={`flex items-center justify-center p-4 rounded-lg ${
-                  activeSection === 'content' ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 hover:bg-gray-100'
-                }`}
-                onClick={() => setActiveSection('content')}
+              <Link 
+                href="/admin/content"
+                className="flex items-center justify-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100"
               >
                 <FileText className="h-6 w-6 mr-2" />
                 <span className="text-sm font-medium">コンテンツ管理</span>
-              </button>
+              </Link>
               <button
                 className="flex items-center justify-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100"
                 onClick={() => router.push('/admin/subscription')}
@@ -192,15 +182,6 @@ const AdminDashboard = () => {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* コンテンツ管理またはサブスクリプション管理セクション */}
-      <div className="mt-6">
-        {activeSection === 'content' ? (
-          <ContentManagement />
-        ) : (
-          <SubscriptionManagement />
-        )}
       </div>
     </div>
   );

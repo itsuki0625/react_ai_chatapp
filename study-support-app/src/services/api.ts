@@ -22,18 +22,22 @@ const getAxiosConfig = async (requireAuth = true) => {
   // 認証が必要な場合はセッションを取得
   if (requireAuth && typeof window !== 'undefined') {
     try {
-      const session = await getSession();
-      if (session) {
-        // セッショントークンがあれば追加
-        config.headers['X-Session-Token'] = 'true';
-        
-        // ユーザー情報をヘッダーに追加（バックエンドでの認証に使用）
-        if (session.user?.email) {
-          config.headers['X-User-Email'] = session.user.email;
-        }
-        if (session.user?.name) {
-          config.headers['X-User-Name'] = session.user.name;
-        }
+      const session = await getSession(); // NextAuth.js v4 or v5?
+      if (session?.accessToken) { // <-- session.accessToken を確認
+        config.headers['Authorization'] = `Bearer ${session.accessToken}`; // <-- Authorization ヘッダーを設定
+      } else if (session) {
+         // アクセストークンがないがセッションはある場合（古い形式やカスタム認証？）
+         // 必要に応じて X-Session-Token などのカスタムヘッダーを設定
+         config.headers['X-Session-Token'] = 'true';
+         if (session.user?.email) {
+           config.headers['X-User-Email'] = session.user.email;
+         }
+         if (session.user?.name) {
+           config.headers['X-User-Name'] = encodeURIComponent(session.user.name);
+         }
+         console.warn('Session found but no accessToken. Using custom headers.');
+      } else {
+         console.warn('No active session found for authenticated request.');
       }
     } catch (error) {
       console.error('セッション取得エラー:', error);

@@ -12,7 +12,13 @@ class Content(Base, TimestampMixin):
     title = Column(String, nullable=False)
     description = Column(Text)
     url = Column(String, nullable=False)
-    content_type = Column(SQLAlchemyEnum(ContentType), nullable=False)
+    content_type = Column(SQLAlchemyEnum(
+        ContentType,
+        name="contenttype",
+        native_enum=True,
+        create_type=False,
+        values_callable=lambda enum_cls: [e.name for e in enum_cls]
+    ), nullable=False)
     thumbnail_url = Column(String)
     duration = Column(Integer)  # 再生時間（秒）
     is_premium = Column(Boolean, default=False)

@@ -22,7 +22,7 @@ class LearningPath(Base, TimestampMixin):
     is_featured = Column(Boolean, default=False)
 
     # リレーションシップ
-    creator = relationship("User", foreign_keys=[created_by])
+    creator = relationship("User", foreign_keys=[created_by], back_populates="created_learning_paths")
     prerequisites = relationship("LearningPathPrerequisite", back_populates="learning_path", cascade="all, delete-orphan")
     target_audiences = relationship("LearningPathAudience", back_populates="learning_path", cascade="all, delete-orphan")
     items = relationship("LearningPathItem", back_populates="learning_path", cascade="all, delete-orphan")
@@ -89,7 +89,7 @@ class UserLearningPath(Base, TimestampMixin):
     progress_percentage = Column(Float, default=0.0)
 
     # リレーションシップ
-    user = relationship("User")
+    user = relationship("User", back_populates="learning_paths")
     learning_path = relationship("LearningPath", back_populates="user_enrollments")
     items = relationship("UserLearningPathItem", back_populates="user_learning_path", cascade="all, delete-orphan")
 

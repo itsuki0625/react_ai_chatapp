@@ -1,165 +1,92 @@
-# 認証システム設計書 — **パターンA：100 % JWT（Stateless）版**
+# 認証システム概要
 
-## 1. 概要
-Next.js（フロントエンド）と FastAPI（バックエンド）間で**完全 stateless な JWT 認証**を採用。  
-- **Access Token**：短命（15 分想定）  
-- **Refresh Token**：長命（30 日想定）  
-- バックエンドは署名検証のみでユーザー状態を保持しない  
-- ログアウトやパスワード変更時は Refresh Token をブラックリストに登録して失効させる  
+このドキュメントでは、Next.js（フロントエンド）と FastAPI（バックエンド）を使用するアプリケーションの認証システムの概要を説明します。
+
+## 1. 基本方針
+
+-   **認証方式**: 完全なステートレス JWT (JSON Web Token) 認証を採用します。
+-   **トークン**:
+    -   **Access Token**: 短命（例: 15 分）で、API リクエスト時の認証に使用されます。
+    -   **Refresh Token**: 長命（例: 30 日）で、Access Token の再発行に使用されます。
+-   **状態管理**: バックエンド (FastAPI) はユーザセッション状態を持たず、各リクエストで JWT の署名を検証します。
+-   **トークン失効**: ログアウトやパスワード変更時には、Refresh Token を無効化リスト（ブラックリスト）に登録して失効させます。
 
 ## 2. 認証フロー
 
 ### 2.1 サインアップ
-1. ユーザーがサインアップフォーム入力（email, password, name）  
-2. **POST `/api/v1/auth/signup`**  
-3. バックエンド  
-   - email 重複チェック  
-   - bcrypt でハッシュ化  
-   - 仮登録 → Email verification（トークン付きリンク送信）  
-4. 本登録完了後、**Access / Refresh** を発行して JSON で返却  
-5. Next‑Auth `jwt` コールバックで  
-   - Access Token → **Authorization ヘッダ or Cookie(HttpOnly; SameSite=None)**  
-   - Refresh Token → **HttpOnly Cookie** に保存  
+
+1.  ユーザーがフロントエンドでメールアドレス、パスワードなどを入力します。
+2.  フロントエンドはバックエンドの `/api/v1/auth/signup` エンドポイントに POST リクエストを送信します。
+3.  バックエンドは入力値を検証し、メールアドレスの重複を確認します。
+4.  パスワードをハッシュ化（例: bcrypt）してデータベースに保存します。
+5.  （オプション）メール認証用のトークンを含むリンクをユーザーのメールアドレスに送信します。
+6.  認証が完了すると、バックエンドは Access Token と Refresh Token を生成してレスポンスとして返します。
+7.  フロントエンド (NextAuth.js) は受け取ったトークンを安全に保存します。
+    -   Access Token: メモリ内、または `HttpOnly` Cookie（`SameSite=Lax` または `Strict`）。Authorization ヘッダーでの送信も考慮。
+    -   Refresh Token: `HttpOnly`, `Secure`, `SameSite=Strict` (または `Lax`) 属性付きの Cookie に保存します。
 
 ### 2.2 ログイン
-1. Credentials Provider で email / password 送信  
-2. **POST `/api/v1/auth/login`**  
-3. 認証成功時に Access / Refresh 発行 → 以降はサインアップと同様に保存  
+
+1.  ユーザーがフロントエンドでメールアドレスとパスワードを入力します。
+2.  フロントエンドは NextAuth.js の Credentials Provider を使用し、バックエンドの `/api/v1/auth/login` エンドポイントに POST リクエストを送信します。
+3.  バックエンドは認証情報を検証し、成功した場合、新しい Access Token と Refresh Token を生成して返します。
+4.  フロントエンドはサインアップ時と同様にトークンを保存します。
 
 ### 2.3 トークンリフレッシュ
-1. Access 失効時、フロントが自動で **POST `/api/v1/auth/refresh`**  
-2. バックエンド  
-   - Refresh Token 検証（ブラックリスト・期限）  
-   - 新しい Access/Refresh 発行＋旧 Refresh を失効リストへ  
+
+1.  Access Token の有効期限が切れた場合、フロントエンド (NextAuth.js のコールバックやミドルウェア) は自動的に Refresh Token を使用してバックエンドの `/api/v1/auth/refresh` エンドポイントに POST リクエストを送信します。
+2.  バックエンドは受け取った Refresh Token を検証します（有効期限、失効リストの確認）。
+3.  検証が成功した場合、新しい Access Token（およびオプションで新しい Refresh Token）を生成して返します。古い Refresh Token は失効リストに追加される場合があります。
+4.  フロントエンドは新しいトークンで既存のトークンを更新します。
 
 ### 2.4 ログアウト
-1. フロントの `/logout` で **POST `/api/v1/auth/logout`**  
-2. バックエンドで受け取った Refresh Token をブラックリストに登録  
-3. フロントの Access / Refresh Cookie を削除  
+
+1.  ユーザーがフロントエンドでログアウト操作を行います。
+2.  フロントエンドはバックエンドの `/api/v1/auth/logout` エンドポイントに POST リクエストを送信します（通常、Refresh Token をリクエストボディや Cookie 経由で渡します）。
+3.  バックエンドは受け取った Refresh Token を失効リストに登録します。
+4.  フロントエンドは保存している Access Token と Refresh Token (Cookie など) を削除します。
 
 ## 3. 技術スタック
 
-| レイヤ | 採用技術 |
-| ------ | -------- |
-| **Next.js** | Next‑Auth v5 (Credentials Provider + JWT Strategy) |
-| **FastAPI** | 自作エンドポイント + `pyjwt[crypto]` (RS256) |
-| **パスワードハッシュ** | `passlib[bcrypt]` |
-| **Refresh 失効リスト** | Redis (SET + TTL) または PostgreSQL |
-| **レート制限** | `fastapi-limiter` (Redis) |
-| **OpenTelemetry** | Trace 収集用（任意） |
+| コンポーネント        | 技術                                                 | 役割                                      |
+| --------------------- | ---------------------------------------------------- | ----------------------------------------- |
+| **フロントエンド**    | Next.js, NextAuth.js (v5 or later)                   | UI、認証状態管理、トークン保存、API コール    |
+| **バックエンド**      | FastAPI, Python                                      | API 提供、JWT 生成/検証、ビジネスロジック |
+| **JWT ライブラリ**    | `python-jose` または `pyjwt` (`[crypto]` オプション付) | JWT のエンコード/デコード、署名/検証        |
+| **パスワードハッシュ**| `passlib` (`bcrypt`)                                 | パスワードの安全なハッシュ化              |
+| **データベース**      | PostgreSQL                                           | ユーザー情報、ロール、権限などの永続化    |
+| **失効リスト**        | Redis または PostgreSQL                              | Refresh Token のブラックリスト管理        |
+| **コンテナ化**        | Docker, Docker Compose                               | 開発・本番環境の構築、実行                |
 
-## 4. データモデル
+*   **環境変数 (.env)**: `DATABASE_URL`, `SECRET_KEY`, `JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS`, `NEXTAUTH_URL`, `AUTH_SECRET` などが設定されます。
+*   **docker-compose.yml**: `frontend`, `backend`, `db` サービスを定義し、ネットワーク連携や環境変数の設定を行います。
 
-```mermaid
-erDiagram
-    USER ||--o{ ROLE : "has"
-    USER {
-        UUID id PK
-        string email "unique"
-        string hashed_password
-        string full_name
-        boolean is_active
-        timestamp created_at
-        timestamp updated_at
-    }
-    ROLE {
-        UUID id PK
-        string name
-    }
-    ROLE ||--o{ PERMISSION : "has"
-    PERMISSION {
-        UUID id PK
-        string code
-        string description
-    }
-```
+## 4. API エンドポイント (例)
 
-*権限は多対多テーブルで正規化。*
+| Method | Path                           | 説明                     |
+| ------ | ------------------------------ | ------------------------ |
+| `POST` | `/api/v1/auth/signup`          | 新規ユーザー登録         |
+| `POST` | `/api/v1/auth/login`           | ログイン                 |
+| `POST` | `/api/v1/auth/refresh`         | Access Token の再発行    |
+| `POST` | `/api/v1/auth/logout`          | ログアウト (Refresh Token失効) |
+| `GET`  | `/api/v1/users/me`             | 認証済みユーザー情報取得 |
+| `POST` | `/api/v1/auth/change-password` | パスワード変更           |
+| `DELETE`| `/api/v1/auth/delete-account` | アカウント削除           |
 
-## 5. API エンドポイント
+## 5. トークン管理
 
-| Method | Path | 説明 |
-| ------ | ---- | ---- |
-| `POST` | `/api/v1/auth/signup` | 新規登録 |
-| `POST` | `/api/v1/auth/login` | ログイン |
-| `POST` | `/api/v1/auth/refresh` | トークン再発行 |
-| `POST` | `/api/v1/auth/logout` | ログアウト（Refresh 失効） |
-| `GET`  | `/api/v1/auth/me` | 現在ユーザー取得 |
-| `POST` | `/api/v1/auth/change-password` | パスワード変更 |
-| `DELETE` | `/api/v1/auth/delete-account` | 退会 |
+| 種類          | 保管場所 (フロントエンド)                                       | 期限 (例) | 特徴                                                                 |
+| ------------- | ------------------------------------------------------------- | -------- | -------------------------------------------------------------------- |
+| **Access Token** | メモリ内、または `HttpOnly` Cookie (`SameSite=Lax`/`Strict`) | 15 分    | API リクエスト時に `Authorization: Bearer <token>` ヘッダーで送信される |
+| **Refresh Token**| `HttpOnly`, `Secure`, `SameSite=Strict` Cookie              | 30 日    | Access Token 再発行専用。バックエンドで失効リスト管理 (`jti` クレーム使用) |
 
-## 6. アクセス制御
+## 6. セキュリティ考慮事項
 
-- **RBAC**：`admin / teacher / student`  
-- FastAPI 依存性注入で `Depends(role_required("admin"))` のようにチェック  
-- WebSocket では最初の接続 QueryParam に Access Token を付与、バックエンドで検証
-
-## 7. トークン管理
-
-| 種類 | 保管場所 | 期限 | 備考 |
-| ---- | -------- | ---- | ---- |
-| **Access** | Cookie or Memory（Authorization ヘッダ） | 15 分 | 署名のみ検証 |
-| **Refresh** | HttpOnly Cookie | 30 日 | 失効リスト運用（jti 付与） |
-
-> **CSRF 対策**：Access を Cookie に入れる場合は Double‑Submit Cookie + `SameSite=None; Secure`
-
-## 8. セキュリティ対策
-
-1. **RS256 署名**：公開鍵は Next.js と他マイクロサービスに配布  
-2. **Email Verification**：登録時必須  
-3. **レート制限**：`/login` `/signup` `/refresh` に IP + email 単位で設定  
-4. **アカウントロック**：連続失敗 5 回 → 15 分ロック  
-5. **2FA**：TOTP をロードマップに追加（Next‑Auth callback でフラグ確認）  
-
-## 9. エラー仕様
-
-```jsonc
-{
-  "error": {
-    "code": "token_expired",      // or invalid_credentials, locked_out …
-    "message": "アクセストークンの有効期限が切れています。"
-  }
-}
-```
-
-## 10. テスト戦略
-
-| 種類 | 重点シナリオ |
-| ---- | ------------ |
-| **単体** | JWT 署名/検証、Refresh 失効判定、ハッシュ化 |
-| **統合** | Sign‑up → Verify → Login → Refresh → Protected API |
-| **E2E** | ブラウザ自動テスト：CSRF、Cookie 属性、ログアウト即時無効 |
-| **負荷** | `/refresh` QPS、Redis 失効セット肥大化 |
-
-## 11. 環境変数例
-
-```bash
-# 共通
-JWT_ALGORITHM=RS256
-JWT_PRIVATE_KEY_PATH=/run/secrets/jwt_private.pem
-JWT_PUBLIC_KEY_PATH=/run/secrets/jwt_public.pem
-ACCESS_TOKEN_EXPIRE_MINUTES=15
-REFRESH_TOKEN_EXPIRE_DAYS=30
-
-# FastAPI
-DATABASE_URL=postgresql://...
-REDIS_URL=redis://...
-
-# Next.js
-NEXTAUTH_URL=https://app.example.com
-NEXT_PUBLIC_API_BASE_URL=https://api.example.com
-```
-
-## 12. 今後の拡張ロードマップ
-
-1. **2FA (TOTP/ WebAuthn)**  
-2. **OAuth / Social Login (Google, GitHub)**  
-3. **監査ログ基盤**（SIEM 連携）  
-4. **JWT クレーム最小化 & 暗号化 (JWE)**  
-
-## 13. 決定事項まとめ
-
-- **採用パターン**：完全 stateless JWT  
-- **Access 15 min / Refresh 30 d、ブラックリスト方式で失効管理**  
-- **SessionMiddleware は使用しない**  
-- **Email Verification & レート制限は MVP から実装**
+-   **HTTPS**: 通信は常に HTTPS で暗号化します。
+-   **JWT 署名アルゴリズム**: `RS256` (公開鍵/秘密鍵) または `HS256` (共通鍵) を使用します。`RS256` の方がより安全性が高いとされます。秘密鍵はバックエンドのみが保持します。
+-   **Cookie 属性**: `HttpOnly`, `Secure`, `SameSite` 属性を適切に設定し、XSS や CSRF 攻撃のリスクを軽減します。
+-   **CSRF 対策**: Access Token を Cookie で管理する場合、Double Submit Cookie や SameSite 属性の利用を検討します。
+-   **レート制限**: ログイン、サインアップ、トークンリフレッシュのエンドポイントにはレート制限を適用し、ブルートフォース攻撃を防ぎます。
+-   **パスワードポリシー**: 強力なパスワードポリシーを強制します。
+-   **メール認証**: サインアップ時にメールアドレスの所有確認を行います。
+-   **依存関係の脆弱性**: 使用するライブラリの脆弱性を定期的にチェックし、更新します。

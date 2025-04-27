@@ -30,7 +30,7 @@ class ContentBase(BaseModel):
     thumbnail_url: Optional[str] = None
     category: ContentCategory
     tags: Optional[List[str]] = Field(default_factory=list)
-    duration_seconds: Optional[int] = None
+    duration: Optional[int] = None
     is_premium: bool = False
     author: Optional[str] = None
     difficulty: Optional[int] = Field(None, ge=1, le=5)  # 1-5の難易度
@@ -52,7 +52,7 @@ class ContentUpdate(BaseModel):
     thumbnail_url: Optional[str] = None
     category: Optional[ContentCategory] = None
     tags: Optional[List[str]] = None
-    duration_seconds: Optional[int] = None
+    duration: Optional[int] = None
     is_premium: Optional[bool] = None
     author: Optional[str] = None
     difficulty: Optional[int] = Field(None, ge=1, le=5)

@@ -150,6 +150,12 @@ class AuditLogStatus(enum.Enum):
     PENDING = "pending"
     COMPLETED = "completed"
 
+class UserStatus(str, enum.Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    PENDING = "pending"
+    UNPAID = "unpaid"
+
 # SQLAlchemyで使用するための型定義
 UserRoleType = SQLAlchemyEnum(RoleType)
 

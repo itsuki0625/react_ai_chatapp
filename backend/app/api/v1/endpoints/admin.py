@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 import stripe
+from uuid import UUID
 
 from app.core.config import settings
 from app.api.deps import get_db
@@ -17,11 +18,117 @@ from app.crud.subscription import (
     update_campaign_code,
     delete_campaign_code,
 )
+from app.crud.user import get_multi_users, remove_user, create_user, get_user, update_user, get_user_by_email
+from app.schemas.user import (
+    UserListResponse,
+    UserResponse,
+    UserCreate,
+    UserUpdate,
+    UserRole as SchemaUserRole,
+    UserStatus as SchemaUserStatus
+)
 
 router = APIRouter(tags=["admin"])
 
 # Stripeインスタンスの初期化
 stripe.api_key = settings.STRIPE_SECRET_KEY
+
+# ---------- ユーザー関連のエンドポイント ---------- #
+@router.get("/users",
+            response_model=UserListResponse,
+            response_model_exclude={'users': {'__all__': {'full_name', 'is_verified', 'user_roles', 'login_info'}}}
+            )
+def admin_get_users(
+    skip: int = 0,
+    limit: int = 100,
+    search: Optional[str] = None,
+    role: Optional[SchemaUserRole] = None,
+    status: Optional[SchemaUserStatus] = None,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_superuser),
+):
+    users, total = get_multi_users(db, skip=skip, limit=limit, search=search, role=role, status=status)
+    return UserListResponse(
+        total=total,
+        users=users,
+        page=(skip // limit) + 1,
+        size=len(users),
+    )
+
+@router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def admin_create_user(
+    user_in: UserCreate,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_superuser),
+):
+    existing_user = get_user_by_email(db, email=user_in.email)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="このメールアドレスは既に使用されています。",
+        )
+    new_user = create_user(db, user_in=user_in)
+    return new_user
+
+@router.get("/users/{user_id}",
+           response_model=UserResponse,
+           response_model_exclude={'user_roles', 'login_info'} # Exclude raw relations
+           )
+def admin_get_user(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_superuser),
+):
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="無効なユーザーID形式です")
+    db_user = get_user(db, user_id=user_uuid)
+    if not db_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ユーザーが見つかりません")
+    return db_user
+
+@router.put("/users/{user_id}",
+           response_model=UserResponse,
+           response_model_exclude={'user_roles', 'login_info'} # Exclude raw relations
+           )
+def admin_update_user(
+    user_id: str,
+    user_in: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_superuser),
+):
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="無効なユーザーID形式です")
+    db_user = get_user(db, user_id=user_uuid)
+    if not db_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ユーザーが見つかりません")
+    if user_in.email and user_in.email != db_user.email:
+        existing_user = get_user_by_email(db, email=user_in.email)
+        if existing_user and existing_user.id != user_uuid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="このメールアドレスは既に使用されています。",
+            )
+    updated_user = update_user(db, db_user=db_user, user_in=user_in)
+    return updated_user
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_delete_user(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_superuser),
+):
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="無効なユーザーID形式です")
+    removed = remove_user(db, user_id=user_uuid)
+    if not removed:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ユーザーが見つかりません")
+    return None
 
 # ---------- 商品関連のエンドポイント ---------- #
 
@@ -255,7 +362,6 @@ async def admin_get_campaign_codes(
     """
     # owner_idが指定されている場合
     if owner_id:
-        from uuid import UUID
         try:
             uuid_owner_id = UUID(owner_id)
             return get_user_campaign_codes(db, uuid_owner_id, skip, limit)
@@ -290,6 +396,12 @@ async def admin_delete_campaign_code(
     キャンペーンコードを削除します。
     管理者専用エンドポイント。
     """
-    from uuid import UUID
-    delete_campaign_code(db, UUID(campaign_code_id))
-    return None 
+    try:
+        uuid_campaign_code_id = UUID(campaign_code_id)
+        delete_campaign_code(db, uuid_campaign_code_id)
+        return None
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="無効なcampaign_code_id形式です"
+        ) 

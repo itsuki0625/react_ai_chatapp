@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import Any
 from app.core.config import settings
 from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_token
-from app.crud.user import get_user_by_email, create_user, get_user
+from app.crud.user import get_user_by_email, create_user, get_user, record_login_attempt
 from app.crud.token import add_token_to_blacklist, is_token_blacklisted, remove_expired_tokens
 from app.api.deps import get_db
 from app.schemas.auth import (
@@ -48,12 +48,17 @@ async def login(
         user = get_user_by_email(db, email=form_data.username)
         if not user or not verify_password(form_data.password, user.hashed_password):
             logger.warning(f"認証失敗: {form_data.username}")
+            if user: # ユーザーが存在する場合のみ失敗を記録
+                 record_login_attempt(db=db, user_id=user.id, success=False)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="メールアドレスまたはパスワードが正しくありません",
             )
             
         logger.debug(f"認証成功: {form_data.username}")
+        
+        # 成功記録
+        record_login_attempt(db=db, user_id=user.id, success=True)
         
         # リクエストヘッダーの確認
         logger.debug(f"リクエストヘッダー: {{request.headers}}")
@@ -113,13 +118,16 @@ async def login(
         )
 
         # レスポンスをLoginResponseモデルに合わせて返す
+        user_response_data = {
+            "id": str(user.id),
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": role_permissions, # 権限名のリストを返す
+            "status": user.status.value if user.status else None # status を追加 (Enum の場合は .value)
+        }
+
         return LoginResponse(
-            user={
-                "id": str(user.id),
-                "email": user.email,
-                "full_name": user.full_name,
-                "role": role_permissions # 権限名のリストを返す
-            },
+            user=user_response_data, # 更新された辞書を使用
             token=Token(
                 access_token=access_token,
                 refresh_token=refresh_token,
@@ -143,27 +151,41 @@ async def logout(
     ログアウト処理。セッションをクリアし、現在のアクセストークンをブラックリストに追加します。
     """
     try:
-        # ユーザーIDを取得
-        user_id = request.session.get("user_id")
-        
         # Authorization ヘッダーからトークンを取得
         auth_header = request.headers.get("Authorization")
+        token_blacklisted = False # トークンがブラックリストに追加されたかのフラグ
+
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.replace("Bearer ", "")
-            
+
             # トークンをデコード
             payload = decode_token(token)
-            if payload and "jti" in payload and "exp" in payload:
-                # トークンをブラックリストに追加
-                add_token_to_blacklist(
-                    db=db,
-                    token_jti=payload["jti"],
-                    user_id=user_id,
-                    expires_at=datetime.fromtimestamp(payload["exp"]),
-                    reason=TokenBlacklistReason.LOGOUT
-                )
-                logger.info(f"トークン {payload['jti']} をブラックリストに追加しました")
-        
+            if payload and "jti" in payload and "exp" in payload and "sub" in payload: # 'sub' の存在も確認
+                try:
+                    # --- 修正: トークンからユーザーIDを取得 ---
+                    user_uuid = uuid.UUID(payload["sub"])
+
+                    # user_uuid が None でない場合のみブラックリストに追加 (UUID変換成功時)
+                    add_token_to_blacklist(
+                        db=db,
+                        token_jti=payload["jti"],
+                        user_id=user_uuid, # トークンから取得したUUID型を渡す
+                        expires_at=datetime.fromtimestamp(payload["exp"]),
+                        reason=TokenBlacklistReason.LOGOUT
+                    )
+                    logger.info(f"トークン {payload['jti']} をブラックリストに追加しました (User: {user_uuid})")
+                    token_blacklisted = True
+                except ValueError:
+                     logger.error(f"トークンから取得したユーザーID '{payload['sub']}' が無効なUUID形式です。")
+                except Exception as e_blacklist: # ブラックリスト追加時のエラーハンドリング
+                     logger.error(f"トークンのブラックリスト追加中にエラーが発生しました: {e_blacklist}")
+            else:
+                 logger.warning("デコードされたトークンに必要な情報 (jti, exp, sub) が不足しています。")
+
+        # トークンがブラックリストに追加されなかった場合（例：ヘッダーがない、デコード失敗）でも警告を出す
+        if not token_blacklisted:
+             logger.warning("有効なBearerトークンが見つからなかったか、ブラックリストへの追加に失敗したため、トークンは無効化されていません。")
+
         # 定期的に期限切れのトークンをクリーンアップ
         # 本番環境では、スケジュールタスクで実行することを推奨
         try:
@@ -171,10 +193,10 @@ async def logout(
             logger.info(f"{deleted_count} 件の期限切れトークンを削除しました")
         except Exception as e:
             logger.error(f"期限切れトークンの削除に失敗しました: {str(e)}")
-        
-        # セッションをクリア
+
+        # セッションをクリア (これは維持)
         request.session.clear()
-        
+
         return {"message": "正常にログアウトしました"}
     except Exception as e:
         logger.error(f"ログアウトエラー: {str(e)}")

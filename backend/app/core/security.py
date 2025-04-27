@@ -4,9 +4,22 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 from app.core.config import settings
 import uuid
+import os
+import hashlib
 from sqlalchemy.orm import Session
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# --- AUTH_SECRET からキーを導出 --- 
+# このキーは AuthMiddleware でも使用される
+AUTH_SECRET = os.getenv("AUTH_SECRET")
+if not AUTH_SECRET:
+    raise RuntimeError("AUTH_SECRET environment variable not set")
+derived_key = hashlib.sha512(AUTH_SECRET.encode('utf-8')).digest()
+
+# --- JWT アルゴリズム --- 
+# AuthMiddleware と合わせる
+JWT_ALGORITHM = "HS512"
 
 def create_access_token(
     data: Dict[str, Any], expires_delta: Optional[timedelta] = None
@@ -34,9 +47,9 @@ def create_access_token(
         to_encode["jti"] = str(uuid.uuid4())
     
     encoded_jwt = jwt.encode(
-        to_encode, 
-        settings.SECRET_KEY, 
-        algorithm=settings.ALGORITHM
+        to_encode,
+        derived_key,      # 導出したキーを使用
+        algorithm=JWT_ALGORITHM # HS512 アルゴリズムを使用
     )
     return encoded_jwt
 
@@ -63,9 +76,9 @@ def create_refresh_token(
     })
     
     encoded_jwt = jwt.encode(
-        to_encode, 
-        settings.SECRET_KEY, 
-        algorithm=settings.ALGORITHM
+        to_encode,
+        derived_key,      # 導出したキーを使用
+        algorithm=JWT_ALGORITHM # HS512 アルゴリズムを使用
     )
     return encoded_jwt
 
@@ -75,9 +88,9 @@ def verify_token(token: str) -> bool:
     """
     try:
         payload = jwt.decode(
-            token, 
-            settings.SECRET_KEY, 
-            algorithms=[settings.ALGORITHM]
+            token,
+            derived_key,
+            algorithms=[JWT_ALGORITHM]
         )
         return True
     except JWTError:
@@ -89,9 +102,9 @@ def decode_token(token: str) -> Optional[Dict[str, Any]]:
     """
     try:
         payload = jwt.decode(
-            token, 
-            settings.SECRET_KEY, 
-            algorithms=[settings.ALGORITHM]
+            token,
+            derived_key,
+            algorithms=[JWT_ALGORITHM]
         )
         return payload
     except JWTError:

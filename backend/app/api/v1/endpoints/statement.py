@@ -40,33 +40,34 @@ async def get_user_statements(
     """ユーザーの志望理由書一覧を取得"""
     statements = get_statements(db=db, user_id=current_user.id)
     
-    # レスポンスデータを整形
-    result = []
+    # PersonalStatementResponseのリストとして結果を構築
+    result: List[PersonalStatementResponse] = []
     for statement in statements:
-        response_data = {
-            "id": statement.id,
-            "content": statement.content,
-            "status": statement.status,
-            "created_at": statement.created_at,
-            "updated_at": statement.updated_at,
-            "user_id": statement.user_id,
-            "desired_department_id": statement.desired_department_id,
-            "desired_department": None
-        }
+        university_name = None
+        department_name = None
         
-        if statement.desired_department:
-            response_data["desired_department"] = {
-                "id": statement.desired_department.id,
-                "department": {
-                    "id": statement.desired_department.department.id,
-                    "name": statement.desired_department.department.name,
-                    "university": {
-                        "name": statement.desired_department.department.university.name
-                    }
-                }
-            }
+        # 関連データから大学名と学部名を取得
+        if statement.desired_department and statement.desired_department.department:
+            department_name = statement.desired_department.department.name
+            if statement.desired_department.department.university:
+                university_name = statement.desired_department.department.university.name
         
-        result.append(response_data)
+        # PersonalStatementResponseスキーマに合わせてデータを作成
+        response = PersonalStatementResponse(
+            id=statement.id,
+            content=statement.content,
+            status=statement.status,
+            created_at=statement.created_at,
+            updated_at=statement.updated_at,
+            user_id=statement.user_id,
+            desired_department_id=statement.desired_department_id,
+            university_name=university_name,
+            department_name=department_name,
+            # feedback_count と latest_feedback_at は必要に応じて別途取得・設定
+            # feedback_count=len(statement.feedbacks), # 例: フィードバック数を取得
+            # latest_feedback_at=max(f.created_at for f in statement.feedbacks) if statement.feedbacks else None # 例: 最新フィードバック日時
+        )
+        result.append(response)
     
     return result
 

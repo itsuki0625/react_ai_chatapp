@@ -35,6 +35,18 @@ export interface StripePrice {
   created: number;
 }
 
+// セッション情報とアクセストークンの型 (NextAuthのデフォルトに合わせる)
+interface ExtendedSession {
+  accessToken?: string;
+  user?: {
+    id?: string;
+    email?: string | null;
+    name?: string | null;
+    // 他のユーザー情報...
+  };
+  expires?: string;
+}
+
 // 認証情報付きのaxios設定を取得
 const getAxiosConfig = async (requireAuth = true) => {
   const config: {
@@ -50,6 +62,13 @@ const getAxiosConfig = async (requireAuth = true) => {
   if (requireAuth && typeof window !== 'undefined') {
     try {
       const session = await getSession();
+      const extendedSession = session as ExtendedSession | null; // 型アサーション
+
+      // --- 追加: Authorizationヘッダーに AccessToken を設定 ---
+      if (extendedSession?.accessToken) {
+        config.headers['Authorization'] = `Bearer ${extendedSession.accessToken}`;
+      }
+
       if (session) {
         // セッショントークンがあれば追加
         config.headers['X-Session-Token'] = 'true';
@@ -59,7 +78,15 @@ const getAxiosConfig = async (requireAuth = true) => {
           config.headers['X-User-Email'] = session.user.email;
         }
         if (session.user?.name) {
-          config.headers['X-User-Name'] = session.user.name;
+          // Base64エンコードしてヘッダーに設定
+          try {
+            // UTF-8 -> Binary String -> Base64
+            const base64Name = btoa(unescape(encodeURIComponent(session.user.name)));
+            config.headers['X-User-Name-Base64'] = base64Name; 
+          } catch (e) {
+             console.error("Failed to base64 encode username:", e);
+             // エラー時のフォールバック（例: ヘッダーを設定しない）
+          }
         }
       }
     } catch (error) {
@@ -68,6 +95,99 @@ const getAxiosConfig = async (requireAuth = true) => {
   }
 
   return config;
+};
+
+// ユーザー一覧取得（管理者）
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  status: string;
+  created_at: string;
+  last_login_at?: string | null;
+}
+
+export interface AdminUserListResponse {
+  total: number;
+  users: AdminUser[];
+  page: number;
+  size: number;
+}
+
+// 新規：ユーザー作成・更新時のペイロード型 (バックエンドのスキーマに合わせる)
+export type UserCreatePayload = {
+  email: string;
+  full_name: string; // バックエンドのフィールド名
+  name?: string; // 後方互換用
+  password: string; // 新規作成時は必須
+  role: '管理者' | '教員' | '生徒'; // バックエンドのEnum値
+  status: 'active' | 'inactive' | 'pending';
+  // 他のフィールドも必要なら追加 (grade, class_number, etc.)
+};
+
+// 更新用ペイロード型
+export type UserUpdatePayload = Partial<Omit<UserCreatePayload, 'password'>> & { password?: string }; // パスワードは任意
+
+// 新規：ユーザー詳細取得レスポンス型 (AdminUser とほぼ同じだが明確化)
+export type UserDetailsResponse = AdminUser;
+
+/**
+ * ユーザー一覧を取得します
+ * @param params skip, limit, search, role, status をオプションで指定
+ */
+export const getUsers = async (params?: {
+  skip?: number;
+  limit?: number;
+  search?: string;
+  role?: string;
+  status?: string;
+}): Promise<AdminUserListResponse> => {
+  const config = await getAxiosConfig(true);
+  const query = new URLSearchParams();
+  if (params) {
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null) query.append(key, String(val));
+    });
+  }
+  const url = `${API_URL}/admin/users?${query.toString()}`;
+  const response = await axios.get<AdminUserListResponse>(url, config);
+  return response.data;
+};
+
+/**
+ * 新しいユーザーを作成します
+ */
+export const createUser = async (userData: UserCreatePayload): Promise<UserDetailsResponse> => {
+  const config = await getAxiosConfig(true);
+  const response = await axios.post<UserDetailsResponse>(`${API_URL}/admin/users`, userData, config);
+  return response.data;
+};
+
+/**
+ * 特定のユーザーの詳細を取得します
+ */
+export const getUserDetails = async (userId: string): Promise<UserDetailsResponse> => {
+  const config = await getAxiosConfig(true);
+  const response = await axios.get<UserDetailsResponse>(`${API_URL}/admin/users/${userId}`, config);
+  return response.data;
+};
+
+/**
+ * ユーザー情報を更新します
+ */
+export const updateUser = async (userId: string, userData: UserUpdatePayload): Promise<UserDetailsResponse> => {
+  const config = await getAxiosConfig(true);
+  const response = await axios.put<UserDetailsResponse>(`${API_URL}/admin/users/${userId}`, userData, config);
+  return response.data;
+};
+
+/**
+ * ユーザー情報を削除します
+ */
+export const deleteUser = async (userId: string): Promise<void> => {
+  const config = await getAxiosConfig(true);
+  await axios.delete(`${API_URL}/admin/users/${userId}`, config);
 };
 
 export const adminService = {

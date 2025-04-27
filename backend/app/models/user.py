@@ -3,7 +3,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
 from .base import Base, TimestampMixin
-from .enums import AccountLockReason, TokenBlacklistReason, RoleType
+from .enums import AccountLockReason, TokenBlacklistReason, RoleType, UserStatus
 
 class Role(Base, TimestampMixin):
     __tablename__ = 'roles'
@@ -47,7 +47,7 @@ class User(Base, TimestampMixin):
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=False)
     school_id = Column(UUID(as_uuid=True), ForeignKey('schools.id'))
-    is_active = Column(Boolean, default=True)
+    status = Column(SQLAlchemyEnum(UserStatus), nullable=False, default=UserStatus.PENDING)
     
     # 追加: 直接UserモデルにE-mail検証と2FA関連のフィールドを追加
     is_verified = Column(Boolean, default=False)  # メール検証が完了しているか
@@ -63,7 +63,7 @@ class User(Base, TimestampMixin):
     contact_info = relationship("UserContactInfo", back_populates="user")
     school = relationship("School", back_populates="users")
     chat_sessions = relationship("ChatSession", back_populates="user")
-    chat_messages = relationship("ChatMessage", back_populates="user")
+    chat_messages = relationship("ChatMessage", back_populates="user", cascade="all, delete-orphan")
     desired_schools = relationship("DesiredSchool", back_populates="user")
     subscriptions = relationship("Subscription", back_populates="user")
     payment_history = relationship("PaymentHistory", back_populates="user")

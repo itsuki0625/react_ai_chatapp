@@ -1,16 +1,17 @@
 /**
  * ユーザー情報インターフェース
  */
+export type UserRole = '管理者' | '教員' | '生徒' | string;
+
 export interface User {
   id: string;
+  name: string;
   email: string;
-  name?: string;
-  role?: string | string[] | { 
-    permissions?: string[];
-    name?: string;
-  };
-  created_at?: string;
-  updated_at?: string;
+  role: UserRole;
+  status: 'active' | 'inactive' | 'pending' | 'unpaid'; // 未決済ステータスを追加
+  createdAt: string; // または Date 型
+  lastLogin?: string; // または Date 型
+  // 必要に応じて他のフィールドを追加
 }
 
 /**

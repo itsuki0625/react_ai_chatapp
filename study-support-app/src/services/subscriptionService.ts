@@ -50,17 +50,21 @@ const getAxiosConfig = async (requireAuth = true) => {
   if (requireAuth && typeof window !== 'undefined') {
     try {
       const session = await getSession();
-      if (session) {
-        // セッショントークンがあれば追加
+      if (session?.accessToken) { // accessToken を確認
+        config.headers['Authorization'] = `Bearer ${session.accessToken}`; // Authorization ヘッダーを設定
+      } else if (session) {
+        // 以前のカスタムヘッダーロジック（警告付き）
         config.headers['X-Session-Token'] = 'true';
-        
-        // ユーザー情報をヘッダーに追加（バックエンドでの認証に使用）
         if (session.user?.email) {
           config.headers['X-User-Email'] = session.user.email;
         }
         if (session.user?.name) {
-          config.headers['X-User-Name'] = session.user.name;
+          // ユーザー名をURLエンコード
+          config.headers['X-User-Name'] = encodeURIComponent(session.user.name);
         }
+        console.warn('Subscription Service: Session found but no accessToken. Using custom headers.');
+      } else {
+         console.warn('Subscription Service: No active session found for authenticated request.');
       }
     } catch (error) {
       console.error('セッション取得エラー:', error);

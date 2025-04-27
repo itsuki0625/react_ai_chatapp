@@ -40,7 +40,7 @@ class DocumentBase(BaseModel):
     notes: Optional[str] = None
 
 class DocumentCreate(DocumentBase):
-    application_id: UUID
+    desired_department_id: UUID
 
 class DocumentUpdate(BaseModel):
     name: Optional[str] = None
@@ -50,7 +50,7 @@ class DocumentUpdate(BaseModel):
 
 class DocumentResponse(DocumentBase, TimestampMixin):
     id: UUID
-    application_id: UUID
+    desired_department_id: UUID
 
     class Config:
         from_attributes = True
@@ -64,7 +64,7 @@ class ScheduleBase(BaseModel):
     description: Optional[str] = None
 
 class ScheduleCreate(ScheduleBase):
-    application_id: UUID
+    desired_department_id: UUID
 
 class ScheduleUpdate(BaseModel):
     event_name: Optional[str] = None
@@ -75,7 +75,7 @@ class ScheduleUpdate(BaseModel):
 
 class ScheduleResponse(ScheduleBase, TimestampMixin):
     id: UUID
-    application_id: UUID
+    desired_department_id: UUID
 
     class Config:
         from_attributes = True

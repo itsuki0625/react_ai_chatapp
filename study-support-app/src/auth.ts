@@ -14,6 +14,7 @@ interface DecodedToken {
   sub?: string;
   name?: string;
   roles?: string[];
+  status?: string;
   exp?: number;
   [key: string]: any;
 }
@@ -33,7 +34,9 @@ const authConfig: NextAuthConfig = {
         password: { label: "パスワード", type: "password" }
       },
       async authorize(credentials, request) {
+        console.log("[Authorize] Attempting authorization..."); // DEBUG LOG
         if (!credentials?.email || !credentials?.password) {
+          console.log("[Authorize] Missing credentials."); // DEBUG LOG
           return null;
         }
 
@@ -41,9 +44,8 @@ const authConfig: NextAuthConfig = {
 
         try {
           const baseUrl = getBaseUrl();
-          console.log('使用するAPIエンドポイント:', baseUrl);
+          console.log(`[Authorize] Using API base URL: ${baseUrl}`); // DEBUG LOG
 
-          // JWTベースの認証リクエスト
           const response = await fetch(
             `${baseUrl}/api/v1/auth/login`,
             {
@@ -60,32 +62,36 @@ const authConfig: NextAuthConfig = {
           );
 
           if (!response.ok) {
-            console.error('ログインリクエストが失敗しました:', await response.text());
+            const errorBody = await response.text();
+            console.error(`[Authorize] Login request failed (${response.status}): ${errorBody}`); // DEBUG LOG
             return null;
           }
 
           const data = await response.json();
-          
+
           if (!data.token || !data.token.access_token) {
-            console.error('アクセストークンが返されませんでした');
+            console.error('[Authorize] Access token not found in response.'); // DEBUG LOG
             return null;
           }
 
-          // アクセストークンをデコードしてユーザー情報を取得
           const decodedToken = jwtDecode<DecodedToken>(data.token.access_token);
-          console.log('デコードされたトークン:', decodedToken);
+          console.log('[Authorize] Decoded access token:', decodedToken); // DEBUG LOG
 
-          // トークンからユーザー情報を抽出
-          return {
+          const user = {
             id: decodedToken.sub || 'unknown',
             email,
             name: decodedToken.name || email,
             role: decodedToken.roles || ['user'],
+            status: data.user?.status || 'pending',
             accessToken: data.token.access_token,
-            refreshToken: data.token.refresh_token
+            refreshToken: data.token.refresh_token,
+            // accessTokenExpires をミリ秒で設定 (例: 15分)
+            accessTokenExpires: (decodedToken.exp ? decodedToken.exp * 1000 : Date.now() + 15 * 60 * 1000)
           };
+          console.log("[Authorize] Authorization successful, returning user:", user); // DEBUG LOG
+          return user;
         } catch (error) {
-          console.error('Auth error:', error);
+          console.error('[Authorize] Error during authorization:', error); // DEBUG LOG
           return null;
         }
       }
@@ -93,124 +99,147 @@ const authConfig: NextAuthConfig = {
   ],
   callbacks: {
     async jwt({ token, user, account }) {
-      // 初回ログイン時にユーザー情報をトークンに追加
-      if (user) {
+      console.log("[JWT Callback] Invoked. User:", user, "Account:", account, "Existing Token:", token); // DEBUG LOG
+      // 初回ログイン時
+      if (user && account?.provider === "credentials") {
+        console.log("[JWT Callback] Initial sign in. Populating token from user object."); // DEBUG LOG
         token.id = user.id || '';
         token.email = user.email || '';
         token.role = user.role || [];
         token.name = user.name || undefined;
+        token.status = (user as any).status || 'pending';
         token.accessToken = user.accessToken;
         token.refreshToken = user.refreshToken;
-        token.accessTokenExpires = Date.now() + 15 * 60 * 1000; // 15分
+        // authorizeから渡された有効期限を使用 (userにaccessTokenExpiresを追加する必要あり)
+        token.accessTokenExpires = (user as any).accessTokenExpires || Date.now() + 15 * 60 * 1000;
+        console.log("[JWT Callback] Token populated:", token); // DEBUG LOG
+        return token;
       }
 
-      // アクセストークンの期限が切れている場合はリフレッシュ
-      const shouldRefreshTime = Math.round((token.accessTokenExpires as number) - 60 * 1000 - Date.now());
-      
-      if (shouldRefreshTime <= 0) {
-        console.log('トークンの有効期限が切れています。リフレッシュします...');
-        
-        try {
-          const baseUrl = getBaseUrl();
-          const response = await fetch(`${baseUrl}/api/v1/auth/refresh-token`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              refresh_token: token.refreshToken
-            }),
-            credentials: 'include'
-          });
+      // アクセストークンの有効期限チェック
+      if (token.accessTokenExpires && Date.now() < (token.accessTokenExpires as number)) {
+          console.log("[JWT Callback] Access token is still valid."); // DEBUG LOG
+          return token; // 有効期限内ならそのまま返す
+      }
 
-          if (!response.ok) {
-            console.error('トークンリフレッシュに失敗しました');
-            return { ...token, error: "RefreshAccessTokenError" };
-          }
+      // アクセストークンの有効期限切れ、または有効期限情報がない場合リフレッシュを試みる
+      console.log('[JWT Callback] Access token expired or expiry unknown. Attempting refresh...');
+      if (!token.refreshToken) {
+          console.error("[JWT Callback] No refresh token available."); // DEBUG LOG
+          return { ...token, error: "RefreshAccessTokenError" };
+      }
 
-          const refreshedTokens = await response.json();
-          console.log('トークンがリフレッシュされました');
+      try {
+        const baseUrl = getBaseUrl();
+        console.log(`[JWT Callback] Refreshing token using URL: ${baseUrl}/api/v1/auth/refresh-token`); // DEBUG LOG
+        const response = await fetch(`${baseUrl}/api/v1/auth/refresh-token`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            refresh_token: token.refreshToken
+          }),
+          credentials: 'include' // 必要であれば
+        });
 
-          if (!refreshedTokens.access_token) {
-            console.error('新しいアクセストークンが返されませんでした');
-            return { ...token, error: "RefreshAccessTokenError" };
-          }
-
-          // 新しいトークン情報をデコード
-          const decodedRefreshedToken = jwtDecode<DecodedToken>(refreshedTokens.access_token);
-
-          return {
-            ...token,
-            accessToken: refreshedTokens.access_token,
-            refreshToken: refreshedTokens.refresh_token || token.refreshToken,
-            accessTokenExpires: Date.now() + 15 * 60 * 1000,
-            role: decodedRefreshedToken.roles || token.role
-          };
-        } catch (error) {
-          console.error('トークンリフレッシュエラー:', error);
+        if (!response.ok) {
+          const errorBody = await response.text();
+          console.error(`[JWT Callback] Token refresh failed (${response.status}): ${errorBody}`); // DEBUG LOG
           return { ...token, error: "RefreshAccessTokenError" };
         }
-      }
 
-      return token;
+        const refreshedTokens = await response.json();
+        console.log('[JWT Callback] Tokens refreshed successfully:', refreshedTokens); // DEBUG LOG
+
+        if (!refreshedTokens.access_token) {
+          console.error('[JWT Callback] Refreshed response missing access_token.'); // DEBUG LOG
+          return { ...token, error: "RefreshAccessTokenError" };
+        }
+
+        const decodedRefreshedToken = jwtDecode<DecodedToken>(refreshedTokens.access_token);
+        console.log("[JWT Callback] Decoded refreshed access token:", decodedRefreshedToken); // DEBUG LOG
+
+        const updatedToken = {
+          ...token, // 既存のトークン情報を保持
+          accessToken: refreshedTokens.access_token,
+          // リフレッシュトークンが返却されていれば更新、なければ既存のを維持
+          refreshToken: refreshedTokens.refresh_token || token.refreshToken,
+          // 新しいアクセストークンの有効期限を設定 (デコード結果 or デフォルト15分)
+          accessTokenExpires: (decodedRefreshedToken.exp ? decodedRefreshedToken.exp * 1000 : Date.now() + 15 * 60 * 1000),
+          role: decodedRefreshedToken.roles || token.role, // ロールも更新
+          status: decodedRefreshedToken.status || token.status,
+          error: undefined, // エラー状態をクリア
+        };
+        console.log("[JWT Callback] Returning updated token:", updatedToken); // DEBUG LOG
+        return updatedToken;
+
+      } catch (error) {
+        console.error('[JWT Callback] Error during token refresh:', error); // DEBUG LOG
+        return { ...token, error: "RefreshAccessTokenError" };
+      }
     },
     async session({ session, token }) {
+      console.log("[Session Callback] Invoked. Token:", token, "Existing Session:", session); // DEBUG LOG
       if (token && session.user) {
         session.user.id = token.id as string;
         session.user.email = token.email as string;
         session.user.name = token.name as string;
-        
-        // ロールが配列であることを確認
-        const roles = Array.isArray(token.role) 
-          ? token.role as string[] 
+        session.user.status = token.status as string;
+
+        const roles = Array.isArray(token.role)
+          ? token.role as string[]
           : (typeof token.role === 'string' ? [token.role as string] : []);
-        
+
         session.user.role = roles;
-        
-        // 権限フラグを設定
-        session.user.isAdmin = roles.includes('admin');
+        session.user.isAdmin = roles.includes('admin_access');
         session.user.isTeacher = roles.includes('teacher');
         session.user.isStudent = roles.includes('student');
-        
-        // トークン情報をセッションに追加
+
         session.accessToken = token.accessToken as string;
         session.error = token.error as string;
+        console.log("[Session Callback] Session updated:", session); // DEBUG LOG
       }
       return session;
     },
+    // authorized コールバックはミドルウェアに移行したため、ここでは不要な場合がある
+    // もし残す場合は、ミドルウェアと重複しないように注意
+    /*
     authorized({ auth, request }) {
+      console.log("[Authorized Callback] Path:", request.nextUrl.pathname, "Auth:", auth); // DEBUG LOG
       const { pathname } = request.nextUrl;
       const isLoggedIn = !!auth?.user;
-      
-      // 管理者パス
+
       const isAdminPath = pathname.startsWith('/admin');
-      // 認証が必要なパス
-      const authRequired = pathname.startsWith('/dashboard') || 
-                           pathname.startsWith('/settings') || 
+      const authRequired = pathname.startsWith('/dashboard') ||
+                           pathname.startsWith('/settings') ||
                            isAdminPath;
-      // 認証ページ
       const isAuthPage = pathname.startsWith('/login') || pathname.startsWith('/signup');
 
-      // 管理者パスへのアクセスは管理者のみ
       if (isAdminPath) {
-        const isAdmin = auth?.user?.role ? 
+        const isAdmin = auth?.user?.role ?
           (Array.isArray(auth.user.role) ? auth.user.role.includes('admin') : auth.user.role === 'admin')
           : false;
-        return isLoggedIn && isAdmin;
+        const authorized = isLoggedIn && isAdmin;
+        console.log(`[Authorized Callback] Admin path access check: ${authorized}`); // DEBUG LOG
+        return authorized;
       }
 
-      // 認証ページへのアクセスはログインしていない場合のみ
       if (isAuthPage) {
-        return !isLoggedIn;
+        const authorized = !isLoggedIn;
+        console.log(`[Authorized Callback] Auth page access check: ${authorized}`); // DEBUG LOG
+        return authorized;
       }
 
-      // 認証が必要なパスへのアクセスはログインしている場合のみ
       if (authRequired) {
+        console.log(`[Authorized Callback] Auth required path access check: ${isLoggedIn}`); // DEBUG LOG
         return isLoggedIn;
       }
 
+      console.log("[Authorized Callback] Allowing access."); // DEBUG LOG
       return true;
     }
+    */
   },
   pages: {
     signIn: '/login',
@@ -243,8 +272,10 @@ declare module "next-auth" {
     email?: string | null;
     name?: string | null;
     role?: string[];
+    status?: string;
     accessToken?: string;
     refreshToken?: string;
+    accessTokenExpires?: number; // authorizeから渡すために追加
   }
   
   interface Session {
@@ -253,6 +284,7 @@ declare module "next-auth" {
       email: string;
       name?: string | null;
       role: string[];
+      status: string;
       isAdmin: boolean;
       isTeacher: boolean;
       isStudent: boolean;
@@ -260,15 +292,13 @@ declare module "next-auth" {
     accessToken: string;
     error?: string;
   }
-}
 
-// JWTの型拡張
-declare module "@auth/core/jwt" {
   interface JWT {
     id: string;
     email: string;
     name?: string | null;
     role: string[] | string;
+    status: string;
     accessToken?: string;
     refreshToken?: string;
     accessTokenExpires?: number;

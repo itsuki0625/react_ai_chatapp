@@ -13,27 +13,40 @@ def get_db() -> Generator:
         db.close()
 
 def get_current_user(
-    request: Request,
-    db: Session = Depends(get_db)
+    request: Request
 ) -> User:
-    if "user_id" not in request.session:
+    user = getattr(request.state, "user", None)
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    user = get_user(db, user_id=request.session["user_id"])
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
     return user
 
 # 管理者権限チェック用の関数を追加
 def get_current_superuser(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    if not current_user.role or not current_user.role.permissions or "admin" not in current_user.role.permissions.lower():
+    has_admin_permission = False
+    if hasattr(current_user, 'user_roles') and current_user.user_roles:
+        for user_role in current_user.user_roles:
+            # user_role.role がロードされていることを確認 (selectinload のおかげでロードされているはず)
+            if hasattr(user_role, 'role') and user_role.role and \
+               hasattr(user_role.role, 'role_permissions') and user_role.role.role_permissions:
+                # 各 RolePermission オブジェクトから permission の名前を取得してチェック
+                for rp in user_role.role.role_permissions:
+                    if hasattr(rp, 'permission') and rp.permission and \
+                       hasattr(rp.permission, 'name') and \
+                       rp.permission.name.lower() == "admin_access":
+                        has_admin_permission = True
+                        break # admin権限が見つかったら内側のループを抜ける
+            if has_admin_permission:
+                break # admin権限が見つかったら外側のループも抜ける
+
+    if not has_admin_permission:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permissions",
+            detail="Insufficient permissions", # エラーメッセージを維持
         )
     return current_user 

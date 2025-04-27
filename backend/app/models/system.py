@@ -40,7 +40,7 @@ class Notification(Base):
 
     # Relationships
     user = relationship("User")
-    broadcast_notification = relationship("BroadcastNotification")
+    broadcast_notification = relationship("BroadcastNotification", back_populates="notifications")
     notification_metadata = relationship("NotificationMetaData", back_populates="notification")
 
 class NotificationMetaData(Base):
@@ -90,7 +90,7 @@ class BroadcastNotification(Base, TimestampMixin):
     target_roles = relationship("BroadcastTargetRole", back_populates="broadcast_notification")
     target_schools = relationship("BroadcastTargetSchool", back_populates="broadcast_notification")
     broadcast_metadata = relationship("BroadcastNotificationMetaData", back_populates="broadcast_notification")
-    notifications = relationship("Notification")
+    notifications = relationship("Notification", back_populates="broadcast_notification")
 
 class BroadcastTargetRole(Base):
     __tablename__ = 'broadcast_target_roles'
