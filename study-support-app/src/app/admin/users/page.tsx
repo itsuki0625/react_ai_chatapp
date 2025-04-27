@@ -1,0 +1,333 @@
+'use client';
+
+import React, { useState, useEffect, useMemo } from 'react';
+import { AdminNavBar } from '@/components/common/AdminNavBar';
+import { User, UserRole } from '@/types/user';
+import { Plus, Search, Edit, Trash2 } from 'lucide-react';
+import { 
+  getUsers,
+  getUserDetails,
+  createUser,
+  updateUser,
+  deleteUser,
+  UserCreatePayload,
+  UserUpdatePayload,
+  UserDetailsResponse
+} from '@/services/adminService';
+import UserDetailsModal from '@/components/admin/users/UserDetailsModal';
+
+const AdminUsersPage = () => {
+  const [users, setUsers] = useState<User[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterRole, setFilterRole] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [isLoading, setIsLoading] = useState(true); // ローディング状態
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<UserDetailsResponse | null>(null);
+  const [modalMode, setModalMode] = useState<'view' | 'edit' | 'add'>('view');
+
+  // --- 日付フォーマット関数を追加 ---
+  const formatDate = (dateString: string | undefined | null): string => {
+    if (!dateString) return '-';
+    try {
+      // タイムゾーン情報がないISO文字列の場合、UTCとして解釈させるために 'Z' を追加
+      const date = new Date(dateString.endsWith('Z') ? dateString : dateString + 'Z');
+
+      // 日本語ロケール、年月日時分秒でフォーマット
+      return new Intl.DateTimeFormat('ja-JP', {
+        year: 'numeric', month: 'numeric', day: 'numeric',
+        hour: 'numeric', minute: 'numeric', second: 'numeric',
+        hour12: false, // 24時間表記
+        timeZone: 'Asia/Tokyo' // タイムゾーンを日本時間に指定
+      }).format(date); // 修正した date オブジェクトを使用
+    } catch (e) {
+      console.error("Date formatting error:", e);
+      return dateString; // エラー時は元の文字列を返す
+    }
+  };
+  // --- 日付フォーマット関数ここまで ---
+
+  // モーダル用のユーザーデータ整形 (APIレスポンス -> User型)
+  const mapResponseToUser = (res: UserDetailsResponse): User => ({
+    id: res.id,
+    name: res.name,
+    email: res.email,
+    role: res.role as UserRole, // APIレスポンスの role は日本語文字列のはず
+    status: res.status as User['status'],
+    createdAt: res.created_at, // created_at を使用
+    lastLogin: res.last_login_at ?? undefined, // 直接 last_login_at を参照
+  });
+
+  // ユーザーリスト取得関数（再利用のため）
+  const fetchUsers = async () => {
+    setIsLoading(true);
+    try {
+      const params: { search?: string; role?: string; status?: string } = {};
+      if (searchTerm) params.search = searchTerm;
+      if (filterRole !== 'all') params.role = filterRole;
+      if (filterStatus !== 'all') params.status = filterStatus;
+
+      const resp = await getUsers(params);
+      // 1. APIレスポンス直後のログ
+      console.log("API Response (raw):", resp);
+
+      // --- 修正: API レスポンスのキーと型に合わせてマッピング --- 
+      const mappedUsers = resp.users.map(u => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: u.role as UserRole, // バックエンドの role は日本語文字列
+        status: u.status as User['status'],
+        createdAt: u.created_at, // AdminUser 型に合わせて created_at を使用
+        lastLogin: u.last_login_at ?? undefined, // 直接 last_login_at を参照
+      }));
+      // --------------------------------------------------------
+
+      // 2. マッピング後のログ
+      console.log("Mapped Users (before setState):", mappedUsers);
+
+      setUsers(mappedUsers);
+    } catch (error) {
+      console.error('ユーザー取得エラー:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, [searchTerm, filterRole, filterStatus]);
+
+  // ロール表示用のヘルパー (キーを日本語に変更)
+  const roleDisplayMap: Record<string, string> = { // 型を Record<string, string> に変更
+    "管理者": '管理者', // "admin" -> "管理者"
+    "教員": '先生',   // "teacher" -> "教員" (表示名は「先生」のまま)
+    "生徒": '生徒',   // "student" -> "生徒"
+    // 必要に応じて他のロール（例：「システム」）のマッピングも追加
+  };
+
+  // ステータス表示用のヘルパー（Tailwindクラス含む）
+  const statusDisplayMap: Record<User['status'], { text: string; className: string }> = {
+    active: { text: 'アクティブ', className: 'bg-green-100 text-green-800' },
+    inactive: { text: '非アクティブ', className: 'bg-gray-100 text-gray-800' },
+    pending: { text: '保留中', className: 'bg-yellow-100 text-yellow-800' },
+    unpaid: { text: '未決済', className: 'bg-orange-100 text-orange-800' },
+  };
+
+  // --- 各種ハンドラー ---
+  const handleAddUser = () => {
+    setSelectedUser(null);
+    setModalMode('add');
+    setIsModalOpen(true);
+  };
+
+  const handleViewDetails = async (userId: string) => {
+    try {
+      const userDetails = await getUserDetails(userId);
+      setSelectedUser(userDetails);
+      setModalMode('view');
+      setIsModalOpen(true);
+    } catch (error) {
+      console.error('ユーザー詳細取得エラー:', error);
+      alert('ユーザー情報の取得に失敗しました。');
+    }
+  };
+
+  const handleEditUser = async (userId: string) => {
+    try {
+      const userDetails = await getUserDetails(userId);
+      setSelectedUser(userDetails);
+      setModalMode('edit');
+      setIsModalOpen(true);
+    } catch (error) {
+      console.error('ユーザー編集情報取得エラー:', error);
+      alert('ユーザー情報の取得に失敗しました。');
+    }
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedUser(null);
+  };
+
+  const handleSaveUser = async (userData: UserCreatePayload | UserUpdatePayload) => {
+    try {
+      let savedUser: UserDetailsResponse;
+      if (modalMode === 'add') {
+        if (!userData.password) {
+          alert('新規作成時はパスワードが必須です。');
+          return;
+        }
+        savedUser = await createUser(userData as UserCreatePayload);
+      } else if (modalMode === 'edit' && selectedUser) {
+        savedUser = await updateUser(selectedUser.id, userData as UserUpdatePayload);
+      } else {
+        console.error('不正なモードまたは選択されたユーザーなし');
+        return;
+      }
+      // ユーザーリストを更新 (fetchUsers() を再実行するか、ローカルで更新)
+      fetchUsers(); // 簡単な方法としてリスト全体を再取得
+      handleCloseModal();
+      alert(`ユーザー情報を${modalMode === 'add' ? '作成' : '更新'}しました。`);
+    } catch (error) {
+      console.error('ユーザー保存エラー:', error);
+      alert(`ユーザー情報の${modalMode === 'add' ? '作成' : '更新'}に失敗しました。`);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm(`ユーザーID: ${userId} を削除してもよろしいですか？`)) return;
+    try {
+      await deleteUser(userId);
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      alert(`ユーザーID: ${userId} を削除しました`);
+    } catch (error) {
+      console.error('ユーザー削除エラー:', error);
+      alert('ユーザー削除に失敗しました。詳細はコンソールを確認してください。');
+    }
+  };
+
+  return (
+    <div>
+      <AdminNavBar />
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="mb-6 flex flex-col sm:flex-row justify-between items-center">
+          <h1 className="text-2xl font-semibold text-gray-900 mb-4 sm:mb-0">ユーザー管理</h1>
+          <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto">
+             {/* 検索バー */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="名前 or メールアドレスで検索..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-full sm:w-64"
+              />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+            </div>
+             {/* ロールフィルター (value は英語のままなので注意) */}
+            <select
+              value={filterRole}
+              onChange={(e) => setFilterRole(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="all">すべてのロール</option>
+              <option value="管理者">管理者</option>
+              <option value="教員">先生</option>
+              <option value="生徒">生徒</option>
+            </select>
+            {/* ステータスフィルター */}
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="all">すべてのステータス</option>
+              <option value="active">アクティブ</option>
+              <option value="inactive">非アクティブ</option>
+              <option value="pending">保留中</option>
+              <option value="unpaid">未決済</option>
+            </select>
+            {/* 新規追加ボタン */}
+            <button
+              onClick={handleAddUser}
+              className="flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              <Plus className="h-5 w-5 mr-1" />
+              新規追加
+            </button>
+          </div>
+        </div>
+
+        {/* ユーザー一覧テーブル */}
+        <div className="bg-white shadow overflow-hidden rounded-md">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">名前</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">メールアドレス</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ロール</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ステータス</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">作成日</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">最終ログイン</th>
+                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-4 text-gray-500">読み込み中...</td>
+                </tr>
+              ) : users.length > 0 ? (
+                users.map((user) => {
+                  // 3. テーブル map 内のログ
+                  console.log("Rendering user in table:", user);
+                  // 4. formatDate 直前のログ (map コールバック内)
+                  console.log("Formatting createdAt:", user.createdAt);
+                  console.log("Formatting lastLogin:", user.lastLogin);
+                  return (
+                    <tr key={user.id}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">{user.name}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{user.email}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                          {/* roleDisplayMap を使用し、見つからない場合は API の値を直接表示 */}
+                          {roleDisplayMap[user.role] || user.role}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusDisplayMap[user.status].className}`}>
+                          {statusDisplayMap[user.status].text}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatDate(user.createdAt)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatDate(user.lastLogin)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                         {/* アクションボタン (ドロップダウンにするなど改善の余地あり) */}
+                         <div className="flex justify-end space-x-1">
+                           <button onClick={() => handleViewDetails(user.id)} title="詳細" className="text-indigo-600 hover:text-indigo-900 p-1 rounded hover:bg-gray-100">
+                             <Search className="h-4 w-4" />
+                           </button>
+                           <button onClick={() => handleEditUser(user.id)} title="編集" className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-gray-100">
+                             <Edit className="h-4 w-4" />
+                           </button>
+                         </div>
+                         {/* TODO: モバイル表示ではドロップダウンメニュー (MoreVertical) の方が良いかも */}
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={7} className="text-center py-4 text-gray-500">該当するユーザーが見つかりません。</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+         {/* TODO: ページネーションの実装 */}
+
+        {/* ユーザー詳細/編集/追加モーダル */} 
+        {isModalOpen && (
+          <UserDetailsModal
+            isOpen={isModalOpen}
+            onClose={handleCloseModal}
+            onSave={handleSaveUser}
+            user={selectedUser ? mapResponseToUser(selectedUser) : null}
+            mode={modalMode}
+          />
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default AdminUsersPage; 

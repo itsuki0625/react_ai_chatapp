@@ -12,16 +12,62 @@ enum PersonalStatementStatus {
   FINAL = "FINAL"
 }
 
-interface DesiredDepartment {
+// ApplicationList.tsx から持ってきた型定義を追加
+interface DocumentResponse {
   id: string;
   desired_department_id: string;
-  department: {
+  name: string;
+  status: string;
+  deadline: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ScheduleResponse {
+  id: string;
+  desired_department_id: string;
+  event_name: string;
+  date: string;
+  type: string;
+  location?: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ApplicationDepartmentInfo {
     id: string;
-    name: string;
-    university: {
-      name: string;
-    };
-  };
+    department_id: string;
+    department_name: string;
+    faculty_name: string;
+}
+
+interface ApplicationDetailResponse {
+  id: string;
+  user_id: string;
+  university_id: string;
+  department_id: string;
+  admission_method_id: string;
+  priority: number;
+  created_at: string;
+  updated_at: string;
+  university_name: string;
+  department_name: string;
+  admission_method_name: string;
+  notes?: string;
+  documents: DocumentResponse[];
+  schedules: ScheduleResponse[];
+  department_details: ApplicationDepartmentInfo[];
+}
+// 型定義ここまで
+
+// 実際に使用するデータ構造に合わせた型定義に変更
+interface FormattedDepartment {
+  applicationId: string;
+  desiredDepartmentId: string;
+  universityName: string;
+  departmentName: string;
   priority: number;
 }
 
@@ -32,29 +78,24 @@ interface Props {
     content: string;
     status: PersonalStatementStatus;
     desired_department_id?: string;
-    desired_department?: {
-      id: string;
-      department: {
-        id: string;
-        name: string;
-        university: {
-          name: string;
-        };
-      };
-    };
   };
 }
 
 const getToken = () => {
-  return localStorage.getItem('token');
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('token');
+  }
+  return null;
 };
 
 export default function StatementEditorPage({ id, initialData }: Props) {
   const router = useRouter();
   const [content, setContent] = useState(initialData?.content || '');
-  const [status, setStatus] = useState<PersonalStatementStatus>(initialData?.status || 'DRAFT');
-  const [desiredDepartments, setDesiredDepartments] = useState<DesiredDepartment[]>([]);
-  const [selectedDepartmentId, setSelectedDepartmentId] = useState(initialData?.desired_department_id || '');
+  const [status, setStatus] = useState<PersonalStatementStatus>(initialData?.status || PersonalStatementStatus.DRAFT);
+  const [desiredDepartments, setDesiredDepartments] = useState<FormattedDepartment[]>([]);
+  const [selectedDesiredDepartmentId, setSelectedDesiredDepartmentId] = useState(initialData?.desired_department_id || '');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -63,86 +104,117 @@ export default function StatementEditorPage({ id, initialData }: Props) {
   }, []);
 
   const fetchDesiredDepartments = async (signal?: AbortSignal) => {
+    setIsLoading(true);
+    setError(null);
     try {
       const token = getToken();
+      if (!token) {
+        setError("認証が必要です。");
+        setIsLoading(false);
+        return;
+      }
       const response = await fetch(
         `${API_BASE_URL}/api/v1/applications/`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
           },
-          credentials: 'include',
           signal,
         }
       );
-      if (!response.ok) throw new Error('Failed to fetch desired departments');
-      const data = await response.json();
 
-      const formattedData = data.map((app: any) => {
-        const desiredDept = app.desired_departments?.[0];
-        if (!desiredDept) return null;
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error("API Error Response:", errorData);
+        throw new Error(`志望校リストの取得に失敗しました (${response.status})`);
+      }
+
+      const data: ApplicationDetailResponse[] = await response.json();
+
+      const formattedData = data.map((app) => {
+        const desiredDeptInfo = app.department_details?.[0];
+        if (!desiredDeptInfo) {
+          console.warn(`Application ${app.id} has no department_details`);
+          return null;
+        }
 
         return {
-          id: app.id,
-          desired_department_id: desiredDept.id,
-          department: {
-            id: app.department_id,
-            name: app.department_name,
-            university: {
-              name: app.university_name
-            }
-          },
-          priority: app.priority
+          applicationId: app.id,
+          desiredDepartmentId: desiredDeptInfo.id,
+          universityName: app.university_name,
+          departmentName: desiredDeptInfo.department_name,
+          priority: app.priority,
         };
       })
-      .filter((item: any) => item !== null)
-      .sort((a: DesiredDepartment, b: DesiredDepartment) => a.priority - b.priority);
+      .filter((item): item is FormattedDepartment => item !== null)
+      .sort((a, b) => a.priority - b.priority);
 
       setDesiredDepartments(formattedData);
     } catch (error) {
       if (error instanceof Error && error.name !== 'AbortError') {
         console.error('Error fetching desired departments:', error);
+        setError(error.message || '志望校リストの取得中にエラーが発生しました。');
       }
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    setError(null);
+
+    if (!selectedDesiredDepartmentId) {
+      setError("志望校・学部を選択してください。");
+      return;
+    }
+
     try {
       const url = id
         ? `${API_BASE_URL}/api/v1/statements/${id}`
         : `${API_BASE_URL}/api/v1/statements/`;
 
       const token = getToken();
-      
+      if (!token) {
+        setError("認証が必要です。");
+        return;
+      }
+
       const requestData = {
         content,
         status,
-        desired_department_id: selectedDepartmentId,
+        desired_department_id: selectedDesiredDepartmentId,
       };
-      console.log('Request Data:', requestData);
-      
+
       const response = await fetch(url, {
         method: id ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        credentials: 'include',
         body: JSON.stringify(requestData),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(`Failed to save statement: ${JSON.stringify(errorData)}`);
+        console.error("Save Error:", errorData);
+        throw new Error(`志望理由書の保存に失敗しました: ${errorData.detail || JSON.stringify(errorData)}`);
       }
-      
+
       router.push('/statement');
     } catch (error) {
       console.error('Error saving statement:', error);
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError('志望理由書の保存中に不明なエラーが発生しました。');
+      }
     }
   };
+
+  if (isLoading) {
+    return <div className="max-w-4xl mx-auto p-6 text-center">志望校リストを読み込み中...</div>;
+  }
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -150,56 +222,67 @@ export default function StatementEditorPage({ id, initialData }: Props) {
         {id ? '志望理由書を編集' : '新しい志望理由書を作成'}
       </h1>
 
+      {error && (
+        <div className="mb-4 p-4 bg-red-100 text-red-700 border border-red-300 rounded">
+          {error}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            志望校・学部（志望順位順）
+          <label htmlFor="desired-department" className="block text-sm font-medium text-gray-700 mb-2">
+            関連付ける志望校・学部（志望順位順）
           </label>
           <select
-            value={selectedDepartmentId}
-            onChange={(e) => setSelectedDepartmentId(e.target.value)}
+            id="desired-department"
+            value={selectedDesiredDepartmentId}
+            onChange={(e) => setSelectedDesiredDepartmentId(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            required
           >
-            <option value="">選択してください</option>
+            <option value="" disabled>選択してください</option>
             {desiredDepartments.map((dept) => (
-              <option key={dept.id} value={dept.desired_department_id}>
-                {`${dept.priority}. ${dept.department.university.name} - ${dept.department.name}`}
+              <option key={dept.desiredDepartmentId} value={dept.desiredDepartmentId}>
+                {`${dept.priority}. ${dept.universityName} - ${dept.departmentName}`}
               </option>
             ))}
           </select>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="statement-content" className="block text-sm font-medium text-gray-700 mb-2">
             志望理由
           </label>
           <textarea
+            id="statement-content"
             value={content}
             onChange={(e) => setContent(e.target.value)}
             rows={15}
             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
             placeholder="志望理由を入力してください..."
+            required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="statement-status" className="block text-sm font-medium text-gray-700 mb-2">
             ステータス
           </label>
           <select
+            id="statement-status"
             value={status}
             onChange={(e) => setStatus(e.target.value as PersonalStatementStatus)}
             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
           >
-            <option value="DRAFT">下書き</option>
-            <option value="REVIEW">レビュー依頼</option>
-            <option value="REVIEWED">レビュー済み</option>
-            <option value="FINAL">完成</option>
+            {Object.values(PersonalStatementStatus).map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
           </select>
         </div>
 
         <div className="flex justify-end space-x-4">
           <Button
+            type="button"
             variant="outline"
             onClick={() => router.push('/statement')}
           >

@@ -1,21 +1,19 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
-from typing import Generator
 
-# エンジンの作成
+# SQLAlchemyエンジンの作成
 engine = create_engine(settings.DATABASE_URL)
 
 # セッションファクトリの作成
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def get_db() -> Generator[Session, None, None]:
-    """
-    データベースセッションの依存性注入用のジェネレータ
-    
-    Yields:
-        Session: SQLAlchemyのセッションインスタンス
-    """
+# モデルのベースクラス
+Base = declarative_base()
+
+# データベースセッションを取得する関数
+def get_db():
     db = SessionLocal()
     try:
         yield db

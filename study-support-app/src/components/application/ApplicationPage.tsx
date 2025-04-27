@@ -3,15 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, FileCheck, School, Clock, Plus, ChevronDown, Edit2, Trash2, AlertCircle } from 'lucide-react';
 import { DesiredSchoolForm } from '@/components/application/DesiredSchoolForm';
-import { Dialog } from '@/components/common/Dialog';
-import { 
-  getStatusColor, 
-  getEventTypeColor, 
-  getEventTypeLabel, 
-  formatDate, 
-  isUpcoming 
-} from '@/lib/utils';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription, DialogClose, DialogTrigger } from '@/components/ui/dialog';
 import { API_BASE_URL } from '@/lib/config';
+import { apiClient } from '@/lib/api/client';
+import { Subscription } from '@/types/subscription';
+import { PlanSelection } from '@/components/subscription/PlanSelection';
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 interface Application {
   id: string;
@@ -84,6 +82,22 @@ const formatDateTime = (dateString: string) => {
   });
 };
 
+// ユーザーサブスクリプション取得 API 関数 (直接定義または別ファイルからインポート)
+const fetchUserSubscription = async (): Promise<Subscription | null> => {
+  try {
+    const response = await apiClient.get<Subscription | null>('/subscriptions/user-subscription');
+    return response.data; // null の可能性もある
+  } catch (error: any) { // エラーハンドリング改善
+    if (error.response && error.response.status === 404) {
+      // 404 はサブスクリプションがない状態なのでエラーではない
+      return null;
+    }
+    console.error("Error fetching user subscription:", error);
+    // その他のエラーは再スローするか、null を返すかなど検討
+    throw new Error("サブスクリプション情報の取得に失敗しました"); 
+  }
+};
+
 export default function ApplicationPage() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -95,32 +109,54 @@ export default function ApplicationPage() {
   const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
   const [editingDocument, setEditingDocument] = useState<Application['documents'][0] | null>(null);
   const [editingSchedule, setEditingSchedule] = useState<Application['schedules'][0] | null>(null);
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [isLoadingSubscription, setIsLoadingSubscription] = useState(true);
+  const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchApplications();
+    const loadInitialData = async () => {
+      setIsLoading(true);
+      setIsLoadingSubscription(true);
+      setError(null);
+      setSubscriptionError(null);
+
+      try {
+        const [appsResponse, subResponse] = await Promise.allSettled([
+          fetchApplications(),
+          fetchUserSubscription()
+        ]);
+
+        if (appsResponse.status === 'rejected') {
+          console.error("Failed to fetch applications:", appsResponse.reason);
+        }
+
+        if (subResponse.status === 'fulfilled') {
+          setSubscription(subResponse.value);
+        } else {
+          console.error("Failed to fetch subscription:", subResponse.reason);
+          setSubscriptionError(subResponse.reason instanceof Error ? subResponse.reason.message : "サブスクリプション情報の取得に失敗しました");
+        }
+
+      } catch (err) {
+        console.error("Error loading initial data:", err);
+        setError("データの初期読み込みに失敗しました。");
+      } finally {
+        setIsLoadingSubscription(false);
+      }
+    };
+
+    loadInitialData();
   }, []);
 
   const fetchApplications = async () => {
     try {
       const token = getToken();
-      const response = await fetch(`${API_BASE_URL}/api/v1/applications/`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch applications');
-      }
-
-      const data = await response.json();
-      setApplications(data);
-    } catch (error) {
+      const response = await apiClient.get<Application[]>('/applications/');
+      setApplications(response.data);
+    } catch (error: any) {
       setError('志望校情報の取得に失敗しました');
       console.error('Error fetching applications:', error);
-    } finally {
-      setIsLoading(false);
+      throw error;
     }
   };
 
@@ -413,34 +449,42 @@ export default function ApplicationPage() {
     };
   };
 
-  if (isLoading) {
-    return <div className="p-6">Loading...</div>;
+  if (isLoading || isLoadingSubscription) {
+    return <div className="container mx-auto p-4 text-center">データを読み込み中...</div>;
   }
 
-  if (error) {
-    return <div className="p-6 text-red-500">{error}</div>;
+  if (subscriptionError && !subscription) {
+    return (
+      <div className="container mx-auto p-4">
+        <AlertCircle className="h-5 w-5 mr-2 inline" />
+        {subscriptionError}
+      </div>
+    );
+  }
+
+  if (!subscription || !subscription.is_active) {
+    return <PlanSelection />;
   }
 
   return (
-    <div className="p-6">
-      {/* ヘッダー */}
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">出願管理</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            志望校の情報や出願書類を管理できます
-          </p>
+    <div className="container mx-auto p-4">
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+          <strong className="font-bold">エラー: </strong>
+          <span className="block sm:inline">{error}</span>
         </div>
-        <button
+      )}
+
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">志望校管理</h1>
+        <button 
           onClick={() => setShowForm(true)}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center"
         >
-          <Plus className="h-5 w-5 mr-2" />
-          志望校を追加
+          <Plus className="mr-2 h-4 w-4" /> 志望校を追加
         </button>
       </div>
-
-      {/* サマリーカード */}
+      
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-white p-4 rounded-lg shadow">
           <div className="flex items-center justify-between">
@@ -483,7 +527,6 @@ export default function ApplicationPage() {
         </div>
       </div>
 
-      {/* 志望校リスト */}
       <div className="bg-white rounded-lg shadow">
         {applications.map((app) => (
           <div key={app.id} className="border-b border-gray-200 last:border-b-0">
@@ -516,7 +559,6 @@ export default function ApplicationPage() {
                 </div>
               </div>
 
-              {/* 提出書類 */}
               <div className="mb-4">
                 <div className="flex justify-between items-center mb-2">
                   <h4 className="text-sm font-medium text-gray-700">提出書類</h4>
@@ -559,7 +601,6 @@ export default function ApplicationPage() {
                 </div>
               </div>
 
-              {/* スケジュール */}
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <h4 className="text-sm font-medium text-gray-700">スケジュール</h4>
@@ -606,65 +647,53 @@ export default function ApplicationPage() {
         ))}
       </div>
 
-      {/* 志望校追加/編集フォーム */}
-      {(showForm || editingApplication) && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white p-6 rounded-lg max-w-2xl w-full mx-4">
-            <h2 className="text-xl font-bold mb-4">
-              {editingApplication ? '志望校を編集' : '志望校を追加'}
-            </h2>
-            <DesiredSchoolForm
-              onSubmit={editingApplication 
-                ? (data) => handleEditApplication(editingApplication.id, data)
-                : handleCreateApplication
-              }
-              onCancel={() => {
-                setShowForm(false);
-                setEditingApplication(null);
-              }}
-              initialData={editingApplication}
-            />
-          </div>
-        </div>
+      {showForm && (
+        <Dialog open={showForm} onOpenChange={setShowForm}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>志望校を新規登録</DialogTitle>
+              <DialogDescription>新しい志望校情報を入力してください。</DialogDescription>
+            </DialogHeader>
+            <DesiredSchoolForm onSubmit={handleCreateApplication} onCancel={() => setShowForm(false)} />
+          </DialogContent>
+        </Dialog>
       )}
 
-      {/* 書類追加モーダル */}
+      <Dialog open={!!editingApplication} onOpenChange={(open: boolean) => !open && setEditingApplication(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>志望校情報を編集</DialogTitle>
+            <DialogDescription>{editingApplication?.university_name} の情報を編集します。</DialogDescription>
+          </DialogHeader>
+          {editingApplication && (
+            <DesiredSchoolForm
+              initialData={editingApplication}
+              onSubmit={(formData) => handleEditApplication(editingApplication.id, formData)}
+              onCancel={() => setEditingApplication(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Dialog
         open={showDocumentForm}
-        onClose={() => {
-          setShowDocumentForm(false);
-          setEditingDocument(null);
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowDocumentForm(false);
+            setEditingDocument(null);
+          }
         }}
       >
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold">
-              {editingDocument ? '書類を編集' : '書類を追加'}
-            </h2>
-            {editingDocument && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (selectedApplication && editingDocument) {
-                    if (confirm('この書類を削除してもよろしいですか？')) {
-                      handleDeleteDocument(selectedApplication.id, editingDocument.id);
-                    }
-                  }
-                }}
-                className="px-3 py-1 text-sm text-red-600 hover:text-red-800 flex items-center"
-              >
-                <Trash2 className="h-4 w-4 mr-1" />
-                削除
-              </button>
-            )}
-          </div>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingDocument ? '書類情報を編集' : '提出書類を追加'}</DialogTitle>
+          </DialogHeader>
           <form onSubmit={(e) => {
             e.preventDefault();
             const formData = new FormData(e.currentTarget);
             const date = formData.get('deadline_date') as string;
             const time = formData.get('deadline_time') as string;
             
-            // JSTの日時をUTCに変換
             const jstDate = new Date(`${date}T${time}:00+09:00`);
             const utcDeadline = jstDate.toISOString();
             
@@ -736,55 +765,27 @@ export default function ApplicationPage() {
                 />
               </div>
               <div className="flex justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setShowDocumentForm(false)}
-                  className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
-                >
-                  キャンセル
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md"
-                >
-                  追加
-                </button>
+                <Button type="button" variant="outline" onClick={() => setShowDocumentForm(false)}>キャンセル</Button>
+                <Button type="submit">{editingDocument ? '更新' : '追加'}</Button>
               </div>
             </div>
           </form>
-        </div>
+        </DialogContent>
       </Dialog>
 
-      {/* スケジュール追加モーダル */}
       <Dialog
         open={showScheduleForm}
-        onClose={() => {
-          setShowScheduleForm(false);
-          setEditingSchedule(null);
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowScheduleForm(false);
+            setEditingSchedule(null);
+          }
         }}
       >
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold">
-              {editingSchedule ? 'スケジュールを編集' : 'スケジュールを追加'}
-            </h2>
-            {editingSchedule && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (selectedApplication && editingSchedule) {
-                    if (confirm('このスケジュールを削除してもよろしいですか？')) {
-                      handleDeleteSchedule(selectedApplication.id, editingSchedule.id);
-                    }
-                  }
-                }}
-                className="px-3 py-1 text-sm text-red-600 hover:text-red-800 flex items-center"
-              >
-                <Trash2 className="h-4 w-4 mr-1" />
-                削除
-              </button>
-            )}
-          </div>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingSchedule ? 'スケジュールを編集' : 'スケジュールを追加'}</DialogTitle>
+          </DialogHeader>
           <form onSubmit={(e) => {
             e.preventDefault();
             const formData = new FormData(e.currentTarget);
@@ -837,23 +838,12 @@ export default function ApplicationPage() {
                 </select>
               </div>
               <div className="flex justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setShowScheduleForm(false)}
-                  className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
-                >
-                  キャンセル
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md"
-                >
-                  追加
-                </button>
+                <Button type="button" variant="outline" onClick={() => setShowScheduleForm(false)}>キャンセル</Button>
+                <Button type="submit">{editingSchedule ? '更新' : '追加'}</Button>
               </div>
             </div>
           </form>
-        </div>
+        </DialogContent>
       </Dialog>
     </div>
   );

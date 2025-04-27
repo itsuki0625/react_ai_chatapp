@@ -1,4 +1,4 @@
-import { apiClient } from '@/lib/api-client';
+import { chatApi } from '@/lib/api-client';
 
 interface ChatResponse {
   response: string;
@@ -13,7 +13,6 @@ interface Message {
   created_at?: string;
 }
 
-
 interface ChatRequest {
   message: string;
   history?: Message[];
@@ -24,16 +23,10 @@ interface StreamResponse {
   newSessionId: string;
 }
 
-const getToken = () => {
-  return localStorage.getItem('token');
-};
-
 export const useChat = () => {
   const sendMessage = async (message: string) => {
     try {
-      const response = await apiClient.post<ChatResponse>('/api/v1/chat', {
-        message,
-      });
+      const response = await chatApi.sendMessage(message);
       return response;
     } catch (error) {
       console.error('チャットメッセージの送信に失敗しました:', error);
@@ -49,19 +42,7 @@ export const useChat = () => {
     onError: (error: any) => void
   ): Promise<StreamResponse> => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/chat/stream`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'text/event-stream',
-        },
-        body: JSON.stringify({
-          message,
-          session_id: sessionId || undefined,
-          session_type: type
-        }),
-        credentials: 'include'
-      });
+      const response = await chatApi.sendStreamMessage(message, sessionId, type);
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
@@ -69,6 +50,8 @@ export const useChat = () => {
       if (!reader) {
         throw new Error('Response body is null');
       }
+
+      let sessionIdFromResponse = '';
 
       while (true) {
         const { value, done } = await reader.read();
@@ -82,15 +65,82 @@ export const useChat = () => {
             const content = line.slice(6);
             if (content === '[DONE]') continue;
             
+            if (content.includes('session_id:')) {
+              const match = content.match(/session_id:([a-zA-Z0-9-]+)/);
+              if (match && match[1]) {
+                sessionIdFromResponse = match[1];
+              }
+              continue;
+            }
+            
             onChunk(content);
           }
         }
       }
+
+      return { newSessionId: sessionIdFromResponse };
     } catch (error) {
       onError(error);
+      return { newSessionId: '' };
     }
-    return { newSessionId: "新しいセッションID" };
   };
 
-  return { sendMessage, sendStreamMessage };
+  const getChatSessions = async () => {
+    try {
+      const response = await chatApi.getSessions();
+      return response.data;
+    } catch (error) {
+      console.error('チャットセッション一覧の取得に失敗しました:', error);
+      throw error;
+    }
+  };
+
+  const getSessionMessages = async (sessionId: string) => {
+    try {
+      const response = await chatApi.getSessionMessages(sessionId);
+      return response.data;
+    } catch (error) {
+      console.error('セッションメッセージの取得に失敗しました:', error);
+      throw error;
+    }
+  };
+
+  const archiveSession = async (sessionId: string) => {
+    try {
+      await chatApi.archiveSession(sessionId);
+    } catch (error) {
+      console.error('セッションのアーカイブに失敗しました:', error);
+      throw error;
+    }
+  };
+
+  const getArchivedSessions = async () => {
+    try {
+      const response = await chatApi.getArchivedSessions();
+      return response.data;
+    } catch (error) {
+      console.error('アーカイブされたセッション一覧の取得に失敗しました:', error);
+      throw error;
+    }
+  };
+
+  const getChecklist = async (chatId: string) => {
+    try {
+      const response = await chatApi.getChecklist(chatId);
+      return response.data;
+    } catch (error) {
+      console.error('チェックリストの取得に失敗しました:', error);
+      throw error;
+    }
+  };
+
+  return { 
+    sendMessage, 
+    sendStreamMessage,
+    getChatSessions,
+    getSessionMessages,
+    archiveSession,
+    getArchivedSessions,
+    getChecklist
+  };
 };

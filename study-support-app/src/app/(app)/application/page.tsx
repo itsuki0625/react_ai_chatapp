@@ -1,5 +1,7 @@
-import ApplicationPage from '@/components/application/ApplicationPage';
+"use client";
 
-export default function Page() {
-  return <ApplicationPage />;
+import { ApplicationList } from "@/components/application/ApplicationList";
+
+export default function ApplicationPage() {
+  return <ApplicationList />;
 }

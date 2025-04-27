@@ -1,5 +1,7 @@
-import StatementListPage from '@/components/statement/StatementListPage';
+"use client";
 
-export default function Page() {
-  return <StatementListPage />;
+import { StatementList } from "@/components/statement/StatementList";
+
+export default function StatementPage() {
+  return <StatementList />;
 }

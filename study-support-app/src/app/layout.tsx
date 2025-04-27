@@ -1,5 +1,6 @@
 import '@/styles/globals.css'
 import type { Metadata } from 'next'
+import { Providers } from './providers'
 
 export const metadata: Metadata = {
   title: 'Study Support App',
@@ -14,7 +15,9 @@ export default function RootLayout({
   return (
     <html lang="ja">
       <body>
-        {children}
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );

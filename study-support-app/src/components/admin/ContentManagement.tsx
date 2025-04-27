@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { useSession } from "next-auth/react";
 import { 
   Plus, 
   Edit2, 
@@ -11,7 +12,7 @@ import {
   LayoutGrid,
   List
 } from 'lucide-react';
-import { Content, ContentType } from '@/types/content';
+import { Content, FormContentType } from '@/types/content';
 import { contentAPI } from '@/services/api';
 import { Dialog } from '@/components/common/Dialog';
 import { getSlideProviderInfo } from '@/lib/slide';
@@ -20,7 +21,7 @@ interface ContentFormData {
   title: string;
   description: string;
   url: string;
-  content_type: ContentType;
+  content_type: FormContentType;
   thumbnail_url?: string;
   category?: string;
   tags?: string;
@@ -38,7 +39,21 @@ const initialFormData: ContentFormData = {
   tags: '',
 };
 
+const categoryMap: { [key: string]: string } = {
+  "自己分析": "self_analysis",
+  "入試情報": "admissions",
+  "学術・教養": "academic",
+  "大学情報": "university_info",
+  "キャリア": "career",
+  "その他": "other",
+};
+
+const reverseCategoryMap: { [key: string]: string } = Object.fromEntries(
+  Object.entries(categoryMap).map(([key, value]) => [value, key])
+);
+
 export const ContentManagement = () => {
+  const { data: session } = useSession();
   const [contents, setContents] = useState<Content[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState<ContentFormData>(initialFormData);
@@ -49,9 +64,10 @@ export const ContentManagement = () => {
   const fetchContents = async () => {
     try {
       const data = await contentAPI.getContents();
-      setContents(data);
+      setContents(data as Content[]);
     } catch (error) {
       console.error('Failed to fetch contents:', error);
+      setContents([]);
     }
   };
 
@@ -59,11 +75,29 @@ export const ContentManagement = () => {
     e.preventDefault();
     setIsLoading(true);
 
+    if (!session?.user?.id) {
+       console.error("ユーザーIDが取得できません。ログイン状態を確認してください。");
+       setIsLoading(false);
+       alert("ログインセッションが無効です。再度ログインしてください。");
+       return;
+    }
+
+    const payload = {
+      ...formData,
+      content_type: formData.content_type.toLowerCase(),
+      category: categoryMap[formData.category || ''] || 'other',
+      tags: formData.tags ? formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag) : [],
+      created_by_id: session.user.id as string,
+    };
+
+    const { provider, ...submitData } = payload;
+
     try {
       if (editingId) {
-        await contentAPI.updateContent(editingId, formData);
+        const updatePayload = { ...submitData };
+        await contentAPI.updateContent(editingId, updatePayload as any);
       } else {
-        await contentAPI.createContent(formData);
+        await contentAPI.createContent(submitData as any);
       }
       setShowForm(false);
       setFormData(initialFormData);
@@ -71,6 +105,8 @@ export const ContentManagement = () => {
       fetchContents();
     } catch (error) {
       console.error('Failed to save content:', error);
+      alert(`コンテンツの保存に失敗しました。
+${error instanceof Error ? error.message : '不明なエラー'}`);
     } finally {
       setIsLoading(false);
     }
@@ -81,10 +117,10 @@ export const ContentManagement = () => {
       title: content.title,
       description: content.description || '',
       url: content.url,
-      content_type: content.content_type,
+      content_type: content.content_type.toUpperCase() as FormContentType,
       thumbnail_url: content.thumbnail_url || '',
-      category: content.category || '',
-      tags: content.tags || '',
+      category: reverseCategoryMap[content.category || ''] || '',
+      tags: Array.isArray(content.tags) ? content.tags.join(', ') : '',
     });
     setEditingId(content.id);
     setShowForm(true);
@@ -101,7 +137,7 @@ export const ContentManagement = () => {
     }
   };
 
-  const getContentTypeIcon = (type: ContentType) => {
+  const getContentTypeIcon = (type: FormContentType) => {
     switch (type) {
       case 'VIDEO':
         return <Video className="h-5 w-5" />;
@@ -116,7 +152,6 @@ export const ContentManagement = () => {
     setFormData(prev => {
       const newData = { ...prev, url };
       
-      // スライドの場合、プロバイダーに応じてサムネイルを自動設定
       if (prev.content_type === 'SLIDE' && prev.provider) {
         const { thumbnailUrl } = getSlideProviderInfo(url, prev.provider);
         if (thumbnailUrl) {
@@ -128,7 +163,6 @@ export const ContentManagement = () => {
     });
   };
 
-  // 初期ロード時にコンテンツを取得
   useEffect(() => {
     fetchContents();
   }, []);
@@ -180,11 +214,11 @@ export const ContentManagement = () => {
 
       <div className="p-6">
         {viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {contents.map((content) => (
               <div
                 key={content.id}
-                className="border rounded-lg p-3 hover:shadow-md transition-shadow"
+                className="border rounded-lg p-3 hover:shadow-md transition-shadow flex flex-col"
               >
                 <div className="aspect-video relative mb-2">
                   <img
@@ -192,7 +226,7 @@ export const ContentManagement = () => {
                     alt={content.title}
                     className="w-full h-full object-cover rounded"
                   />
-                  <div className="absolute top-2 right-2 flex space-x-2">
+                  <div className="absolute top-2 right-2 flex space-x-1">
                     <button
                       onClick={() => handleEdit(content)}
                       className="p-1 bg-white rounded-full shadow hover:bg-gray-100"
@@ -208,20 +242,28 @@ export const ContentManagement = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mb-1">
-                  {getContentTypeIcon(content.content_type)}
-                  <h3 className="font-medium text-gray-900 text-sm">{content.title}</h3>
+                  {getContentTypeIcon(content.content_type.toUpperCase() as FormContentType)}
+                  <h3 className="font-medium text-gray-900 text-sm flex-grow line-clamp-1">{content.title}</h3>
                 </div>
                 {content.description && (
-                  <p className="text-xs text-gray-600 mb-2 line-clamp-2">
+                  <p className="text-xs text-gray-600 mb-2 line-clamp-2 flex-grow">
                     {content.description}
                   </p>
                 )}
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1 mt-auto pt-1">
                   {content.category && (
-                    <span className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
-                      {content.category}
+                    <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                      {reverseCategoryMap[content.category] || content.category}
                     </span>
                   )}
+                  {Array.isArray(content.tags)
+                    ? content.tags.map((tag: string, index: number) => (
+                        <span key={index} className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
+                          {tag}
+                        </span>
+                      ))
+                    : null
+                  }
                 </div>
               </div>
             ))}
@@ -233,48 +275,58 @@ export const ContentManagement = () => {
                 key={content.id}
                 className="py-3 flex items-center hover:bg-gray-50"
               >
-                <div className="flex-shrink-0 w-16 h-16 mr-4">
+                <div className="flex-shrink-0 w-16 h-10 mr-4">
                   <img
                     src={content.thumbnail_url || '/placeholder.png'}
                     alt={content.title}
                     className="w-full h-full object-cover rounded"
                   />
                 </div>
-                <div className="flex-grow min-w-0">
+                <div className="flex-grow min-w-0 mr-4">
                   <div className="flex items-center gap-2 mb-1">
-                    {getContentTypeIcon(content.content_type)}
+                    {getContentTypeIcon(content.content_type.toUpperCase() as FormContentType)}
                     <h3 className="font-medium text-gray-900 truncate">
                       {content.title}
                     </h3>
                   </div>
                   {content.description && (
-                    <p className="text-sm text-gray-600 truncate">
+                    <p className="text-sm text-gray-600 line-clamp-1">
                       {content.description}
                     </p>
                   )}
-                  <div className="flex items-center gap-2 mt-1">
-                    {content.category && (
-                      <span className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
-                        {content.category}
-                      </span>
-                    )}
-                    <span className="text-xs text-gray-500">
-                      {new Date(content.created_at).toLocaleDateString()}
-                    </span>
-                  </div>
                 </div>
-                <div className="flex-shrink-0 ml-4 flex items-center space-x-2">
+                <div className="flex-shrink-0 w-32 mr-4">
+                  {content.category && (
+                    <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                      {reverseCategoryMap[content.category] || content.category}
+                    </span>
+                  )}
+                </div>
+                <div className="flex-shrink-0 w-48 mr-4 flex flex-wrap gap-1">
+                  {Array.isArray(content.tags)
+                    ? content.tags.slice(0, 3).map((tag: string, index: number) => (
+                        <span key={index} className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
+                          {tag}
+                        </span>
+                      ))
+                    : null
+                  }
+                  {Array.isArray(content.tags) && content.tags.length > 3 && (
+                    <span className="text-xs text-gray-500">...</span>
+                  )}
+                </div>
+                <div className="flex-shrink-0 flex space-x-2">
                   <button
                     onClick={() => handleEdit(content)}
-                    className="p-1 hover:bg-gray-100 rounded"
+                    className="p-1 text-gray-500 hover:text-gray-700"
                   >
-                    <Edit2 className="h-4 w-4 text-gray-600" />
+                    <Edit2 className="h-4 w-4" />
                   </button>
                   <button
                     onClick={() => handleDelete(content.id)}
-                    className="p-1 hover:bg-gray-100 rounded"
+                    className="p-1 text-red-500 hover:text-red-700"
                   >
-                    <Trash2 className="h-4 w-4 text-red-600" />
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
               </div>
@@ -340,7 +392,7 @@ export const ContentManagement = () => {
                 onChange={(e) =>
                   setFormData({
                     ...formData,
-                    content_type: e.target.value as ContentType,
+                    content_type: e.target.value as FormContentType,
                   })
                 }
                 required

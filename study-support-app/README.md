@@ -1,36 +1,226 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 学習支援アプリケーション (フロントエンド)
 
-## Getting Started
+## 概要
 
-First, run the development server:
+このプロジェクトは学生向けの進学支援を行うWebアプリケーションのフロントエンドです。AIを活用した進路相談、大学・学部選びのサポート、志望理由書作成支援などの機能を提供します。
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 技術スタック
+
+- **フレームワーク**: Next.js 14 (App Router)
+- **言語**: TypeScript
+- **スタイリング**: Tailwind CSS
+- **状態管理**: React Hooks
+- **認証**: NextAuth.js
+- **API通信**: Axios
+- **決済処理**: Stripe
+
+## 機能一覧
+
+- **ユーザー認証**: ログイン、ログアウト、アカウント登録
+- **AIチャット**: 進路相談や学習支援のためのAIチャット機能
+- **大学情報**: 大学・学部の情報閲覧
+- **志望校管理**: 志望校の登録、編集、管理
+- **志望理由書**: 志望理由書の作成、編集、AIによるフィードバック
+- **サブスクリプション**: 有料プランの購入、管理
+- **支払い履歴**: 支払い履歴の確認
+- **キャンペーンコード**: 割引クーポンの適用機能
+
+## プロジェクト構成
+
+```
+src/
+├── app/                   # Next.js App Routerページ
+│   ├── (app)/             # 認証が必要なページ
+│   ├── (auth)/            # 認証関連ページ (ログイン/登録)
+│   └── subscription/      # サブスクリプション関連の公開ページ
+├── components/            # 再利用可能なコンポーネント
+│   ├── auth/              # 認証関連コンポーネント
+│   ├── chat/              # チャット関連コンポーネント
+│   ├── common/            # 共通コンポーネント (ボタン、入力フィールドなど)
+│   ├── layout/            # レイアウト関連コンポーネント
+│   ├── statement/         # 志望理由書関連コンポーネント
+│   └── subscription/      # サブスクリプション関連コンポーネント
+├── hooks/                 # カスタムフック
+├── lib/                   # ユーティリティ関数
+├── services/              # APIサービス
+├── store/                 # 状態管理
+├── styles/                # グローバルスタイル
+└── types/                 # TypeScript型定義
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## サブスクリプション機能
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+アプリケーションには以下のサブスクリプション関連機能があります：
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. **プラン表示ページ** (`/subscription/plans`)
+   - 認証の有無に関わらず誰でもアクセス可能
+   - 認証済みユーザーには現在のプラン情報も表示
 
-## Learn More
+2. **キャンペーンコード機能**
+   - プラン選択時に割引コードを適用可能
+   - パーセント割引または固定金額割引に対応
 
-To learn more about Next.js, take a look at the following resources:
+3. **支払い処理**
+   - Stripeによる安全な決済処理
+   - クレジットカード決済に対応
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+4. **支払い履歴ページ** (`/app/subscription/history`)
+   - 認証済みユーザーのみアクセス可能
+   - 過去の支払い履歴を表示
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+5. **サブスクリプション管理**
+   - プランのキャンセル、更新、変更が可能
+   - Stripeカスタマーポータルへの接続
 
-## Deploy on Vercel
+### サブスクリプション機能の使い方
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+#### プラン選択から決済までの流れ
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. ユーザーは `/subscription/plans` にアクセスしてプラン一覧を閲覧できます
+2. プランを選択すると、そのプランの詳細情報が表示されます
+3. オプションでキャンペーンコードを入力・適用できます
+4. 未認証ユーザーが「ログインして続ける」ボタンをクリックすると、ログインページにリダイレクトされます
+   - ログイン後、元のプラン選択状態に戻ります
+5. 認証済みユーザーが「決済に進む」ボタンをクリックすると、Stripeの決済ページに遷移します
+6. 決済完了後、成功ページ (`/app/subscription/success`) に遷移し、その後ダッシュボードに戻ります
+
+#### キャンペーンコードの適用
+
+1. プラン選択後、キャンペーンコード入力欄にコードを入力
+2. 「適用」ボタンをクリックしてコードを検証
+3. 有効なコードの場合は割引額が表示され、合計金額が更新されます
+4. 無効なコードの場合はエラーメッセージが表示されます
+
+#### サブスクリプション管理
+
+1. 認証済みユーザーはプラン表示ページでサブスクリプション情報を確認できます
+2. 「サブスクリプション管理ポータルへ」リンクをクリックすると、Stripeのカスタマーポータルにリダイレクトされます
+3. カスタマーポータルでは以下の操作が可能です：
+   - プランのキャンセル（次回更新日以降）
+   - プランの変更
+   - 支払い方法の変更
+   - 請求情報の確認
+
+#### 支払い履歴の確認
+
+1. 認証済みユーザーは `/app/subscription/history` にアクセスして支払い履歴を確認できます
+2. 履歴には支払い日、金額、支払い方法、ステータスが表示されます
+3. ページネーションで複数ページの履歴を閲覧できます
+
+## 開発環境のセットアップ
+
+### 前提条件
+
+- Node.js 18.0.0以上
+- npm または yarn
+- Docker と Docker Compose (推奨)
+
+### Dockerを使用したセットアップ (推奨)
+
+このプロジェクトはルートディレクトリの`docker-compose.yml`を使用して、バックエンド、フロントエンド、データベースを一括でセットアップできます。
+
+1. リポジトリのルートディレクトリに移動
+   ```bash
+   cd react_ai_chatapp
+   ```
+
+2. 環境変数の設定
+   ```bash
+   # すでに.envファイルがある場合は編集
+   nano .env
+   # または.env.exampleをコピーして編集
+   cp .env.example .env
+   ```
+
+3. Dockerコンテナの起動
+   ```bash
+   docker-compose up -d
+   ```
+
+4. ブラウザで http://localhost:3000 にアクセス
+
+### 手動セットアップ (Dockerを使用しない場合)
+
+1. フロントエンドディレクトリに移動
+   ```bash
+   cd study-support-app
+   ```
+
+2. 依存関係のインストール
+   ```bash
+   npm install
+   # または
+   yarn install
+   ```
+
+3. 環境変数の設定
+   ```bash
+   # ルートディレクトリの.envファイルを参照するように設定するか
+   # または独自の.env.localファイルを作成
+   cp .env.example .env.local
+   ```
+   
+   `.env.local`ファイルを編集し、必要な環境変数を設定してください。
+   ルートディレクトリの`.env`ファイルとは異なる値を設定する場合に使用します。
+
+   主な環境変数:
+   ```
+   NEXT_PUBLIC_API_BASE_URL=http://localhost:5050  # Dockerの設定に合わせたバックエンドURL
+   ```
+
+4. 開発サーバーの起動
+   ```bash
+   npm run dev
+   # または
+   yarn dev
+   ```
+
+5. ブラウザで http://localhost:3000 にアクセス
+
+### 環境変数の設定
+
+このプロジェクトでは、主に次の環境変数が使用されています：
+
+| 変数名 | 説明 | デフォルト値 |
+|--------|------|-------------|
+| `NEXT_PUBLIC_API_BASE_URL` | バックエンドAPIのベースURL | http://localhost:5050 |
+| `PORT` | フロントエンドのポート番号 | 3000 |
+| `HOST` | フロントエンドのホスト | 0.0.0.0 |
+
+これらの環境変数はルートディレクトリの`.env`ファイルまたはフロントエンドディレクトリの`.env.local`ファイルで設定できます。Docker Composeを使用する場合は、ルートディレクトリの`.env`ファイルの値が優先されます。
+
+## 本番環境へのデプロイ
+
+1. ビルド
+   ```bash
+   npm run build
+   # または
+   yarn build
+   ```
+
+2. サーバー起動
+   ```bash
+   npm start
+   # または
+   yarn start
+   ```
+
+## トラブルシューティング
+
+### よくある問題と解決策
+
+1. **APIエンドポイントに接続できない**
+   - `.env.local`ファイルで`NEXT_PUBLIC_API_URL`が正しく設定されているか確認
+   - バックエンドサーバーが起動しているか確認
+
+2. **認証エラー**
+   - セッションクッキーが正しく設定されているか確認
+   - NextAuth.jsの設定を確認
+
+3. **Stripe決済ページに遷移しない**
+   - コンソールエラーを確認
+   - バックエンドのStripe設定が正しいか確認
+
+## ライセンス
+
+このプロジェクトは[ライセンス名]のもとで公開されています。詳細はLICENSEファイルをご覧ください。

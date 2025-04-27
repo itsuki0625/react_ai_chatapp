@@ -1,26 +1,26 @@
-export interface User {
+export interface UserProfile {
     id: string
     name: string
     email: string
     avatar?: string
-  }
+}
   
-  export interface Activity {
+export interface Activity {
     id: number
     title: string
     timestamp: string
-  }
+}
   
-  export interface NextAction {
+export interface NextAction {
     id: number
     title: string
     description: string
-  }
+}
   
-  export interface Stat {
+export interface Stat {
     icon: any
     title: string
     value: string
     unit: string
     description: string
-  }
+}

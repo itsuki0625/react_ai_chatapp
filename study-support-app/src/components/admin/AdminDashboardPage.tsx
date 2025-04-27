@@ -7,13 +7,11 @@ import {
   School,
   FileText,
   Activity,
-  Settings,
   AlertTriangle,
-  TrendingUp,
-  Search,
-  MoreVertical
+  CreditCard
 } from 'lucide-react';
-import { ContentManagement } from '@/components/admin/ContentManagement';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 interface UserStats {
   totalStudents: number;
@@ -30,6 +28,8 @@ interface SystemStats {
 }
 
 const AdminDashboard = () => {
+  const router = useRouter();
+
   const [userStats] = useState<UserStats>({
     totalStudents: 1250,
     activeStudents: 980,
@@ -156,27 +156,32 @@ const AdminDashboard = () => {
             <h2 className="text-lg font-medium text-gray-900">システム管理</h2>
           </div>
           <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <button className="flex items-center justify-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <Link href="/admin/users" className="flex items-center justify-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100">
                 <Users className="h-6 w-6 text-gray-600 mr-2" />
                 <span className="text-sm font-medium text-gray-900">ユーザー管理</span>
-              </button>
+              </Link>
               <button className="flex items-center justify-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100">
                 <School className="h-6 w-6 text-gray-600 mr-2" />
                 <span className="text-sm font-medium text-gray-900">学校管理</span>
               </button>
-              <button className="flex items-center justify-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100">
-                <Settings className="h-6 w-6 text-gray-600 mr-2" />
-                <span className="text-sm font-medium text-gray-900">システム設定</span>
+              <Link 
+                href="/admin/content"
+                className="flex items-center justify-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100"
+              >
+                <FileText className="h-6 w-6 mr-2" />
+                <span className="text-sm font-medium">コンテンツ管理</span>
+              </Link>
+              <button
+                className="flex items-center justify-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100"
+                onClick={() => router.push('/admin/subscription')}
+              >
+                <CreditCard className="h-6 w-6 text-gray-600 mr-2" />
+                <span className="text-sm font-medium text-gray-900">サブスクリプション</span>
               </button>
             </div>
           </div>
         </div>
-      </div>
-
-      {/* コンテンツ管理セクションを追加 */}
-      <div className="mt-6">
-        <ContentManagement />
       </div>
     </div>
   );
