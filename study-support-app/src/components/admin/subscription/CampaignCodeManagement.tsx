@@ -4,8 +4,11 @@ import React, { useState, useEffect } from 'react';
 import { PlusCircle, Edit, Trash2, AlertCircle, Check, X } from 'lucide-react';
 import { Button } from '@/components/common/Button';
 import { Card, CardContent } from '@/components/common/Card';
-import { CampaignCode } from '@/types/subscription';
+import { CampaignCode, DiscountTypeResponse } from '@/types/subscription';
 import { adminService } from '@/services/adminService';
+import { fetchDiscountTypes } from '@/lib/api/admin';
+import { useQuery } from '@tanstack/react-query';
+import axios from 'axios';
 
 // モーダルの共通コンポーネント
 const Modal: React.FC<{
@@ -100,29 +103,29 @@ const Checkbox: React.FC<{
   );
 };
 
-// ラジオグループコンポーネント
-const RadioGroup: React.FC<{
-  options: { value: string; label: string }[];
+// セレクトコンポーネント
+const Select: React.FC<{
   value: string;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  name: string;
-}> = ({ options, value, onChange, name }) => {
+  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+  options: { value: string; label: string }[];
+  required?: boolean;
+  name?: string;
+}> = ({ value, onChange, options, required, name }) => {
   return (
-    <div className="flex space-x-4">
+    <select
+      value={value}
+      onChange={onChange}
+      required={required}
+      name={name}
+      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+    >
+      <option value="">選択してください</option>
       {options.map((option) => (
-        <label key={option.value} className="inline-flex items-center">
-          <input
-            type="radio"
-            name={name}
-            value={option.value}
-            checked={value === option.value}
-            onChange={onChange}
-            className="h-4 w-4 text-blue-600 focus:ring-blue-500"
-          />
-          <span className="ml-2 text-gray-700">{option.label}</span>
-        </label>
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
       ))}
-    </div>
+    </select>
   );
 };
 
@@ -135,11 +138,17 @@ export const CampaignCodeManagement: React.FC = () => {
   const [currentCode, setCurrentCode] = useState<CampaignCode | null>(null);
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
   
+  // 割引タイプ取得用の useQuery
+  const { data: discountTypes = [], isLoading: isLoadingDiscountTypes, error: discountTypesError } = useQuery<DiscountTypeResponse[]>({
+    queryKey: ['adminDiscountTypes'],
+    queryFn: fetchDiscountTypes
+  });
+
   // 新規キャンペーンコードのフォーム状態
   const [newCode, setNewCode] = useState({
     code: '',
     description: '',
-    discount_type: 'percentage',
+    discount_type: '',
     discount_value: '',
     max_uses: '',
     valid_from: '',
@@ -168,7 +177,7 @@ export const CampaignCodeManagement: React.FC = () => {
     setNewCode({
       code: '',
       description: '',
-      discount_type: 'percentage',
+      discount_type: '',
       discount_value: '',
       max_uses: '',
       valid_from: '',
@@ -253,6 +262,10 @@ export const CampaignCodeManagement: React.FC = () => {
       errors.code = 'コードを入力してください';
     }
     
+    if (!newCode.discount_type) {
+      errors.discount_type = '割引タイプを選択してください';
+    }
+    
     if (!newCode.discount_value) {
       errors.discount_value = '割引値を入力してください';
     } else {
@@ -279,24 +292,42 @@ export const CampaignCodeManagement: React.FC = () => {
     }
     
     try {
+      // 日付をISO 8601形式 (UTCの日の始まり) に変換するヘルパー関数
+      const toISOStartOfDayUTC = (dateString: string | undefined): string | undefined => {
+        if (!dateString) return undefined;
+        try {
+          const date = new Date(dateString + 'T00:00:00Z'); // UTCとして解釈
+          return date.toISOString();
+        } catch (e) {
+          console.error("Invalid date format:", dateString);
+          return undefined; // 無効な場合は undefined を返す
+        }
+      };
+
       const campaignCodeData = {
         code: newCode.code.trim(),
         description: newCode.description.trim() || undefined,
         discount_type: newCode.discount_type as 'percentage' | 'fixed',
         discount_value: Number(newCode.discount_value),
         max_uses: newCode.max_uses ? Number(newCode.max_uses) : undefined,
-        valid_from: newCode.valid_from || undefined,
-        valid_until: newCode.valid_until || undefined,
+        valid_from: toISOStartOfDayUTC(newCode.valid_from),
+        valid_until: toISOStartOfDayUTC(newCode.valid_until),
         is_active: newCode.is_active
       };
       
+      console.log("Submitting Campaign Code Data:", campaignCodeData); // 送信データを確認
+
       if (isEditModalOpen && currentCode) {
         // 現在のAPIでは更新エンドポイントがないため、
         // バックエンドでPUTエンドポイントを実装する必要があります
         // 一時的に新しいコードを作成するようにしています
-        await adminService.createCampaignCode(campaignCodeData);
+        // TODO: Implement update logic using PUT /admin/campaign-codes/{codeId}
+        console.warn("Campaign code edit currently uses create logic. Implement PUT endpoint.");
+        await adminService.createCampaignCode(campaignCodeData); 
+        alert("キャンペーンコードが（新規作成として）保存されました。更新処理は未実装です。");
       } else {
         await adminService.createCampaignCode(campaignCodeData);
+        alert("キャンペーンコードが作成されました。"); // 成功時のメッセージ変更
       }
       
       // モーダルを閉じてキャンペーンコードリストを更新
@@ -306,7 +337,22 @@ export const CampaignCodeManagement: React.FC = () => {
       resetForm();
     } catch (err) {
       console.error('キャンペーンコードの保存中にエラーが発生しました:', err);
-      alert(err instanceof Error ? err.message : 'キャンペーンコードの保存中にエラーが発生しました');
+      // エラーハンドリング改善 (Axios エラーチェック)
+      let errorMessage = 'キャンペーンコードの保存中にエラーが発生しました';
+      if (axios.isAxiosError(err) && err.response?.data?.detail) {
+          // バックエンドからの詳細エラーメッセージを表示
+          errorMessage = `エラー: ${err.response.data.detail}`;
+          if (typeof err.response.data.detail === 'string') {
+              errorMessage = `エラー: ${err.response.data.detail}`;
+          } else if (Array.isArray(err.response.data.detail)) {
+              // バリデーションエラーの詳細を整形
+              errorMessage = "エラー: 入力内容を確認してください。\n" + 
+                  err.response.data.detail.map((d: any) => `${d.loc.join('.')} - ${d.msg}`).join("\n");
+          } 
+      } else if (err instanceof Error) {
+          errorMessage = err.message;
+      }
+      alert(errorMessage);
     }
   };
 
@@ -326,6 +372,15 @@ export const CampaignCodeManagement: React.FC = () => {
   };
 
   const renderCampaignCodeForm = () => {
+    // 割引タイプロード中の表示
+    if (isLoadingDiscountTypes) {
+        return <div>割引タイプを読み込み中...</div>;
+    }
+    // 割引タイプ取得エラー表示
+    if (discountTypesError) {
+        return <div className="text-red-500">割引タイプの読み込みに失敗しました: {discountTypesError.message}</div>;
+    }
+
     return (
       <form onSubmit={handleSubmitCampaignCode}>
         <FormField label="キャンペーンコード" error={formErrors.code}>
@@ -350,15 +405,16 @@ export const CampaignCodeManagement: React.FC = () => {
           />
         </FormField>
         
-        <FormField label="割引タイプ">
-          <RadioGroup
-            options={[
-              { value: 'percentage', label: 'パーセンテージ割引' },
-              { value: 'fixed', label: '固定金額割引' }
-            ]}
+        <FormField label="割引タイプ" error={formErrors.discount_type}>
+          <Select
             value={newCode.discount_type}
             onChange={handleInputChange}
             name="discount_type"
+            required
+            options={discountTypes.map(dt => ({
+                value: dt.name,
+                label: `${dt.name}${dt.description ? ` (${dt.description})` : ''}`
+            }))}
           />
         </FormField>
         

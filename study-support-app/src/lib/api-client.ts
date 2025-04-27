@@ -1,7 +1,7 @@
-import axios from 'axios';
+import axios, { AxiosRequestHeaders } from 'axios';
 import { API_BASE_URL } from '@/lib/config';
 // import { auth } from '@/auth'; // サーバーサイドでのみ使用
-// import { getSession } from 'next-auth/react'; // クライアントサイドで使用する場合 // ★★★ 変更: コメントアウト ★★★
+import { getSession } from 'next-auth/react'; // ★★★ 変更: コメントアウト解除 ★★★
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -11,39 +11,46 @@ export const apiClient = axios.create({
   },
 });
 
-// ★★★ 追加: リクエストインターセプター ★★★
-// apiClient.interceptors.request.use(
-//   async (config) => {
-//     // クライアントサイドでのみ実行
-//     if (typeof window !== 'undefined') {
-//       try {
-//         const session = await getSession();
-//         // NextAuth v5 以降など、session.accessToken が直接存在しない場合があるため
-//         // session?.user?.accessToken のような構造も考慮する
-//         // session オブジェクトと accessToken の実際の構造に合わせて調整してください
-//         const accessToken = (session as any)?.accessToken || (session?.user as any)?.accessToken;
-//
-//         if (accessToken) {
-//           // config.headers が undefined の場合を考慮
-//           if (!config.headers) {
-//             config.headers = {};
-//           }
-//           config.headers.Authorization = `Bearer ${accessToken}`;
-//         }
-//       } catch (error) {
-//         console.error('Failed to get session or attach token:', error);
-//         // セッション取得に失敗した場合でもリクエストは続行させるか、
-//         // エラーを投げて中断させるかは要件による
-//       }
-//     }
-//     // ★★★ 型アサーションを削除 ★★★
-//     return config;
-//   },
-//   (error) => {
-//     return Promise.reject(error);
-//   }
-// );
-// ★★★ 追加ここまで ★★★
+// ★★★ 変更: リクエストインターセプターのコメントアウトを解除し、実装 ★★★
+apiClient.interceptors.request.use(
+  async (config) => {
+    // クライアントサイドでのみ実行
+    if (typeof window !== 'undefined') {
+      try {
+        const session = await getSession();
+        // NextAuth v5 以降など、session.accessToken が直接存在しない場合があるため
+        // session?.user?.accessToken のような構造も考慮する
+        // session オブジェクトと accessToken の実際の構造に合わせて調整してください
+        const accessToken = (session as any)?.accessToken || (session?.user as any)?.accessToken; // session から accessToken を取得
+
+        if (accessToken) {
+          // config.headers が undefined の場合を考慮
+          if (!config.headers) {
+            config.headers = {} as AxiosRequestHeaders;
+          }
+          config.headers.Authorization = `Bearer ${accessToken}`;
+          console.log('Authorization header added with token.'); // デバッグ用ログ
+        } else {
+          // トークンがない場合でもクッキー認証にフォールバックする可能性があるため、
+          // ここでは警告に留める。セッション自体がない場合も同様。
+          console.warn('Session found but no access token, or no session found. Proceeding without Authorization header.');
+        }
+      } catch (error) {
+        console.error('Failed to get session or attach token:', error);
+        // セッション取得に失敗した場合でもリクエストは続行させるか、
+        // エラーを投げて中断させるかは要件による
+      }
+    }
+    // ★★★ 変更: 型アサーションを削除 (不要) ★★★
+    return config;
+  },
+  (error) => {
+    // リクエストエラーの処理
+    console.error('API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+// ★★★ 変更ここまで ★★★
 
 // レスポンスインターセプター - 401時のリダイレクトを一旦コメントアウト
 apiClient.interceptors.response.use(

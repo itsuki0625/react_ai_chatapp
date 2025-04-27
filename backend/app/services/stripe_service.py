@@ -4,6 +4,9 @@ from app.schemas.subscription import CheckoutSessionResponse
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 import logging
+from ..models.user import User
+from sqlalchemy.orm import Session
+from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -72,16 +75,25 @@ class StripeService:
             raise
 
     @staticmethod
-    def list_prices(active: bool = True, limit: int = 100) -> List[Dict[str, Any]]:
+    def list_prices(
+        product_id: Optional[str] = None,
+        active: bool = True, 
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
         """
         Stripeから価格リストを取得する
+        product_id を指定すると、その商品に関連する価格のみを取得
         """
         try:
-            prices = stripe.Price.list(
-                active=active,
-                limit=limit,
-                expand=['data.product']
-            )
+            list_params = {
+                'active': active,
+                'limit': limit,
+                'expand': ['data.product']
+            }
+            if product_id:
+                list_params['product'] = product_id
+            
+            prices = stripe.Price.list(**list_params)
             return prices.data
         except Exception as e:
             logger.error(f"価格一覧取得エラー: {str(e)}")
@@ -337,11 +349,141 @@ class StripeService:
     @staticmethod
     def get_payment_method(payment_method_id: str) -> Dict[str, Any]:
         """
-        支払い方法の詳細を取得する
+        支払い方法を取得する
         """
         try:
-            payment_method = stripe.PaymentMethod.retrieve(payment_method_id)
-            return payment_method
+            return stripe.PaymentMethod.retrieve(payment_method_id)
         except Exception as e:
             logger.error(f"支払い方法取得エラー: {str(e)}")
+            raise
+
+    @staticmethod
+    def create_product(
+        name: str,
+        description: Optional[str] = None,
+        active: bool = True,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Stripe 商品 (Product) を作成する"""
+        try:
+            product = stripe.Product.create(
+                name=name,
+                description=description,
+                active=active,
+                metadata=metadata
+            )
+            logger.info(f"Stripe Product 作成成功: {product.id}")
+            return product
+        except Exception as e:
+            logger.error(f"Stripe Product 作成エラー: {str(e)}")
+            raise
+
+    @staticmethod
+    def update_product(
+        product_id: str,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        active: Optional[bool] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Stripe 商品 (Product) を更新する"""
+        try:
+            params = {}
+            if name is not None: params['name'] = name
+            if description is not None: params['description'] = description
+            if active is not None: params['active'] = active
+            if metadata is not None: params['metadata'] = metadata
+
+            if not params:
+                 logger.warning(f"Stripe Product ({product_id}) の更新パラメータが指定されていません。")
+                 # 更新するものがない場合はそのまま商品情報を返す
+                 return StripeService.get_product(product_id)
+
+            product = stripe.Product.modify(product_id, **params)
+            logger.info(f"Stripe Product 更新成功: {product.id}")
+            return product
+        except Exception as e:
+            logger.error(f"Stripe Product ({product_id}) 更新エラー: {str(e)}")
+            raise
+
+    @staticmethod
+    def list_products(active: Optional[bool] = None, limit: int = 100) -> List[Dict[str, Any]]:
+        """Stripe 商品 (Product) のリストを取得する"""
+        try:
+            params = {'limit': limit}
+            if active is not None:
+                params['active'] = active
+            products = stripe.Product.list(**params)
+            logger.info(f"Stripe Product リスト取得: {len(products.data)} 件")
+            return products.data
+        except Exception as e:
+            logger.error(f"Stripe Product リスト取得エラー: {str(e)}")
+            raise
+
+    @staticmethod
+    def archive_product(product_id: str) -> Dict[str, Any]:
+        """Stripe 商品 (Product) をアーカイブする (active=False に設定)"""
+        try:
+            # アーカイブは active=False の更新と同じ
+            product = stripe.Product.modify(product_id, active=False)
+            logger.info(f"Stripe Product アーカイブ成功: {product.id}")
+            return product
+        except Exception as e:
+            logger.error(f"Stripe Product ({product_id}) アーカイブエラー: {str(e)}")
+            raise
+
+    @staticmethod
+    def create_price(
+        product_id: str,
+        unit_amount: int,
+        currency: str,
+        recurring: Dict[str, Any], # {'interval': 'month', 'interval_count': 1}
+        active: bool = True,
+        metadata: Optional[Dict[str, Any]] = None,
+        lookup_key: Optional[str] = None # 必要であればルックアップキーも設定
+    ) -> Dict[str, Any]:
+        """Stripe 価格 (Price) を作成する"""
+        try:
+            price_params = {
+                'unit_amount': unit_amount,
+                'currency': currency,
+                'recurring': recurring,
+                'product': product_id,
+                'active': active,
+            }
+            if metadata:
+                price_params['metadata'] = metadata
+            if lookup_key:
+                price_params['lookup_key'] = lookup_key
+
+            price = stripe.Price.create(**price_params)
+            logger.info(f"Stripe Price 作成成功: {price.id} (Product: {product_id})" )
+            return price
+        except Exception as e:
+            logger.error(f"Stripe Price 作成エラー (Product: {product_id}): {str(e)}")
+            raise
+
+    @staticmethod
+    def update_price(
+        price_id: str,
+        active: Optional[bool] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        lookup_key: Optional[str] = None # ルックアップキーの更新も可能
+    ) -> Dict[str, Any]:
+        """Stripe 価格 (Price) を更新する (active, metadata, lookup_key のみ更新可能)"""
+        try:
+            params = {}
+            if active is not None: params['active'] = active
+            if metadata is not None: params['metadata'] = metadata
+            if lookup_key is not None: params['lookup_key'] = lookup_key
+
+            if not params:
+                logger.warning(f"Stripe Price ({price_id}) の更新パラメータが指定されていません。")
+                return StripeService.get_price(price_id)
+
+            price = stripe.Price.modify(price_id, **params)
+            logger.info(f"Stripe Price 更新成功: {price.id}")
+            return price
+        except Exception as e:
+            logger.error(f"Stripe Price ({price_id}) 更新エラー: {str(e)}")
             raise 

@@ -29,6 +29,7 @@ NO_AUTH_PATHS = [
     "/api/v1/auth/reset-password",
     "/api/v1/auth/verify-email",
     "/api/v1/auth/resend-verification",
+    "/api/v1/subscriptions/stripe-plans",
 ]
 
 # --- JWEトークンをデコードするヘルパー関数 ---
@@ -185,15 +186,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
             else:
                 logger.debug("Authorization Bearer header not found.")
 
-        # 認証チェック (request.state.user にユーザー情報を格納)
+        # 認証チェック
         if user:
-            request.state.user = user # request.state にユーザーオブジェクトを格納
+            request.state.user_id = user.id # Userオブジェクトの代わりにユーザーIDを格納
             logger.debug(f"認証成功: User ID {user.id}, Email: {user.email}")
             try:
                 response = await call_next(request)
                 return response
             except Exception as e:
+                # エラー発生時のデバッグログは一旦コメントアウト（必要なら戻す）
+                # user_in_state = getattr(request.state, "user", "Not Set")
                 logger.error(f"認証ミドルウェアの後続処理でエラー: {str(e)}")
+                # logger.error(f"エラー発生時の request.state.user: {user_in_state}")
+                # logger.error(f"エラー発生時の request.state.user の型: {type(user_in_state)}")
                 detail_message = str(e)
                 status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
                 if isinstance(e, HTTPException):

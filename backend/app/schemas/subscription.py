@@ -1,5 +1,6 @@
 from pydantic import BaseModel, UUID4, Field, validator
-from typing import Optional, List
+from pydantic import computed_field
+from typing import Optional, List, Any
 from datetime import datetime
 from uuid import UUID
 from .base import TimestampMixin
@@ -80,7 +81,6 @@ class PaymentHistoryResponse(PaymentHistoryBase, TimestampMixin):
 class CampaignCodeBase(BaseModel):
     code: str
     description: Optional[str] = None
-    discount_type: str  # 'percentage', 'fixed'
     discount_value: float
     max_uses: Optional[int] = None
     valid_from: Optional[datetime] = None
@@ -88,6 +88,7 @@ class CampaignCodeBase(BaseModel):
     is_active: bool = True
 
 class CampaignCodeCreate(CampaignCodeBase):
+    discount_type: str = Field(..., examples=['percentage', 'fixed'])
     owner_id: Optional[UUID] = None
 
     @validator('discount_type')
@@ -104,41 +105,31 @@ class CampaignCodeCreate(CampaignCodeBase):
             raise ValueError('割引額は0より大きい必要があります')
         return v
 
-class CampaignCodeResponse(CampaignCodeBase, TimestampMixin):
+class CampaignCodeResponse(TimestampMixin, CampaignCodeBase):
     id: UUID
     owner_id: Optional[UUID] = None
     used_count: int
     is_valid: bool
     
+    # --- computed_field を一時的にコメントアウト ---
+    # @computed_field
+    # @property
+    # def discount_type(self) -> str:
+    #     if hasattr(self, 'discount_type') and self.discount_type and hasattr(self.discount_type, 'name'):
+    #         return self.discount_type.name
+    #     return "unknown"
+    # --- ここまでコメントアウト ---
+
     class Config:
         from_attributes = True
 
 class CampaignCodeUpdate(BaseModel):
     description: Optional[str] = None
-    discount_type: Optional[str] = None
     discount_value: Optional[float] = None
     max_uses: Optional[int] = None
     valid_from: Optional[datetime] = None
     valid_until: Optional[datetime] = None
     is_active: Optional[bool] = None
-    
-    @validator('discount_type')
-    def validate_discount_type(cls, v):
-        if v and v not in ['percentage', 'fixed']:
-            raise ValueError('discount_typeは "percentage" または "fixed" である必要があります')
-        return v
-        
-    @validator('discount_value')
-    def validate_discount_value(cls, v, values):
-        if v is None:
-            return v
-            
-        discount_type = values.get('discount_type')
-        if discount_type == 'percentage' and (v <= 0 or v > 100):
-            raise ValueError('割引率は0より大きく、100以下である必要があります')
-        elif v <= 0:
-            raise ValueError('割引額は0より大きい必要があります')
-        return v
 
 # キャンペーンコード検証リクエスト
 class VerifyCampaignCodeRequest(BaseModel):
@@ -179,3 +170,22 @@ class ManageSubscriptionRequest(BaseModel):
 class WebhookEventValidation(BaseModel):
     signature: str
     payload: str 
+
+# --- DiscountType Schemas --- #
+
+class DiscountTypeBase(BaseModel):
+    name: str = Field(..., description="割引タイプの名前 (例: percentage, fixed)", examples=['percentage', 'fixed'])
+    description: Optional[str] = Field(None, description="割引タイプの説明")
+
+class DiscountTypeCreate(DiscountTypeBase):
+    pass
+
+class DiscountTypeUpdate(BaseModel): # 更新は name, description のみ可能と想定
+    name: Optional[str] = Field(None, examples=['percentage', 'fixed'])
+    description: Optional[str] = None
+
+class DiscountTypeResponse(DiscountTypeBase, TimestampMixin):
+    id: UUID
+
+    class Config:
+        from_attributes = True 

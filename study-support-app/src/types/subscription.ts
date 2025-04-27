@@ -92,4 +92,44 @@ export interface ManageSubscriptionRequest {
   subscription_id: string;
   action: 'cancel' | 'reactivate' | 'update';
   plan_id?: string;
+}
+
+// ★ SubscriptionPlanResponse 型定義を追加
+export interface SubscriptionPlanResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  price_id: string;
+  amount: number;
+  currency: string;
+  interval: string;
+  is_active: boolean;
+  created_at: string; // または Date
+  updated_at: string; // または Date
+}
+
+// ★ CheckoutSessionResponse 型定義を追加 (Backend スキーマに合わせる)
+export interface CheckoutSessionResponse {
+  session_id: string;
+  url: string;
+}
+
+// --- Discount Type Types --- //
+
+export interface DiscountTypeBase {
+    name: string;
+    description?: string | null;
+}
+
+export interface DiscountTypeCreate extends DiscountTypeBase {}
+
+export interface DiscountTypeUpdate {
+    name?: string | null;
+    description?: string | null;
+}
+
+export interface DiscountTypeResponse extends DiscountTypeBase {
+    id: string; // UUID は string で受け取る
+    created_at: string; // または Date
+    updated_at: string; // または Date
 } 

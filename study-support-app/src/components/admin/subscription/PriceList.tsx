@@ -5,6 +5,7 @@ import { PlusCircle, Edit, Trash2, AlertCircle, X } from 'lucide-react';
 import { Button } from '@/components/common/Button';
 import { Card, CardContent } from '@/components/common/Card';
 import { adminService, StripeProduct, StripePrice } from '@/services/adminService';
+import axios from 'axios';
 
 // モーダルの共通コンポーネント
 const Modal: React.FC<{
@@ -258,16 +259,13 @@ export const PriceList: React.FC = () => {
     if (!newPrice.product) {
       errors.product = '商品を選択してください';
     }
-    
     if (!newPrice.unit_amount || Number(newPrice.unit_amount) <= 0) {
       errors.unit_amount = '0より大きい金額を入力してください';
     }
-    
     if (newPrice.type === 'recurring') {
       if (!newPrice.interval) {
         errors.interval = '請求周期を選択してください';
       }
-      
       if (!newPrice.interval_count || Number(newPrice.interval_count) <= 0) {
         errors.interval_count = '請求周期の回数は0より大きい値を入力してください';
       }
@@ -279,29 +277,42 @@ export const PriceList: React.FC = () => {
     }
     
     try {
-      const priceData = {
-        product: newPrice.product,
-        nickname: newPrice.nickname,
-        currency: 'jpy',
-        unit_amount: Number(newPrice.unit_amount), // ユーザーが入力した金額（円単位）を送信
-        interval: newPrice.interval as 'day' | 'week' | 'month' | 'year',
-        active: true
+      // バックエンドの StripePriceCreate スキーマに合わせたデータを作成
+      const priceDataPayload: any = { // Use a more specific type if available
+        product_id: newPrice.product,
+        unit_amount: parseInt(newPrice.unit_amount, 10), // JPY assumes no decimals needed
+        currency: newPrice.currency, 
+        active: true, // Assuming new prices are active by default
+        // nickname: newPrice.nickname || null, // Add if nickname is part of your schema
+        // metadata: {}, // Add if metadata is needed
       };
+
+      // recurring は type が recurring の場合のみ設定
+      if (newPrice.type === 'recurring') {
+        priceDataPayload.recurring = {
+          interval: newPrice.interval as 'day' | 'week' | 'month' | 'year',
+          interval_count: parseInt(newPrice.interval_count, 10),
+        };
+      } else {
+         // one_time の場合、recurring は null または undefined にする（スキーマ定義による）
+         // スキーマで recurring が Optional[StripeRecurring] の場合:
+         priceDataPayload.recurring = null; 
+      }
+
+      console.log("Submitting Price Data:", priceDataPayload); // 送信するデータを確認
       
       if (isEditModalOpen && currentPrice) {
-        // 1. 新しい価格を作成
-        await adminService.createPrice(priceData);
-        
-        // 2. 古い価格を非アクティブ化
+        // --- 編集ロジック --- (今回は新規作成エラーなので、一旦既存のまま)
+        // TODO: Edit logic should use PUT /admin/prices/{priceId} instead
+        // For now, log a warning and proceed with old logic (or block edit)
+        console.warn("Price edit uses create+delete logic, consider updating to PUT endpoint.");
+        await adminService.createPrice(priceDataPayload);
         await adminService.deletePrice(currentPrice.id);
-        
-        // 成功メッセージを表示
-        alert('価格設定が更新されました。古い価格設定は非アクティブ化されました。');
+        alert('価格設定が更新されました。(旧ロジック)');
+
       } else {
-        // 新規作成の場合
-        await adminService.createPrice(priceData);
-        
-        // 成功メッセージを表示
+        // --- 新規作成ロジック --- 
+        await adminService.createPrice(priceDataPayload);
         alert('新しい価格設定が作成されました。');
       }
       
@@ -310,20 +321,33 @@ export const PriceList: React.FC = () => {
       setIsEditModalOpen(false);
       fetchPrices();
       resetForm();
-    } catch (err) {
+    } catch (err) { // エラーハンドリングを改善
       console.error('価格の保存中にエラーが発生しました:', err);
-      alert(err instanceof Error ? err.message : '価格の保存中にエラーが発生しました');
+      let errorMessage = '価格の保存中にエラーが発生しました';
+      if (axios.isAxiosError(err) && err.response?.data?.detail) {
+          errorMessage = `エラー: ${err.response.data.detail}`;
+      } else if (err instanceof Error) {
+          errorMessage = err.message;
+      }
+      alert(errorMessage);
     }
   };
 
   // 金額を表示用にフォーマット
   const formatAmount = (amount: number, currency: string) => {
-    // Stripeから受け取った金額（セント単位）を円単位に変換して表示
-    const normalizedAmount = currency.toLowerCase() === 'jpy' ? amount / 100 : amount / 100;
-    const formatter = new Intl.NumberFormat('ja-JP', {
+    // Stripeから受け取った金額は最小通貨単位 (JPYの場合は円)
+    // JPY以外でセントなどの補助単位がある通貨の場合のみ100で割る
+    const normalizedAmount = currency.toLowerCase() === 'jpy' 
+      ? amount // JPYの場合はそのまま
+      : amount / 100; // JPY以外は100で割る (例: USD)
+    
+    // JPYの場合、最小小数桁数は0に設定
+    const minimumFractionDigits = currency.toLowerCase() === 'jpy' ? 0 : 2;
+
+    const formatter = new Intl.NumberFormat('ja-JP', { // locale は適切に設定
       style: 'currency',
       currency: currency.toUpperCase(),
-      minimumFractionDigits: 0
+      minimumFractionDigits: minimumFractionDigits
     });
     return formatter.format(normalizedAmount);
   };

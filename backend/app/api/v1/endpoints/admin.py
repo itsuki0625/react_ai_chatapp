@@ -1,12 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
-import stripe
+import stripe # エラーハンドリング用に追加
+import logging # ロギング用に追加
 from uuid import UUID
 
 from app.core.config import settings
 from app.api.deps import get_db
 from app.api.deps import get_current_superuser
+from app.services.stripe_service import StripeService # StripeServiceをインポート
+# Pydanticスキーマのインポート (後で追加する可能性あり)
+# from app.schemas.stripe import ProductCreate, ProductUpdate, PriceCreate, PriceUpdate # 例
+
 from app.schemas.subscription import (
     CampaignCodeCreate, 
     CampaignCodeResponse,
@@ -28,10 +33,21 @@ from app.schemas.user import (
     UserStatus as SchemaUserStatus
 )
 
+# 作成したStripeスキーマをインポート
+from app.schemas.stripe import (
+    StripeProductCreate, StripeProductUpdate, StripeProductResponse, StripeProductWithPricesResponse,
+    StripePriceCreate, StripePriceUpdate, StripePriceResponse
+)
+
+# --- Userモデルのインポートを追加 ---
+from app.models.user import User as UserModel
+
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["admin"])
 
-# Stripeインスタンスの初期化
-stripe.api_key = settings.STRIPE_SECRET_KEY
+# Stripeインスタンスの初期化はStripeService内で行われるため不要
+# stripe.api_key = settings.STRIPE_SECRET_KEY
 
 # ---------- ユーザー関連のエンドポイント ---------- #
 @router.get("/users",
@@ -132,218 +148,283 @@ def admin_delete_user(
 
 # ---------- 商品関連のエンドポイント ---------- #
 
-@router.get("/products", response_model=List[dict])
+@router.get("/products", response_model=List[StripeProductWithPricesResponse])
 def get_products(
+    active: Optional[bool] = None,
+    limit: int = 100,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_superuser),
 ):
     """
-    Stripe商品一覧を取得する
+    Stripe商品一覧（関連価格情報を含む）を取得する
     """
     try:
-        # Stripe商品一覧を取得
-        products = stripe.Product.list(active=True)
-        
-        # 価格情報も取得して商品情報と結合
-        result = []
-        for product in products.data:
-            prices = stripe.Price.list(product=product.id, active=True)
-            product_data = {
-                "id": product.id,
-                "name": product.name,
-                "description": product.description,
-                "active": product.active,
-                "prices": [
-                    {
-                        "id": price.id,
-                        "currency": price.currency,
-                        "unit_amount": price.unit_amount,
-                        "recurring": price.recurring if hasattr(price, "recurring") else None
-                    }
-                    for price in prices.data
-                ]
-            }
-            result.append(product_data)
-        
-        return result
+        products_raw = StripeService.list_products(active=active, limit=limit)
+        products_with_prices = []
+        for prod_raw in products_raw:
+            try:
+                # 商品に関連する有効な価格を取得
+                prices_raw = StripeService.list_prices(product_id=prod_raw.id, active=True, limit=100)
+                formatted_prices = []
+                for price_obj in prices_raw: # price_obj は Stripe Price オブジェクト/辞書
+                    try:
+                        # product フィールドから Product ID (文字列) を抽出
+                        product_field_value = price_obj.get('product')
+                        product_id_str = None
+                        if isinstance(product_field_value, dict): # 展開された Product オブジェクト (辞書として扱われることが多い)
+                            product_id_str = product_field_value.get('id')
+                        elif isinstance(product_field_value, str): # 既にID文字列の場合
+                            product_id_str = product_field_value
+                        # stripe.Product オブジェクトの場合 (Stripeライブラリのバージョンによる)
+                        elif hasattr(product_field_value, 'id'): 
+                            product_id_str = product_field_value.id 
+
+                        if product_id_str:
+                            # 元のデータをコピーし、productフィールドをID文字列に置き換える
+                            price_data_dict = dict(price_obj)
+                            price_data_dict['product'] = product_id_str
+                            # Pydanticモデルでバリデーション/変換
+                            formatted_prices.append(StripePriceResponse.model_validate(price_data_dict))
+                        else:
+                             logger.warning(f"Price {price_obj.get('id')} is missing product ID.")
+                    except Exception as price_val_e:
+                        logger.error(f"Pydantic validation failed for price {price_obj.get('id')}: {price_val_e}")
+                        # エラーがあっても処理を続けるか、ここでエラーを発生させるか選択
+                        # continue
+
+                # Productレスポンスモデルでバリデーション/変換
+                product_resp_data = dict(prod_raw)
+                product_resp = StripeProductWithPricesResponse.model_validate({
+                    **product_resp_data,
+                    'prices': formatted_prices
+                })
+                products_with_prices.append(product_resp)
+            except Exception as prod_val_e:
+                logger.error(f"Pydantic validation failed for product {prod_raw.get('id')}: {prod_val_e}")
+                # エラーがあっても処理を続けるか、ここでエラーを発生させるか選択
+                # continue
+
+        return products_with_prices
     except Exception as e:
+        logger.error(f"Stripe商品の取得に失敗しました: {str(e)}", exc_info=True) # エラー詳細をログに出力
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Stripe商品の取得に失敗しました: {str(e)}"
         )
 
-@router.post("/products", status_code=status.HTTP_201_CREATED)
-async def create_product(
-    product_data: Dict[str, Any],
+@router.post("/products", response_model=StripeProductResponse, status_code=status.HTTP_201_CREATED)
+async def create_stripe_product( # 関数名を変更
+    product_data: StripeProductCreate, # スキーマを使用
+    db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_superuser)
 ):
     """
-    Stripeに新しい商品を作成します。
-    管理者専用エンドポイント。
+    Stripeに新しい商品を作成します (StripeServiceを使用)
     """
     try:
-        name = product_data.get("name")
-        description = product_data.get("description")
-        images = product_data.get("images", [])
-        
-        if not name:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="商品名は必須です"
-            )
-            
-        product = stripe.Product.create(
-            name=name,
-            description=description,
-            images=images
+        product = StripeService.create_product(
+            name=product_data.name,
+            description=product_data.description,
+            active=product_data.active,
+            metadata=product_data.metadata
         )
-        
-        return {"data": product}
-    except stripe.error.StripeError as e:
+        return product
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Stripe API エラー: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Stripe商品の作成に失敗しました: {str(e)}"
         )
 
-@router.delete("/products/{product_id}")
-async def delete_product(
+@router.put("/products/{product_id}", response_model=StripeProductResponse)
+async def update_stripe_product(
     product_id: str,
+    product_data: StripeProductUpdate, # 更新用スキーマを使用
+    db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_superuser)
 ):
     """
-    Stripeから商品を削除（非アクティブ化）します。
-    管理者専用エンドポイント。
-    商品を非アクティブにすると、関連する価格設定も非アクティブになります。
+    Stripe商品を更新します (StripeServiceを使用)
     """
     try:
-        # まず商品に関連する価格を取得
-        prices = stripe.Price.list(product=product_id, active=True)
-        
-        # 関連する各価格を非アクティブ化
-        for price in prices.data:
-            stripe.Price.modify(
-                price.id,
-                active=False
-            )
-            
-        # Stripeでは商品の削除ではなく非アクティブ化が推奨されています
-        product = stripe.Product.modify(
-            product_id,
-            active=False
+        # 更新データがない場合はエラーにしても良い
+        if not product_data.model_dump(exclude_unset=True):
+             raise HTTPException(
+                 status_code=status.HTTP_400_BAD_REQUEST,
+                 detail="更新するデータがありません。"
+             )
+
+        product = StripeService.update_product(
+            product_id=product_id,
+            name=product_data.name,
+            description=product_data.description,
+            active=product_data.active,
+            metadata=product_data.metadata
         )
-        
-        return {"data": product, "message": f"商品と{len(prices.data)}件の関連価格設定が非アクティブ化されました"}
-    except stripe.error.StripeError as e:
+        return product
+    except stripe.error.InvalidRequestError as e:
+         if "No such product" in str(e):
+             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="指定された商品が見つかりません")
+         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Stripe APIエラー: {str(e)}")
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Stripe API エラー: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Stripe商品の更新に失敗しました: {str(e)}"
+        )
+
+@router.delete("/products/{product_id}", response_model=StripeProductResponse)
+async def archive_stripe_product(
+    product_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_superuser)
+):
+    """
+    Stripe商品をアーカイブ（非アクティブ化）します
+    """
+    try:
+        product = StripeService.archive_product(product_id=product_id)
+        return product
+    except stripe.error.InvalidRequestError as e:
+         if "No such product" in str(e):
+             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="指定された商品が見つかりません")
+         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Stripe APIエラー: {str(e)}")
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Stripe商品のアーカイブに失敗しました: {str(e)}"
         )
 
 # ---------- 価格関連のエンドポイント ---------- #
 
-@router.get("/prices")
-async def get_prices(current_user: Dict = Depends(get_current_superuser)):
-    """
-    Stripeから価格一覧を取得します。
-    管理者専用エンドポイント。
-    """
-    try:
-        prices = stripe.Price.list(
-            limit=100,
-            expand=['data.product']
-        )
-        
-        # 商品名を追加
-        prices_with_product_name = []
-        for price in prices.data:
-            if hasattr(price, 'product') and price.product:
-                product_name = price.product.name if hasattr(price.product, 'name') else 'Unknown Product'
-            else:
-                product_name = 'Unknown Product'
-                
-            price_dict = dict(price)
-            price_dict['product_name'] = product_name
-            # plan_idをprice_idと同じ値にする(フロントエンドとの互換性のため)
-            price_dict['plan_id'] = price_dict['id']  
-            prices_with_product_name.append(price_dict)
-            
-        return {"data": prices_with_product_name}
-    except stripe.error.StripeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Stripe API エラー: {str(e)}"
-        )
-
-@router.post("/prices", status_code=status.HTTP_201_CREATED)
-async def create_price(
-    price_data: Dict[str, Any],
+@router.get("/prices", response_model=List[StripePriceResponse])
+async def get_prices(
+    product_id: Optional[str] = None,
+    active: Optional[bool] = None,
+    limit: int = 100,
     current_user: Dict = Depends(get_current_superuser)
 ):
     """
-    Stripeに新しい価格を作成します。
-    管理者専用エンドポイント。
+    Stripe価格一覧を取得します (StripeServiceを使用)
     """
     try:
-        product = price_data.get("product")
-        unit_amount = price_data.get("unit_amount")
-        currency = price_data.get("currency", "jpy")
-        recurring = price_data.get("recurring")
-        metadata = price_data.get("metadata", {})
-        
-        if not product:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="商品IDは必須です"
-            )
-            
-        if not unit_amount or not isinstance(unit_amount, (int, float)) or unit_amount <= 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="有効な価格を指定してください"
-            )
-            
-        # フロントエンドから円単位で受け取った金額をセント単位（Stripe用）に変換
-        stripe_unit_amount = int(unit_amount * 100)
-            
-        price_data = {
-            "product": product,
-            "unit_amount": stripe_unit_amount,  # 100倍してStripeに送信
-            "currency": currency,
-            "metadata": metadata
-        }
-        
-        if recurring:
-            price_data["recurring"] = recurring
-            
-        price = stripe.Price.create(**price_data)
-        
-        return {"data": price}
-    except stripe.error.StripeError as e:
+        prices_raw = StripeService.list_prices(product_id=product_id, active=active, limit=limit)
+        formatted_prices = []
+        for price_obj in prices_raw:
+            try:
+                # product フィールドから Product ID (文字列) を抽出
+                product_field_value = price_obj.get('product')
+                product_id_str = None
+                if isinstance(product_field_value, dict):
+                    product_id_str = product_field_value.get('id')
+                elif isinstance(product_field_value, str):
+                    product_id_str = product_field_value
+                elif hasattr(product_field_value, 'id'):
+                    product_id_str = product_field_value.id
+
+                if product_id_str:
+                    price_data_dict = dict(price_obj)
+                    price_data_dict['product'] = product_id_str
+                    formatted_prices.append(StripePriceResponse.model_validate(price_data_dict))
+                else:
+                    logger.warning(f"Price {price_obj.get('id')} is missing product ID.")
+            except Exception as price_val_e:
+                logger.error(f"Pydantic validation failed for price {price_obj.get('id')}: {price_val_e}")
+                # continue
+
+        return formatted_prices # 整形・検証済みのリストを返す
+    except Exception as e:
+        logger.error(f"Stripe価格の取得に失敗しました: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Stripe API エラー: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Stripe価格の取得に失敗しました: {str(e)}"
         )
 
-@router.delete("/prices/{price_id}")
-async def delete_price(
+@router.post("/prices", response_model=StripePriceResponse, status_code=status.HTTP_201_CREATED)
+async def create_stripe_price( # 関数名を変更
+    price_data: StripePriceCreate, # スキーマを使用
+    current_user: Dict = Depends(get_current_superuser)
+):
+    """
+    Stripeに新しい価格を作成します (StripeServiceを使用)
+    """
+    try:
+        # recurring を Dict に変換する必要があるか確認 (Pydanticが自動変換するはず)
+        recurring_dict = price_data.recurring.model_dump()
+
+        price = StripeService.create_price(
+            product_id=price_data.product_id,
+            unit_amount=price_data.unit_amount,
+            currency=price_data.currency,
+            recurring=recurring_dict,
+            active=price_data.active,
+            metadata=price_data.metadata,
+            lookup_key=price_data.lookup_key
+        )
+        return price
+    except stripe.error.InvalidRequestError as e:
+        # 商品が存在しない場合などのエラーハンドリング
+        if "No such product" in str(e):
+             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="指定された商品が見つかりません")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Stripe APIエラー: {str(e)}")
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Stripe価格の作成に失敗しました: {str(e)}"
+        )
+
+@router.put("/prices/{price_id}", response_model=StripePriceResponse)
+async def update_stripe_price(
+    price_id: str,
+    price_data: StripePriceUpdate, # 更新用スキーマを使用
+    current_user: Dict = Depends(get_current_superuser)
+):
+    """
+    Stripe価格を更新します (StripeServiceを使用)
+    """
+    try:
+        if not price_data.model_dump(exclude_unset=True):
+             raise HTTPException(
+                 status_code=status.HTTP_400_BAD_REQUEST,
+                 detail="更新するデータがありません。"
+             )
+
+        price = StripeService.update_price(
+            price_id=price_id,
+            active=price_data.active,
+            metadata=price_data.metadata,
+            lookup_key=price_data.lookup_key
+        )
+        return price
+    except stripe.error.InvalidRequestError as e:
+         if "No such price" in str(e):
+             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="指定された価格が見つかりません")
+         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Stripe APIエラー: {str(e)}")
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Stripe価格の更新に失敗しました: {str(e)}"
+        )
+
+# DELETEは価格の非アクティブ化に対応
+@router.delete("/prices/{price_id}", response_model=StripePriceResponse)
+async def archive_stripe_price( # 関数名を変更
     price_id: str,
     current_user: Dict = Depends(get_current_superuser)
 ):
     """
-    Stripeから価格を削除（非アクティブ化）します。
-    管理者専用エンドポイント。
+    Stripe価格をアーカイブ（非アクティブ化）します (StripeServiceを使用)
     """
     try:
-        # Stripeでは価格の削除はできないため、非アクティブ化する
-        price = stripe.Price.modify(
-            price_id,
-            active=False
-        )
-        return {"data": price}
-    except stripe.error.StripeError as e:
+        # update_price を使って active=False にする
+        price = StripeService.update_price(price_id=price_id, active=False)
+        return price
+    except stripe.error.InvalidRequestError as e:
+         if "No such price" in str(e):
+             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="指定された価格が見つかりません")
+         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Stripe APIエラー: {str(e)}")
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Stripe API エラー: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Stripe価格のアーカイブに失敗しました: {str(e)}"
         )
 
 # ---------- キャンペーンコード関連のエンドポイント ---------- #
@@ -378,19 +459,20 @@ async def admin_get_campaign_codes(
 async def admin_create_campaign_code(
     campaign_code: CampaignCodeCreate,
     db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_superuser)
+    current_user: UserModel = Depends(get_current_superuser) # 依存関係は元に戻っているはず
 ):
     """
     新しいキャンペーンコードを作成します。
     管理者専用エンドポイント。
     """
-    return create_campaign_code(db, campaign_code)
+    # create_campaign_code に creator=current_user を渡す
+    return create_campaign_code(db=db, campaign_code=campaign_code, creator=current_user)
 
 @router.delete("/campaign-codes/{campaign_code_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_delete_campaign_code(
     campaign_code_id: str,
     db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_superuser)
+    current_user: Dict = Depends(get_current_superuser) # これは Dict のまま
 ):
     """
     キャンペーンコードを削除します。
@@ -405,3 +487,71 @@ async def admin_delete_campaign_code(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="無効なcampaign_code_id形式です"
         ) 
+
+# ---------- 割引タイプ関連のエンドポイント ---------- #
+
+# CRUD 関数とスキーマをインポート
+from app.crud.subscription import (
+    create_discount_type, get_all_discount_types, get_discount_type, 
+    update_discount_type, delete_discount_type, get_discount_type_by_name
+)
+from app.schemas.subscription import (
+    DiscountTypeCreate, DiscountTypeResponse, DiscountTypeUpdate
+)
+
+@router.get("/discount-types", response_model=List[DiscountTypeResponse])
+async def admin_get_discount_types(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_superuser) # 管理者チェック
+):
+    """割引タイプ一覧を取得します。"""
+    discount_types = get_all_discount_types(db, skip=skip, limit=limit)
+    return discount_types
+
+@router.post("/discount-types", response_model=DiscountTypeResponse, status_code=status.HTTP_201_CREATED)
+async def admin_create_discount_type(
+    discount_type_in: DiscountTypeCreate,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_superuser)
+):
+    """新しい割引タイプを作成します。"""
+    try:
+        return create_discount_type(db=db, discount_type=discount_type_in)
+    except HTTPException as e: # 重複エラーなどをキャッチ
+        raise e
+    except Exception as e:
+        logger.error(f"割引タイプの作成中に予期せぬエラー: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+@router.put("/discount-types/{discount_type_id}", response_model=DiscountTypeResponse)
+async def admin_update_discount_type(
+    discount_type_id: UUID,
+    discount_type_in: DiscountTypeUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_superuser)
+):
+    """割引タイプを更新します。"""
+    try:
+        updated_discount_type = update_discount_type(db, discount_type_id, discount_type_in)
+        if not updated_discount_type:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Discount type not found")
+        return updated_discount_type
+    except HTTPException as e: # 重複エラーなどをキャッチ
+        raise e
+    except Exception as e:
+        logger.error(f"割引タイプの更新中に予期せぬエラー: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+@router.delete("/discount-types/{discount_type_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_discount_type(
+    discount_type_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_superuser)
+):
+    """割引タイプを削除します。"""
+    deleted = delete_discount_type(db, discount_type_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Discount type not found")
+    return None 

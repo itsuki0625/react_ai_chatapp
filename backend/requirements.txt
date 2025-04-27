@@ -8,14 +8,17 @@ python-jose
 cryptography
 sqlalchemy
 psycopg2-binary
-alembic
+alembic>=1.13.1
 pydantic-settings
 pydantic[email]
-python-multipart
+python-multipart>=0.0.9
 pandas
 openai
-passlib[bcrypt]
-stripe
+passlib[bcrypt]>=1.7.4
+stripe>=9.7.0
 pyotp
 qrcode
 pillow
+
+# tests
+pytest>=8.2.2

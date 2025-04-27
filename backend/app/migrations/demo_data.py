@@ -18,6 +18,7 @@ from app.models.personal_statement import PersonalStatement, PersonalStatementSu
 
 from app.models.chat import ChatSession, ChatSessionMetaData, ChatMessage, ChatMessageMetaData, ChatAttachment
 from app.models.checklist import ChecklistEvaluation
+from app.models.subscription import DiscountType
 
 from app.models.base import TimestampMixin
 from app.models.enums import DocumentStatus, PersonalStatementStatus, SessionType, SessionStatus, SenderType, MessageType
@@ -42,6 +43,7 @@ def insert_demo_data(db: Session):
     
     # ========= 5. サブスクリプション関連テーブル =========
     # サブスクリプションプランテーブルは削除されたため実装しない
+    create_subscription_related_data(db)
     
     # ========= 6. コンテンツ関連テーブル =========
     create_content_related_data(db, users)
@@ -1130,4 +1132,85 @@ def create_quiz_data(db: Session, users):
 def create_forum_data(db: Session, users):
     # フォーラム関連データの作成
     # ここにフォーラム関連のデータを追加するコードを書く
-    pass 
+    pass
+
+def create_subscription_related_data(db: Session):
+    """
+    割引タイプなどのサブスクリプション関連データを挿入します。
+    """
+    # ========= 割引タイプデータ =========
+    print("Seeding discount types...")
+    try:
+        # 既存のデータをチェック
+        existing_percentage = db.query(DiscountType).filter(DiscountType.name == 'percentage').first()
+        existing_fixed = db.query(DiscountType).filter(DiscountType.name == 'fixed').first()
+        # --- 追加チェック ---
+        existing_none = db.query(DiscountType).filter(DiscountType.name == 'none').first()
+        existing_trial_fixed = db.query(DiscountType).filter(DiscountType.name == 'trial_fixed').first()
+        existing_trial_percentage = db.query(DiscountType).filter(DiscountType.name == 'trial_percentage').first()
+        # --- ここまで ---
+
+        added = False
+        if not existing_percentage:
+            percentage_type = DiscountType(
+                id=uuid.uuid4(), # UUIDを生成
+                name='percentage',
+                description='割引率 (%)'
+            )
+            db.add(percentage_type)
+            print("Added 'percentage' discount type.")
+            added = True
+
+        if not existing_fixed:
+            fixed_type = DiscountType(
+                id=uuid.uuid4(), # UUIDを生成
+                name='fixed',
+                description='固定割引額 (円)'
+            )
+            db.add(fixed_type)
+            print("Added 'fixed' discount type.")
+            added = True
+            
+        # --- 追加のタイプを追加 --- 
+        if not existing_none:
+            none_type = DiscountType(
+                id=uuid.uuid4(),
+                name='none',
+                description='割引なし'
+            )
+            db.add(none_type)
+            print("Added 'none' discount type.")
+            added = True
+            
+        if not existing_trial_fixed:
+            trial_fixed_type = DiscountType(
+                id=uuid.uuid4(),
+                name='trial_fixed',
+                description='トライアル固定価格'
+            )
+            db.add(trial_fixed_type)
+            print("Added 'trial_fixed' discount type.")
+            added = True
+            
+        if not existing_trial_percentage:
+            trial_percentage_type = DiscountType(
+                id=uuid.uuid4(),
+                name='trial_percentage',
+                description='トライアル割引率'
+            )
+            db.add(trial_percentage_type)
+            print("Added 'trial_percentage' discount type.")
+            added = True
+        # --- ここまで --- 
+
+        if added:
+            # ここでは flush のみ行い、コミットは insert_demo_data の最後で行う
+            db.flush()
+            print("Discount types flushed.")
+        else:
+            # メッセージを更新
+            print("All required discount types already exist.") 
+
+    except Exception as e:
+        print(f"An error occurred during discount type seeding: {e}")
+        # ロールバックは不要（コミット前のため） 

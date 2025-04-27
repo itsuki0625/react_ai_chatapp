@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ProductList } from '@/components/admin/subscription/ProductList';
 import { PriceList } from '@/components/admin/subscription/PriceList';
 import { CampaignCodeManagement } from '@/components/admin/subscription/CampaignCodeManagement';
+import { DiscountTypeList } from '@/components/admin/subscription/DiscountTypeList';
 
 export const SubscriptionManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState('products');
@@ -24,6 +25,7 @@ export const SubscriptionManagement: React.FC = () => {
             <TabsTrigger value="products">商品設定</TabsTrigger>
             <TabsTrigger value="prices">価格設定</TabsTrigger>
             <TabsTrigger value="campaigns">キャンペーンコード</TabsTrigger>
+            <TabsTrigger value="discount_types">割引タイプ</TabsTrigger>
           </TabsList>
           <TabsContent value="products">
             <ProductList />
@@ -33,6 +35,9 @@ export const SubscriptionManagement: React.FC = () => {
           </TabsContent>
           <TabsContent value="campaigns">
             <CampaignCodeManagement />
+          </TabsContent>
+          <TabsContent value="discount_types">
+            <DiscountTypeList />
           </TabsContent>
         </Tabs>
       </CardContent>
