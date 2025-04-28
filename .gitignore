@@ -10,4 +10,4 @@ htmlcov/
 !.env.example
 secret/
 secret/*
-
+AWS/*
