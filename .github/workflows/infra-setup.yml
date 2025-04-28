@@ -32,6 +32,9 @@ jobs:
 
       - name: Terraform Plan
         working-directory: infrastructure/terraform
+        env:
+          TF_VAR_db_password:   ${{ secrets.DB_PASSWORD }}
+          TF_VAR_api_base_url:  ${{ secrets.API_BASE_URL }}
         run: terraform plan -input=false -out=tfplan
 
       - name: Terraform Apply
