@@ -1,0 +1,76 @@
+name: Build & Push Docker Images to ECR
+
+# main ブランチへの push で動く
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: ${{ secrets.AWS_ECR_REGISTRY }}
+
+jobs:
+  # ─────────────────────────────────────────────────
+  # 1) AWS 認証 & ECR にログイン
+  # ─────────────────────────────────────────────────
+  ecr-login:
+    runs-on: ubuntu-latest
+    outputs:
+      login: ${{ steps.login-ecr.outcome }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+  # ─────────────────────────────────────────────────
+  # 2) Backend イメージのビルド & Push
+  # ─────────────────────────────────────────────────
+  build-push-backend:
+    needs: ecr-login
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build backend image
+        run: |
+          IMAGE_URI=${{ env.ECR_REGISTRY }}/backend:latest
+          docker build \
+            --file backend/Dockerfile \
+            --tag  $IMAGE_URI \
+            backend
+
+      - name: Push backend to ECR
+        run: docker push ${{ env.ECR_REGISTRY }}/backend:latest
+
+  # ─────────────────────────────────────────────────
+  # 3) Frontend (Next.js) イメージのビルド & Push
+  # ─────────────────────────────────────────────────
+  build-push-frontend:
+    needs: ecr-login
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build frontend image
+        run: |
+          IMAGE_URI=${{ env.ECR_REGISTRY }}/frontend:latest
+          docker build \
+            --file study-support-app/Dockerfile \
+            --tag  $IMAGE_URI \
+            study-support-app
+
+      - name: Push frontend to ECR
+        run: docker push ${{ env.ECR_REGISTRY }}/frontend:latest
