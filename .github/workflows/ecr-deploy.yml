@@ -15,6 +15,7 @@ jobs:
   # 1) AWS 認証 & ECR にログイン
   # ─────────────────────────────────────────────────
   ecr-login:
+    environment: Production
     runs-on: ubuntu-latest
     outputs:
       login: ${{ steps.login-ecr.outcome }}
@@ -37,6 +38,7 @@ jobs:
   # 2) Backend イメージのビルド & Push
   # ─────────────────────────────────────────────────
   build-push-backend:
+    environment: Production
     needs: ecr-login
     runs-on: ubuntu-latest
     steps:
@@ -52,12 +54,13 @@ jobs:
             backend
 
       - name: Push backend to ECR
-        run: docker push ${{ env.ECR_REGISTRY }}/backend:latest
+        run: docker push ${{ env.ECR_REGISTRY }}/api:latest
 
   # ─────────────────────────────────────────────────
   # 3) Frontend (Next.js) イメージのビルド & Push
   # ─────────────────────────────────────────────────
   build-push-frontend:
+    environment: Production
     needs: ecr-login
     runs-on: ubuntu-latest
     steps:
@@ -66,7 +69,7 @@ jobs:
 
       - name: Build frontend image
         run: |
-          IMAGE_URI=${{ env.ECR_REGISTRY }}/frontend:latest
+          IMAGE_URI=${{ env.ECR_REGISTRY }}/front:latest
           docker build \
             --file study-support-app/Dockerfile \
             --tag  $IMAGE_URI \

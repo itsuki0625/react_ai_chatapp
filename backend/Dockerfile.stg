@@ -1,0 +1,29 @@
+# STG用Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# システム依存関係をインストール
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends build-essential && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
+
+# Pythonパッケージのインストール
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# アプリケーションコード・環境変数をコピー
+COPY . ./
+# STG環境用envファイルを読み込み
+COPY .env.stg .env
+
+# アプリケーションパスを設定
+ENV PYTHONPATH=/app
+
+# ポート開放
+EXPOSE 5050
+
+# STGではreloadなしの起動
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5050"] 
