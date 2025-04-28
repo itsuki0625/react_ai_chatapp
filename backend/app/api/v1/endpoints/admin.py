@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any, Optional
 import stripe # エラーハンドリング用に追加
 import logging # ロギング用に追加
@@ -7,7 +7,7 @@ from uuid import UUID
 
 from app.core.config import settings
 from app.api.deps import get_db
-from app.api.deps import get_current_superuser
+from app.api.deps import require_permission
 from app.services.stripe_service import StripeService # StripeServiceをインポート
 # Pydanticスキーマのインポート (後で追加する可能性あり)
 # from app.schemas.stripe import ProductCreate, ProductUpdate, PriceCreate, PriceUpdate # 例
@@ -15,6 +15,7 @@ from app.services.stripe_service import StripeService # StripeServiceをイン�
 from app.schemas.subscription import (
     CampaignCodeCreate, 
     CampaignCodeResponse,
+    DiscountTypeCreate, DiscountTypeResponse, DiscountTypeUpdate
 )
 from app.crud.subscription import (
     create_campaign_code,
@@ -22,6 +23,8 @@ from app.crud.subscription import (
     get_all_campaign_codes,
     update_campaign_code,
     delete_campaign_code,
+    create_discount_type, get_all_discount_types, get_discount_type,
+    update_discount_type, delete_discount_type, get_discount_type_by_name
 )
 from app.crud.user import get_multi_users, remove_user, create_user, get_user, update_user, get_user_by_email
 from app.schemas.user import (
@@ -29,7 +32,6 @@ from app.schemas.user import (
     UserResponse,
     UserCreate,
     UserUpdate,
-    UserRole as SchemaUserRole,
     UserStatus as SchemaUserStatus
 )
 
@@ -41,6 +43,15 @@ from app.schemas.stripe import (
 
 # --- Userモデルのインポートを追加 ---
 from app.models.user import User as UserModel
+
+# --- crud_role をインポート ---
+from app.crud import crud_role, crud_user # crud_user も使うので明示的にインポート
+# ----------------------------
+
+# --- get_async_db をインポート --- 
+# from app.api.deps import get_db
+from app.database.database import get_async_db # get_async_db を直接インポート
+# ----------------------------------
 
 logger = logging.getLogger(__name__)
 
@@ -54,16 +65,16 @@ router = APIRouter(tags=["admin"])
             response_model=UserListResponse,
             response_model_exclude={'users': {'__all__': {'full_name', 'is_verified', 'user_roles', 'login_info'}}}
             )
-def admin_get_users(
+async def admin_get_users(
     skip: int = 0,
     limit: int = 100,
     search: Optional[str] = None,
-    role: Optional[SchemaUserRole] = None,
+    role: Optional[str] = None,
     status: Optional[SchemaUserStatus] = None,
-    db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_superuser),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'user_read')),
 ):
-    users, total = get_multi_users(db, skip=skip, limit=limit, search=search, role=role, status=status)
+    users, total = await crud_user.get_multi_users(db, skip=skip, limit=limit, search=search, role=role, status=status)
     return UserListResponse(
         total=total,
         users=users,
@@ -72,34 +83,34 @@ def admin_get_users(
     )
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def admin_create_user(
+async def admin_create_user(
     user_in: UserCreate,
-    db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_superuser),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'user_write')),
 ):
-    existing_user = get_user_by_email(db, email=user_in.email)
+    existing_user = await crud_user.get_user_by_email(db, email=user_in.email)
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="このメールアドレスは既に使用されています。",
         )
-    new_user = create_user(db, user_in=user_in)
+    new_user = await crud_user.create_user(db, user_in=user_in)
     return new_user
 
 @router.get("/users/{user_id}",
            response_model=UserResponse,
            response_model_exclude={'user_roles', 'login_info'} # Exclude raw relations
            )
-def admin_get_user(
+async def admin_get_user(
     user_id: str,
-    db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_superuser),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'user_read')),
 ):
     try:
         user_uuid = UUID(user_id)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="無効なユーザーID形式です")
-    db_user = get_user(db, user_id=user_uuid)
+    db_user = await crud_user.get_user(db, user_id=user_uuid)
     if not db_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ユーザーが見つかりません")
     return db_user
@@ -108,40 +119,55 @@ def admin_get_user(
            response_model=UserResponse,
            response_model_exclude={'user_roles', 'login_info'} # Exclude raw relations
            )
-def admin_update_user(
+async def admin_update_user( # ★ async に変更
     user_id: str,
-    user_in: UserUpdate,
-    db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_superuser),
+    user_in: UserUpdate, # スキーマの型は UserUpdate (role は Optional[str])
+    db: AsyncSession = Depends(get_async_db), # ★ get_async_db に変更
+    current_user: UserModel = Depends(require_permission('admin_access', 'user_write')), # ★ 型を UserModel に変更
 ):
     try:
         user_uuid = UUID(user_id)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="無効なユーザーID形式です")
-    db_user = get_user(db, user_id=user_uuid)
+
+    db_user = await crud_user.get_user(db, user_id=user_uuid) # ★ await を追加
     if not db_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ユーザーが見つかりません")
+
+    # --- ★ ロール存在チェックを追加 --- 
+    if user_in.role is not None: # role が指定されている場合のみチェック
+        target_role = await crud_role.get_role_by_name(db, name=user_in.role) # ★ await を追加
+        if not target_role:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, # 404 でも良いかもしれない
+                detail=f"指定されたロール '{user_in.role}' は存在しません。",
+            )
+    # --- チェックここまで ---
+
+    # メールアドレス変更時の重複チェック (既存のロジック)
     if user_in.email and user_in.email != db_user.email:
-        existing_user = get_user_by_email(db, email=user_in.email)
+        existing_user = await crud_user.get_user_by_email(db, email=user_in.email) # ★ await を追加
         if existing_user and existing_user.id != user_uuid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="このメールアドレスは既に使用されています。",
             )
-    updated_user = update_user(db, db_user=db_user, user_in=user_in)
+
+    # ユーザー更新処理 (crud_user.update_user は後で修正)
+    updated_user = await crud_user.update_user(db, db_user=db_user, user_in=user_in) # ★ await を追加
     return updated_user
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def admin_delete_user(
+async def admin_delete_user(
     user_id: str,
-    db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_superuser),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'user_write')),
 ):
     try:
         user_uuid = UUID(user_id)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="無効なユーザーID形式です")
-    removed = remove_user(db, user_id=user_uuid)
+    removed = await crud_user.remove_user(db, user_id=user_uuid)
     if not removed:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ユーザーが見つかりません")
     return None
@@ -149,11 +175,11 @@ def admin_delete_user(
 # ---------- 商品関連のエンドポイント ---------- #
 
 @router.get("/products", response_model=List[StripeProductWithPricesResponse])
-def get_products(
+async def get_products(
     active: Optional[bool] = None,
     limit: int = 100,
-    db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_superuser),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'stripe_product_read')),
 ):
     """
     Stripe商品一覧（関連価格情報を含む）を取得する
@@ -213,10 +239,10 @@ def get_products(
         )
 
 @router.post("/products", response_model=StripeProductResponse, status_code=status.HTTP_201_CREATED)
-async def create_stripe_product( # 関数名を変更
-    product_data: StripeProductCreate, # スキーマを使用
-    db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_superuser)
+async def create_stripe_product(
+    product_data: StripeProductCreate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'stripe_product_write')),
 ):
     """
     Stripeに新しい商品を作成します (StripeServiceを使用)
@@ -238,9 +264,9 @@ async def create_stripe_product( # 関数名を変更
 @router.put("/products/{product_id}", response_model=StripeProductResponse)
 async def update_stripe_product(
     product_id: str,
-    product_data: StripeProductUpdate, # 更新用スキーマを使用
-    db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_superuser)
+    product_data: StripeProductUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'stripe_product_write')),
 ):
     """
     Stripe商品を更新します (StripeServiceを使用)
@@ -274,8 +300,8 @@ async def update_stripe_product(
 @router.delete("/products/{product_id}", response_model=StripeProductResponse)
 async def archive_stripe_product(
     product_id: str,
-    db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_superuser)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'stripe_product_write')),
 ):
     """
     Stripe商品をアーカイブ（非アクティブ化）します
@@ -300,7 +326,7 @@ async def get_prices(
     product_id: Optional[str] = None,
     active: Optional[bool] = None,
     limit: int = 100,
-    current_user: Dict = Depends(get_current_superuser)
+    current_user: UserModel = Depends(require_permission('admin_access', 'stripe_price_read')),
 ):
     """
     Stripe価格一覧を取得します (StripeServiceを使用)
@@ -339,9 +365,9 @@ async def get_prices(
         )
 
 @router.post("/prices", response_model=StripePriceResponse, status_code=status.HTTP_201_CREATED)
-async def create_stripe_price( # 関数名を変更
-    price_data: StripePriceCreate, # スキーマを使用
-    current_user: Dict = Depends(get_current_superuser)
+async def create_stripe_price(
+    price_data: StripePriceCreate,
+    current_user: UserModel = Depends(require_permission('admin_access', 'stripe_price_write')),
 ):
     """
     Stripeに新しい価格を作成します (StripeServiceを使用)
@@ -374,8 +400,8 @@ async def create_stripe_price( # 関数名を変更
 @router.put("/prices/{price_id}", response_model=StripePriceResponse)
 async def update_stripe_price(
     price_id: str,
-    price_data: StripePriceUpdate, # 更新用スキーマを使用
-    current_user: Dict = Depends(get_current_superuser)
+    price_data: StripePriceUpdate,
+    current_user: UserModel = Depends(require_permission('admin_access', 'stripe_price_write')),
 ):
     """
     Stripe価格を更新します (StripeServiceを使用)
@@ -406,9 +432,9 @@ async def update_stripe_price(
 
 # DELETEは価格の非アクティブ化に対応
 @router.delete("/prices/{price_id}", response_model=StripePriceResponse)
-async def archive_stripe_price( # 関数名を変更
+async def archive_stripe_price(
     price_id: str,
-    current_user: Dict = Depends(get_current_superuser)
+    current_user: UserModel = Depends(require_permission('admin_access', 'stripe_price_write')),
 ):
     """
     Stripe価格をアーカイブ（非アクティブ化）します (StripeServiceを使用)
@@ -434,8 +460,8 @@ async def admin_get_campaign_codes(
     skip: int = 0,
     limit: int = 100,
     owner_id: Optional[str] = None,
-    db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_superuser)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'campaign_code_read')),
 ):
     """
     キャンペーンコード一覧を取得します。
@@ -458,8 +484,8 @@ async def admin_get_campaign_codes(
 @router.post("/campaign-codes", response_model=CampaignCodeResponse, status_code=status.HTTP_201_CREATED)
 async def admin_create_campaign_code(
     campaign_code: CampaignCodeCreate,
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_superuser) # 依存関係は元に戻っているはず
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'campaign_code_write')),
 ):
     """
     新しいキャンペーンコードを作成します。
@@ -471,8 +497,8 @@ async def admin_create_campaign_code(
 @router.delete("/campaign-codes/{campaign_code_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_delete_campaign_code(
     campaign_code_id: str,
-    db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_superuser) # これは Dict のまま
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'campaign_code_write')),
 ):
     """
     キャンペーンコードを削除します。
@@ -490,21 +516,12 @@ async def admin_delete_campaign_code(
 
 # ---------- 割引タイプ関連のエンドポイント ---------- #
 
-# CRUD 関数とスキーマをインポート
-from app.crud.subscription import (
-    create_discount_type, get_all_discount_types, get_discount_type, 
-    update_discount_type, delete_discount_type, get_discount_type_by_name
-)
-from app.schemas.subscription import (
-    DiscountTypeCreate, DiscountTypeResponse, DiscountTypeUpdate
-)
-
 @router.get("/discount-types", response_model=List[DiscountTypeResponse])
 async def admin_get_discount_types(
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_superuser) # 管理者チェック
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'discount_type_read')),
 ):
     """割引タイプ一覧を取得します。"""
     discount_types = get_all_discount_types(db, skip=skip, limit=limit)
@@ -513,8 +530,8 @@ async def admin_get_discount_types(
 @router.post("/discount-types", response_model=DiscountTypeResponse, status_code=status.HTTP_201_CREATED)
 async def admin_create_discount_type(
     discount_type_in: DiscountTypeCreate,
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_superuser)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'discount_type_write')),
 ):
     """新しい割引タイプを作成します。"""
     try:
@@ -529,8 +546,8 @@ async def admin_create_discount_type(
 async def admin_update_discount_type(
     discount_type_id: UUID,
     discount_type_in: DiscountTypeUpdate,
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_superuser)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'discount_type_write')),
 ):
     """割引タイプを更新します。"""
     try:
@@ -547,8 +564,8 @@ async def admin_update_discount_type(
 @router.delete("/discount-types/{discount_type_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_delete_discount_type(
     discount_type_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_superuser)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'discount_type_write')),
 ):
     """割引タイプを削除します。"""
     deleted = delete_discount_type(db, discount_type_id)

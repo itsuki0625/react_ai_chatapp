@@ -1,4 +1,6 @@
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update as sql_update
 from app.models.checklist import ChecklistEvaluation
 from app.schemas.checklist import ChecklistEvaluationCreate, ChecklistEvaluationUpdate
 from typing import List, Dict, Optional
@@ -75,7 +77,7 @@ class ChecklistEvaluator:
 """
 
 
-    async def evaluate_chat(self, chat_history: List[Dict]) -> Dict:
+    async def evaluate_chat(self, chat_history: List[Dict]) -> Optional[Dict]:
         formatted_history = "\n".join([
             f"{'User' if msg['role'].lower() == 'user' else 'Assistant'}: {msg['content']}"
             for msg in chat_history
@@ -87,17 +89,29 @@ class ChecklistEvaluator:
                 messages=[
                     {"role": "system", "content": self.evaluation_prompt},
                     {"role": "user", "content": formatted_history}
-                ]
+                ],
+                response_format={ "type": "json_object" }
             )
 
-            evaluation_result = response.choices[0].message.content
-            return json.loads(evaluation_result)  # evalの代わりにjson.loadsを使用
+            evaluation_result_str = response.choices[0].message.content
+            logger.debug(f"Raw evaluation response from OpenAI: {evaluation_result_str}")
+            try:
+                evaluation_result = json.loads(evaluation_result_str)
+                if "checklist" in evaluation_result and "overall_status" in evaluation_result and "general_feedback" in evaluation_result:
+                    return evaluation_result
+                else:
+                    logger.error("Parsed JSON lacks expected keys.")
+                    return None
+            except json.JSONDecodeError as json_err:
+                logger.error(f"Failed to parse OpenAI response as JSON: {json_err}")
+                logger.error(f"Invalid JSON string: {evaluation_result_str}")
+                return None
         except Exception as e:
-            logger.error(f"Error in evaluate_chat: {str(e)}")
+            logger.error(f"Error interacting with OpenAI during evaluation: {e}", exc_info=True)
             return None
 
-def create_evaluation(
-    db: Session,
+async def create_evaluation(
+    db: AsyncSession,
     chat_id: UUID,
     evaluation: Dict
 ) -> ChecklistEvaluation:
@@ -109,41 +123,50 @@ def create_evaluation(
             ai_feedback=evaluation["general_feedback"]
         )
         db.add(db_evaluation)
-        db.commit()
-        db.refresh(db_evaluation)
+        await db.commit()
+        await db.refresh(db_evaluation)
         return db_evaluation
     except Exception as e:
-        logger.error(f"Error creating evaluation: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error creating evaluation for chat {chat_id}: {e}", exc_info=True)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to save evaluation data.")
 
-def get_evaluation_by_chat_id(
-    db: Session,
+async def get_evaluation_by_chat_id(
+    db: AsyncSession,
     chat_id: UUID
 ) -> Optional[ChecklistEvaluation]:
     try:
-        return db.query(ChecklistEvaluation).filter(
+        stmt = select(ChecklistEvaluation).filter(
             ChecklistEvaluation.chat_id == chat_id
-        ).first()
+        )
+        result = await db.execute(stmt)
+        return result.scalars().first()
     except Exception as e:
-        logger.error(f"Error getting evaluation: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting evaluation for chat {chat_id}: {e}", exc_info=True)
+        return None
 
-def update_evaluation(
-    db: Session,
+async def update_evaluation(
+    db: AsyncSession,
     evaluation_id: UUID,
     evaluation: Dict
-) -> ChecklistEvaluation:
+) -> Optional[ChecklistEvaluation]:
     try:
-        db_evaluation = db.query(ChecklistEvaluation).filter(
-            ChecklistEvaluation.id == evaluation_id
-        ).first()
+        stmt_get = select(ChecklistEvaluation).filter(ChecklistEvaluation.id == evaluation_id)
+        result_get = await db.execute(stmt_get)
+        db_evaluation = result_get.scalars().first()
+
         if db_evaluation:
             db_evaluation.checklist_items = evaluation["checklist"]
             db_evaluation.completion_status = evaluation["overall_status"]
             db_evaluation.ai_feedback = evaluation["general_feedback"]
-            db.commit()
-            db.refresh(db_evaluation)
-        return db_evaluation
+            db.add(db_evaluation)
+            await db.commit()
+            await db.refresh(db_evaluation)
+            return db_evaluation
+        else:
+             logger.warning(f"Evaluation with ID {evaluation_id} not found for update.")
+             return None
     except Exception as e:
-        logger.error(f"Error updating evaluation: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        logger.error(f"Error updating evaluation {evaluation_id}: {e}", exc_info=True)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to update evaluation data.") 

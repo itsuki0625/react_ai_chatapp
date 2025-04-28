@@ -15,6 +15,7 @@ interface DecodedToken {
   name?: string;
   roles?: string[];
   status?: string;
+  permissions?: string[];
   exp?: number;
   [key: string]: any;
 }
@@ -83,6 +84,7 @@ const authConfig: NextAuthConfig = {
             name: decodedToken.name || email,
             role: decodedToken.roles || ['user'],
             status: data.user?.status || 'pending',
+            permissions: decodedToken.permissions || [],
             accessToken: data.token.access_token,
             refreshToken: data.token.refresh_token,
             // accessTokenExpires をミリ秒で設定 (例: 15分)
@@ -108,6 +110,7 @@ const authConfig: NextAuthConfig = {
         token.role = user.role || [];
         token.name = user.name || undefined;
         token.status = (user as any).status || 'pending';
+        token.permissions = (user as any).permissions || [];
         token.accessToken = user.accessToken;
         token.refreshToken = user.refreshToken;
         // authorizeから渡された有効期限を使用 (userにaccessTokenExpiresを追加する必要あり)
@@ -169,6 +172,7 @@ const authConfig: NextAuthConfig = {
           accessTokenExpires: (decodedRefreshedToken.exp ? decodedRefreshedToken.exp * 1000 : Date.now() + 15 * 60 * 1000),
           role: decodedRefreshedToken.roles || token.role, // ロールも更新
           status: decodedRefreshedToken.status || token.status,
+          permissions: decodedRefreshedToken.permissions || token.permissions || [],
           error: undefined, // エラー状態をクリア
         };
         console.log("[JWT Callback] Returning updated token:", updatedToken); // DEBUG LOG
@@ -180,26 +184,47 @@ const authConfig: NextAuthConfig = {
       }
     },
     async session({ session, token }) {
-      console.log("[Session Callback] Invoked. Token:", token, "Existing Session:", session); // DEBUG LOG
-      if (token && session.user) {
-        session.user.id = token.id as string;
-        session.user.email = token.email as string;
-        session.user.name = token.name as string;
-        session.user.status = token.status as string;
+      console.log("SESSION callback: token:", token);
 
-        const roles = Array.isArray(token.role)
-          ? token.role as string[]
-          : (typeof token.role === 'string' ? [token.role as string] : []);
-
-        session.user.role = roles;
-        session.user.isAdmin = roles.includes('admin_access');
-        session.user.isTeacher = roles.includes('teacher');
-        session.user.isStudent = roles.includes('student');
-
-        session.accessToken = token.accessToken as string;
-        session.error = token.error as string;
-        console.log("[Session Callback] Session updated:", session); // DEBUG LOG
+      // --- Ensure role is a single string --- 
+      let primaryRole: string = '不明'; // Default role
+      if (token.role) {
+          if (Array.isArray(token.role) && token.role.length > 0) {
+              primaryRole = token.role[0]; // Use the first role as the primary
+          } else if (typeof token.role === 'string') {
+              primaryRole = token.role;
+          }
       }
+      // --- End role normalization --- 
+
+      // Type assertion for session.user to allow assignment
+      const userSession = session.user as {
+        id: string;
+        email: string;
+        name?: string | null;
+        role: string; // ★ Ensure role is string type
+        status: string;
+        isAdmin: boolean;
+        isTeacher: boolean;
+        isStudent: boolean;
+        permissions?: string[];
+      };
+
+      userSession.id = token.id as string;
+      userSession.email = token.email as string;
+      userSession.name = token.name;
+      userSession.role = primaryRole; // ★ Assign the normalized single role string
+      userSession.status = token.status as string;
+      userSession.permissions = token.permissions as string[];
+      (session as any).accessToken = token.accessToken as string; // Use 'as any' or define Session type properly
+      session.error = token.error as string | undefined;
+
+      // Add derived boolean flags based on the primary role
+      userSession.isAdmin = primaryRole === '管理者';
+      userSession.isTeacher = primaryRole === '教員';
+      userSession.isStudent = primaryRole === '生徒';
+
+      console.log("SESSION callback: updated session:", session);
       return session;
     },
     // authorized コールバックはミドルウェアに移行したため、ここでは不要な場合がある
@@ -265,40 +290,50 @@ const authConfig: NextAuthConfig = {
 
 export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);
 
-// 型拡張
+// --- Type Definitions --- 
+// Ensure these match the structure used above
+
 declare module "next-auth" {
+  /**
+   * Returned by `useSession`, `getSession` and received as a prop on the `SessionProvider` React Context
+   */
   interface User {
     id?: string;
     email?: string | null;
     name?: string | null;
-    role?: string[];
+    role?: string[] | string; // Keep this flexible as input from authorize might vary
     status?: string;
+    permissions?: string[];
     accessToken?: string;
     refreshToken?: string;
     accessTokenExpires?: number; // authorizeから渡すために追加
   }
-  
+
   interface Session {
     user: {
       id: string;
       email: string;
       name?: string | null;
-      role: string[];
+      role: string; // ★ Ensure this is string
       status: string;
       isAdmin: boolean;
       isTeacher: boolean;
       isStudent: boolean;
+      permissions?: string[];
     };
     accessToken: string;
     error?: string;
   }
 
+  // ★ Move JWT interface definition here
+  /** Returned by the `jwt` callback and `getToken`, when using JWT sessions */
   interface JWT {
     id: string;
     email: string;
     name?: string | null;
-    role: string[] | string;
+    role: string[] | string; // Can be array or string internally from API/token
     status: string;
+    permissions?: string[];
     accessToken?: string;
     refreshToken?: string;
     accessTokenExpires?: number;

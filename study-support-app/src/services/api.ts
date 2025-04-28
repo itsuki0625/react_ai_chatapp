@@ -3,17 +3,18 @@ import axios from 'axios';
 import { getSession } from 'next-auth/react';
 
 // ブラウザ環境かサーバー環境かによって適切なAPIのベースURLを取得
-const getApiBaseUrl = () => {
+export const getApiBaseUrl = () => {
   return typeof window !== 'undefined'
     ? process.env.NEXT_PUBLIC_BROWSER_API_URL || 'http://localhost:5050'
     : process.env.NEXT_PUBLIC_API_BASE_URL || 'http://backend:5050';
 };
 
 // 認証情報付きのaxios設定を取得
-const getAxiosConfig = async (requireAuth = true) => {
+export const getAxiosConfig = async (requireAuth = true) => {
   const config: {
     withCredentials: boolean;
     headers: Record<string, string>;
+    params?: Record<string, any>;
   } = {
     withCredentials: true, // クッキーを含める
     headers: {}

@@ -404,4 +404,18 @@ export const quizApi = {
   getAnalysis: async () => {
     return apiClient.get('/api/v1/quizzes/analysis');
   }
+};
+
+// ★★★ 追加: 認証・ユーザー関連API ★★★
+export const authApi = {
+  // 既存の認証系API（例: login, signup）もここに移すのが望ましい
+
+  /**
+   * 現在のユーザーの設定情報とサブスクリプション情報を取得
+   */
+  getUserSettings: async () => {
+    return apiClient.get('/api/v1/auth/user-settings');
+  },
+
+  // 他の認証関連API（パスワード変更、2FAなど）も追加
 }; 

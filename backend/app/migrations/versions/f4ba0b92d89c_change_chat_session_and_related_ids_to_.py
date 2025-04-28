@@ -1,18 +1,18 @@
-"""firstinit
+"""Change chat session and related IDs to UUID
 
-Revision ID: 37f16530f960
+Revision ID: f4ba0b92d89c
 Revises: 
-Create Date: 2025-04-22 05:19:36.907836
+Create Date: 2025-04-28 01:03:02.124459
 
 """
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
+
 
 # revision identifiers, used by Alembic.
-revision: str = '37f16530f960'
+revision: str = 'f4ba0b92d89c'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -114,8 +114,8 @@ def upgrade() -> None:
     sa.Column('interval_count', sa.Integer(), nullable=False),
     sa.Column('trial_days', sa.Integer(), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=True),
-    sa.Column('features', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('plan_metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+    sa.Column('features', sa.JSON(), nullable=True),
+    sa.Column('plan_metadata', sa.JSON(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.Column('updated_at', sa.DateTime(), nullable=True),
     sa.PrimaryKeyConstraint('id'),
@@ -238,8 +238,9 @@ def upgrade() -> None:
     sa.Column('email', sa.String(), nullable=False),
     sa.Column('hashed_password', sa.String(), nullable=False),
     sa.Column('full_name', sa.String(), nullable=False),
-    sa.Column('school_id', sa.UUID(), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=True),
+    sa.Column('school_id', sa.UUID(), nullable=True),
+    sa.Column('status', sa.Enum('ACTIVE', 'INACTIVE', 'PENDING', 'UNPAID', name='userstatus'), nullable=False),
     sa.Column('is_verified', sa.Boolean(), nullable=True),
     sa.Column('is_2fa_enabled', sa.Boolean(), nullable=True),
     sa.Column('totp_secret', sa.String(), nullable=True),
@@ -301,15 +302,18 @@ def upgrade() -> None:
     op.create_table('chat_sessions',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('user_id', sa.UUID(), nullable=False),
-    sa.Column('title', sa.String(), nullable=False),
-    sa.Column('session_type', sa.Enum('NORMAL', 'CONSULTATION', 'FAQ', name='sessiontype'), nullable=False),
-    sa.Column('status', sa.Enum('ACTIVE', 'CLOSED', 'ARCHIVED', name='sessionstatus'), nullable=False),
-    sa.Column('last_message_at', sa.DateTime(), nullable=True),
-    sa.Column('created_at', sa.DateTime(), nullable=True),
-    sa.Column('updated_at', sa.DateTime(), nullable=True),
+    sa.Column('title', sa.String(), nullable=True),
+    sa.Column('status', sa.Enum('ACTIVE', 'CLOSED', 'ARCHIVED', name='session_status_enum'), server_default='ACTIVE', nullable=False),
+    sa.Column('last_message_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('chat_type', sa.Enum('SELF_ANALYSIS', 'ADMISSION', 'STUDY_SUPPORT', 'GENERAL', name='chat_type_enum'), server_default='SELF_ANALYSIS', nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_index(op.f('ix_chat_sessions_chat_type'), 'chat_sessions', ['chat_type'], unique=False)
+    op.create_index(op.f('ix_chat_sessions_status'), 'chat_sessions', ['status'], unique=False)
+    op.create_index(op.f('ix_chat_sessions_user_id'), 'chat_sessions', ['user_id'], unique=False)
     op.create_table('content_ratings',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('user_id', sa.UUID(), nullable=False),
@@ -619,30 +623,19 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('chat_messages',
-    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('session_id', sa.UUID(), nullable=False),
-    sa.Column('sender_id', sa.UUID(), nullable=False),
-    sa.Column('sender_type', sa.Enum('USER', 'AI', 'SYSTEM', name='sendertype'), nullable=False),
+    sa.Column('user_id', sa.UUID(), nullable=False),
+    sa.Column('sender', sa.Enum('USER', 'AI', name='message_sender_enum'), nullable=False),
     sa.Column('content', sa.Text(), nullable=False),
-    sa.Column('message_type', sa.Enum('TEXT', 'IMAGE', 'FILE', name='messagetype'), nullable=False),
-    sa.Column('is_read', sa.Boolean(), nullable=True),
-    sa.Column('read_at', sa.DateTime(), nullable=True),
-    sa.Column('created_at', sa.DateTime(), nullable=True),
-    sa.Column('updated_at', sa.DateTime(), nullable=True),
-    sa.ForeignKeyConstraint(['sender_id'], ['users.id'], ),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.ForeignKeyConstraint(['session_id'], ['chat_sessions.id'], ),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_table('chat_session_metadata',
-    sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('session_id', sa.UUID(), nullable=False),
-    sa.Column('key', sa.String(), nullable=False),
-    sa.Column('value', sa.String(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=True),
-    sa.Column('updated_at', sa.DateTime(), nullable=True),
-    sa.ForeignKeyConstraint(['session_id'], ['chat_sessions.id'], ),
-    sa.PrimaryKeyConstraint('id')
-    )
+    op.create_index(op.f('ix_chat_messages_id'), 'chat_messages', ['id'], unique=False)
+    op.create_index(op.f('ix_chat_messages_session_id'), 'chat_messages', ['session_id'], unique=False)
+    op.create_index(op.f('ix_chat_messages_user_id'), 'chat_messages', ['user_id'], unique=False)
     op.create_table('checklist_evaluations',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('session_id', sa.UUID(), nullable=False),
@@ -657,6 +650,7 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['session_id'], ['chat_sessions.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_index(op.f('ix_checklist_evaluations_session_id'), 'checklist_evaluations', ['session_id'], unique=False)
     op.create_table('content_view_history_metadata',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('view_history_id', sa.UUID(), nullable=False),
@@ -797,16 +791,15 @@ def upgrade() -> None:
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('study_plan_id', sa.UUID(), nullable=False),
     sa.Column('content_id', sa.UUID(), nullable=True),
-    sa.Column('title', sa.String(), nullable=False),
+    sa.Column('title', sa.String(length=255), nullable=False),
     sa.Column('description', sa.Text(), nullable=True),
-    sa.Column('scheduled_date', sa.DateTime(), nullable=True),
+    sa.Column('scheduled_date', sa.Date(), nullable=True),
     sa.Column('duration_minutes', sa.Integer(), nullable=True),
     sa.Column('completed', sa.Boolean(), nullable=True),
-    sa.Column('completed_at', sa.DateTime(), nullable=True),
+    sa.Column('completed_at', sa.Date(), nullable=True),
     sa.Column('display_order', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(), nullable=True),
-    sa.Column('updated_at', sa.DateTime(), nullable=True),
-    sa.ForeignKeyConstraint(['content_id'], ['contents.id'], ),
+    sa.Column('created_at', sa.Date(), nullable=True),
+    sa.Column('updated_at', sa.Date(), nullable=True),
     sa.ForeignKeyConstraint(['study_plan_id'], ['study_plans.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -895,26 +888,28 @@ def upgrade() -> None:
     )
     op.create_table('chat_attachments',
     sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('message_id', sa.UUID(), nullable=False),
+    sa.Column('message_id', sa.Integer(), nullable=False),
     sa.Column('file_url', sa.String(), nullable=False),
     sa.Column('file_type', sa.String(), nullable=False),
     sa.Column('file_size', sa.Integer(), nullable=False),
     sa.Column('file_name', sa.String(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=True),
-    sa.Column('updated_at', sa.DateTime(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['message_id'], ['chat_messages.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_index(op.f('ix_chat_attachments_message_id'), 'chat_attachments', ['message_id'], unique=False)
     op.create_table('chat_message_metadata',
     sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('message_id', sa.UUID(), nullable=False),
+    sa.Column('message_id', sa.Integer(), nullable=False),
     sa.Column('key', sa.String(), nullable=False),
     sa.Column('value', sa.String(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=True),
-    sa.Column('updated_at', sa.DateTime(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['message_id'], ['chat_messages.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_index(op.f('ix_chat_message_metadata_message_id'), 'chat_message_metadata', ['message_id'], unique=False)
     op.create_table('documents',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('desired_department_id', sa.UUID(), nullable=False),
@@ -1173,7 +1168,9 @@ def downgrade() -> None:
     op.drop_index('idx_forum_post_created_by', table_name='forum_posts')
     op.drop_table('forum_posts')
     op.drop_table('documents')
+    op.drop_index(op.f('ix_chat_message_metadata_message_id'), table_name='chat_message_metadata')
     op.drop_table('chat_message_metadata')
+    op.drop_index(op.f('ix_chat_attachments_message_id'), table_name='chat_attachments')
     op.drop_table('chat_attachments')
     op.drop_table('campaign_code_redemptions')
     op.drop_table('user_role_metadata')
@@ -1196,8 +1193,11 @@ def downgrade() -> None:
     op.drop_table('forum_topics')
     op.drop_table('desired_departments')
     op.drop_table('content_view_history_metadata')
+    op.drop_index(op.f('ix_checklist_evaluations_session_id'), table_name='checklist_evaluations')
     op.drop_table('checklist_evaluations')
-    op.drop_table('chat_session_metadata')
+    op.drop_index(op.f('ix_chat_messages_user_id'), table_name='chat_messages')
+    op.drop_index(op.f('ix_chat_messages_session_id'), table_name='chat_messages')
+    op.drop_index(op.f('ix_chat_messages_id'), table_name='chat_messages')
     op.drop_table('chat_messages')
     op.drop_table('broadcast_target_schools')
     op.drop_table('broadcast_target_roles')
@@ -1226,6 +1226,9 @@ def downgrade() -> None:
     op.drop_table('conversations')
     op.drop_table('content_view_history')
     op.drop_table('content_ratings')
+    op.drop_index(op.f('ix_chat_sessions_user_id'), table_name='chat_sessions')
+    op.drop_index(op.f('ix_chat_sessions_status'), table_name='chat_sessions')
+    op.drop_index(op.f('ix_chat_sessions_chat_type'), table_name='chat_sessions')
     op.drop_table('chat_sessions')
     op.drop_table('campaign_codes')
     op.drop_table('broadcast_notifications')

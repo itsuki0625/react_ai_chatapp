@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import Image from 'next/image';
 import { 
   Menu, 
   X, 
@@ -114,7 +115,15 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
       `}>
         <div className="p-6">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-slate-900">SmartAO</h1>
+            <Link href="/dashboard">
+                <Image 
+                  src="/SmartAO-logo.png" 
+                  alt="SmartAO Logo" 
+                  width={120}
+                  height={32}
+                  priority
+                />
+            </Link>
             <button
               className="lg:hidden p-2"
               onClick={() => setSidebarOpen(false)}

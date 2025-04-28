@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Body
 from sqlalchemy.orm import Session
-from app.api.deps import get_db, get_current_user
+from app.api.deps import get_db, get_current_user, require_permission
 from app.models.user import User
 from app.services.stripe_service import StripeService
 from app.schemas.subscription import (
@@ -16,6 +16,8 @@ from uuid import UUID
 import logging
 import json
 from datetime import datetime
+from app.crud import user as crud_user
+from app.schemas.user import UserUpdate, UserStatus
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -624,57 +626,102 @@ async def handle_checkout_completed(db: Session, event_data: Dict[str, Any]):
     try:
         # メタデータからユーザーIDとプラン情報を取得
         metadata = event_data.get("metadata", {})
-        user_id = metadata.get("user_id")
+        user_id_str = metadata.get("user_id") # 文字列として取得される可能性
         plan_name = metadata.get("plan_name")
-        
-        if not user_id or not plan_name:
+
+        if not user_id_str or not plan_name:
             logger.error("メタデータに必要な情報がありません")
             return
-            
+
+        user_id = UUID(user_id_str) # UUID に変換
+
         # サブスクリプションIDを取得
         subscription_id = event_data.get("subscription")
         if not subscription_id:
             logger.error("サブスクリプションIDがありません")
             return
-            
+
         # Stripeからサブスクリプション詳細を取得
         subscription_data = StripeService.get_subscription(subscription_id)
-        
+
         # 顧客IDを取得
         customer_id = event_data.get("customer")
-        
+
         # プラン情報を取得
         price_id = None
         for item in subscription_data.get("items", {}).get("data", []):
             if item.get("price", {}).get("id"):
                 price_id = item["price"]["id"]
                 break
-                
+
         if not price_id:
             logger.error("価格IDが見つかりません")
             return
-            
+
+        # ユーザーを取得
+        db_user = crud_user.get_user(db, user_id=user_id)
+        if not db_user:
+            logger.error(f"Webhook: ユーザーが見つかりません: {user_id}")
+            # エラーハンドリングが必要な場合はここに追加（例: Responseを返す）
+            # return Response(status_code=400)
+
         # サブスクリプションレコードを作成
         from app.schemas.subscription import SubscriptionCreate
         subscription_create = SubscriptionCreate(
-            user_id=UUID(user_id),
+            user_id=user_id,
             plan_name=plan_name,
             price_id=price_id,
-            status="active"
+            status="active" # サブスクリプション自体のステータス
         )
-        
-        new_subscription = crud.create_subscription(db, subscription_create)
-        
-        # Stripeの情報でアップデート
-        crud.update_subscription(db, new_subscription.id, {
-            "stripe_customer_id": customer_id,
-            "stripe_subscription_id": subscription_id,
-            "current_period_start": subscription_data.get("current_period_start"),
-            "current_period_end": subscription_data.get("current_period_end"),
-        })
-        
-        logger.info(f"サブスクリプションが正常に作成されました: {new_subscription.id}")
-        
+
+        # 既存のサブスクリプションを探す（重複作成を避ける）
+        existing_subscription = crud.get_subscription_by_stripe_id(db, subscription_id)
+        if existing_subscription:
+            logger.info(f"Webhook: 既存のサブスクリプションが見つかりました。更新します: {existing_subscription.id}")
+            # 既存のサブスクリプションを更新 (status など)
+            crud.update_subscription(db, existing_subscription.id, {
+                "status": "active", # 再アクティブ化の場合など
+                "is_active": True, # ★ is_active を True に設定
+                "stripe_customer_id": customer_id,
+                "stripe_subscription_id": subscription_id,
+                "current_period_start": subscription_data.get("current_period_start"),
+                "current_period_end": subscription_data.get("current_period_end"),
+                "plan_name": plan_name, # プラン変更の場合も考慮
+                "price_id": price_id,
+            })
+            db_subscription = existing_subscription
+        else:
+            logger.info("Webhook: 新規サブスクリプションを作成します。")
+            new_subscription = crud.create_subscription(db, subscription_create)
+             # Stripeの情報でアップデート
+            crud.update_subscription(db, new_subscription.id, {
+                "stripe_customer_id": customer_id,
+                "stripe_subscription_id": subscription_id,
+                "current_period_start": subscription_data.get("current_period_start"),
+                "current_period_end": subscription_data.get("current_period_end"),
+                "is_active": True # ★ 新規作成時にも念のため is_active を True に設定
+            })
+            db_subscription = new_subscription
+
+        # ユーザーステータスを 'active' (または適切な値) に更新
+        if db_user:
+            user_update_schema = UserUpdate(status=UserStatus.ACTIVE) # 更新用スキーマを作成
+            try:
+                # 既に 'active' の場合は更新しないオプションも検討可能
+                if db_user.status != UserStatus.ACTIVE:
+                    updated_user = crud_user.update_user(db, db_user=db_user, user_in=user_update_schema)
+                    logger.info(f"Webhook: ユーザーステータスを更新しました: user_id={user_id}, status={updated_user.status}")
+                else:
+                    logger.info(f"Webhook: ユーザーステータスは既に '{db_user.status}' です。更新はスキップされました: user_id={user_id}")
+
+            except Exception as user_update_e:
+                logger.error(f"Webhook: ユーザーステータス更新中にエラー: {user_update_e}")
+                # エラーハンドリング
+        else:
+             logger.warning(f"Webhook: ユーザーが見つからなかったため、ステータス更新はスキップされました: user_id={user_id_str}")
+
+        logger.info(f"サブスクリプション処理が完了しました: Subscription ID={db_subscription.id}")
+
     except Exception as e:
         logger.error(f"チェックアウト完了処理エラー: {str(e)}")
 
@@ -696,6 +743,13 @@ async def handle_invoice_paid(db: Session, event_data: Dict[str, Any]):
             logger.error(f"サブスクリプションが見つかりません: {subscription_id}")
             return
             
+        # ユーザーを取得
+        user_id = db_subscription.user_id
+        db_user = crud_user.get_user(db, user_id=user_id)
+        if not db_user:
+            logger.error(f"Webhook(Invoice Paid): ユーザーが見つかりません: {user_id}")
+            # 必要に応じてエラーハンドリング
+
         # 支払い履歴を作成
         from app.schemas.subscription import PaymentHistoryCreate
         payment_create = PaymentHistoryCreate(
@@ -712,6 +766,31 @@ async def handle_invoice_paid(db: Session, event_data: Dict[str, Any]):
         payment = crud.create_payment_history(db, payment_create)
         logger.info(f"支払い履歴が正常に作成されました: {payment.id}")
         
+        # ★ サブスクリプションのステータスを 'active', is_active を True に更新
+        try:
+            if db_subscription.status != "active" or not db_subscription.is_active:
+                crud.update_subscription(db, db_subscription.id, {"status": "active", "is_active": True})
+                logger.info(f"Webhook(Invoice Paid): サブスクリプションステータスを更新しました: id={db_subscription.id}, status=active, is_active=True")
+            else:
+                 logger.info(f"Webhook(Invoice Paid): サブスクリプションは既にアクティブです。更新はスキップされました: id={db_subscription.id}")
+        except Exception as sub_update_e:
+            logger.error(f"Webhook(Invoice Paid): サブスクリプションステータス更新中にエラー: {sub_update_e}")
+
+        # ユーザーステータスを 'active' に更新 (サブスクリプションがアクティブな場合)
+        if db_user:
+            # 支払い成功時は基本的に active にする（トライアルからの移行なども含む）
+            user_update_schema = UserUpdate(status=UserStatus.ACTIVE)
+            try:
+                if db_user.status != UserStatus.ACTIVE:
+                    updated_user = crud_user.update_user(db, db_user=db_user, user_in=user_update_schema)
+                    logger.info(f"Webhook(Invoice Paid): ユーザーステータスを更新しました: user_id={user_id}, status={updated_user.status}")
+                else:
+                    logger.info(f"Webhook(Invoice Paid): ユーザーステータスは既に '{db_user.status}' です。更新はスキップされました: user_id={user_id}")
+            except Exception as user_update_e:
+                logger.error(f"Webhook(Invoice Paid): ユーザーステータス更新中にエラー: {user_update_e}")
+        else:
+             logger.warning(f"Webhook(Invoice Paid): ユーザーが見つからなかったため、ステータス更新はスキップされました: user_id={user_id}")
+
     except Exception as e:
         logger.error(f"請求書支払い完了処理エラー: {str(e)}")
 
@@ -733,6 +812,13 @@ async def handle_payment_failed(db: Session, event_data: Dict[str, Any]):
             logger.error(f"サブスクリプションが見つかりません: {subscription_id}")
             return
             
+        # ユーザーを取得
+        user_id = db_subscription.user_id
+        db_user = crud_user.get_user(db, user_id=user_id)
+        if not db_user:
+            logger.error(f"Webhook(Payment Failed): ユーザーが見つかりません: {user_id}")
+            # 必要に応じてエラーハンドリング
+
         # サブスクリプションステータスを更新
         crud.update_subscription(db, db_subscription.id, {"status": "past_due"})
         
@@ -752,6 +838,20 @@ async def handle_payment_failed(db: Session, event_data: Dict[str, Any]):
         payment = crud.create_payment_history(db, payment_create)
         logger.info(f"失敗した支払い履歴が作成されました: {payment.id}")
         
+        # ユーザーステータスを 'unpaid' に更新
+        if db_user:
+            user_update_schema = UserUpdate(status=UserStatus.UNPAID)
+            try:
+                if db_user.status != UserStatus.UNPAID:
+                    updated_user = crud_user.update_user(db, db_user=db_user, user_in=user_update_schema)
+                    logger.info(f"Webhook(Payment Failed): ユーザーステータスを更新しました: user_id={user_id}, status={updated_user.status}")
+                else:
+                    logger.info(f"Webhook(Payment Failed): ユーザーステータスは既に '{db_user.status}' です。更新はスキップされました: user_id={user_id}")
+            except Exception as user_update_e:
+                logger.error(f"Webhook(Payment Failed): ユーザーステータス更新中にエラー: {user_update_e}")
+        else:
+             logger.warning(f"Webhook(Payment Failed): ユーザーが見つからなかったため、ステータス更新はスキップされました: user_id={user_id}")
+
     except Exception as e:
         logger.error(f"請求書支払い失敗処理エラー: {str(e)}")
 
@@ -806,6 +906,13 @@ async def handle_subscription_deleted(db: Session, event_data: Dict[str, Any]):
             logger.error(f"サブスクリプションが見つかりません: {subscription_id}")
             return
             
+        # ユーザーを取得
+        user_id = db_subscription.user_id
+        db_user = crud_user.get_user(db, user_id=user_id)
+        if not db_user:
+            logger.error(f"Webhook(Subscription Deleted): ユーザーが見つかりません: {user_id}")
+            # 必要に応じてエラーハンドリング
+
         # サブスクリプションステータスを更新
         update_data = {
             "status": "canceled",
@@ -816,6 +923,20 @@ async def handle_subscription_deleted(db: Session, event_data: Dict[str, Any]):
         crud.update_subscription(db, db_subscription.id, update_data)
         logger.info(f"サブスクリプションが削除されました: {db_subscription.id}")
         
+        # ユーザーステータスを 'inactive' に更新
+        if db_user:
+            user_update_schema = UserUpdate(status=UserStatus.INACTIVE)
+            try:
+                if db_user.status != UserStatus.INACTIVE:
+                    updated_user = crud_user.update_user(db, db_user=db_user, user_in=user_update_schema)
+                    logger.info(f"Webhook(Subscription Deleted): ユーザーステータスを更新しました: user_id={user_id}, status={updated_user.status}")
+                else:
+                     logger.info(f"Webhook(Subscription Deleted): ユーザーステータスは既に '{db_user.status}' です。更新はスキップされました: user_id={user_id}")
+            except Exception as user_update_e:
+                logger.error(f"Webhook(Subscription Deleted): ユーザーステータス更新中にエラー: {user_update_e}")
+        else:
+             logger.warning(f"Webhook(Subscription Deleted): ユーザーが見つからなかったため、ステータス更新はスキップされました: user_id={user_id}")
+
     except Exception as e:
         logger.error(f"サブスクリプション削除処理エラー: {str(e)}")
 
@@ -826,7 +947,7 @@ async def get_campaign_codes(
     limit: int = 20,
     owner_id: Optional[UUID] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission('admin_access', 'campaign_code_read'))
 ):
     """
     キャンペーンコードの一覧を取得する
@@ -858,7 +979,7 @@ async def get_campaign_codes(
 async def create_campaign_code(
     campaign_code: CampaignCodeCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission('admin_access', 'campaign_code_write'))
 ):
     """
     新しいキャンペーンコードを作成する
@@ -898,7 +1019,7 @@ async def create_campaign_code(
 async def get_campaign_code(
     campaign_code_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission('admin_access', 'campaign_code_read'))
 ):
     """
     特定のキャンペーンコードの詳細を取得する
@@ -936,7 +1057,7 @@ async def update_campaign_code(
     campaign_code_id: UUID,
     campaign_code_update: CampaignCodeUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission('admin_access', 'campaign_code_write'))
 ):
     """
     キャンペーンコードを更新する
@@ -975,7 +1096,7 @@ async def update_campaign_code(
 async def delete_campaign_code(
     campaign_code_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission('admin_access', 'campaign_code_write'))
 ):
     """
     キャンペーンコードを削除する

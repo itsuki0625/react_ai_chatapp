@@ -16,8 +16,7 @@ from .document import Document, DocumentSubmission
 from .schedule import ScheduleEvent, EventCompletion
 from .personal_statement import PersonalStatement, PersonalStatementSubmission, Feedback
 from .chat import (
-    ChatSession, ChatMessage, ChatAttachment, 
-    ChatSessionMetaData, ChatMessageMetaData
+    ChatSession, ChatMessage, ChatAttachment, ChatMessageMetadata
 )
 from .system import (
     SystemLog, SystemSetting, Notification, NotificationMetaData, 
@@ -104,10 +103,9 @@ __all__ = [
     
     # Chat related
     "ChatSession",
-    "ChatSessionMetaData",
     "ChatMessage",
-    "ChatMessageMetaData",
     "ChatAttachment",
+    "ChatMessageMetadata",
     
     # System related
     "SystemLog",

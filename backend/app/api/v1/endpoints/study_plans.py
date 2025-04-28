@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, require_permission
 from app.models.user import User
 from app.schemas.study_plan import (
     StudyPlanCreate,
@@ -40,7 +40,7 @@ router = APIRouter()
 @router.post("", response_model=StudyPlanResponse)
 async def create_new_study_plan(
     study_plan: StudyPlanCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_write')),
     db: Session = Depends(get_db)
 ):
     """
@@ -50,7 +50,7 @@ async def create_new_study_plan(
 
 @router.get("", response_model=List[StudyPlanResponse])
 async def get_all_study_plans(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_read')),
     db: Session = Depends(get_db)
 ):
     """
@@ -61,7 +61,7 @@ async def get_all_study_plans(
 @router.get("/{plan_id}", response_model=StudyPlanResponse)
 async def get_study_plan(
     plan_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_read')),
     db: Session = Depends(get_db)
 ):
     """
@@ -79,7 +79,7 @@ async def get_study_plan(
 async def update_existing_study_plan(
     plan_id: str,
     study_plan: StudyPlanUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_write')),
     db: Session = Depends(get_db)
 ):
     """
@@ -96,7 +96,7 @@ async def update_existing_study_plan(
 @router.delete("/{plan_id}")
 async def delete_existing_study_plan(
     plan_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_write')),
     db: Session = Depends(get_db)
 ):
     """
@@ -122,7 +122,7 @@ async def delete_existing_study_plan(
 async def add_goal_to_plan(
     plan_id: str,
     goal: StudyGoalCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_write')),
     db: Session = Depends(get_db)
 ):
     """
@@ -142,7 +142,7 @@ async def update_existing_goal(
     plan_id: str,
     goal_id: str,
     goal: StudyGoalUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_write')),
     db: Session = Depends(get_db)
 ):
     """
@@ -168,7 +168,7 @@ async def update_existing_goal(
 async def delete_existing_goal(
     plan_id: str,
     goal_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_write')),
     db: Session = Depends(get_db)
 ):
     """
@@ -193,7 +193,7 @@ async def delete_existing_goal(
 @router.get("/{plan_id}/progress")
 async def get_progress(
     plan_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_read')),
     db: Session = Depends(get_db)
 ):
     """
@@ -212,7 +212,7 @@ async def get_progress(
 async def update_progress(
     plan_id: str,
     progress: StudyProgressUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_write')),
     db: Session = Depends(get_db)
 ):
     """
@@ -231,7 +231,7 @@ async def update_progress(
 async def get_templates(
     subject: Optional[str] = None,
     level: Optional[str] = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_read')),
     db: Session = Depends(get_db)
 ):
     """
@@ -242,7 +242,7 @@ async def get_templates(
 @router.post("/ai-generate", response_model=StudyPlanResponse)
 async def generate_plan_with_ai(
     request_data: dict,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_write')),
     db: Session = Depends(get_db)
 ):
     """
@@ -287,7 +287,7 @@ async def generate_plan_with_ai(
 async def add_item_to_plan(
     plan_id: str,
     item: StudyPlanItemCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_write')),
     db: Session = Depends(get_db)
 ):
     """
@@ -305,7 +305,7 @@ async def add_item_to_plan(
 @router.get("/{plan_id}/items", response_model=List[StudyPlanItemResponse])
 async def get_study_plan_items_endpoint(
     plan_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_read')),
     db: Session = Depends(get_db)
 ):
     """
@@ -325,7 +325,7 @@ async def update_study_plan_item_endpoint(
     plan_id: str,
     item_id: str,
     item: StudyPlanItemUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_write')),
     db: Session = Depends(get_db)
 ):
     """
@@ -351,7 +351,7 @@ async def update_study_plan_item_endpoint(
 async def delete_study_plan_item_endpoint(
     plan_id: str,
     item_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('study_plan_write')),
     db: Session = Depends(get_db)
 ):
     """

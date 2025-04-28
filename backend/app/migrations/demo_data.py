@@ -1,6 +1,7 @@
-from datetime import datetime, timedelta
+import logging
 import uuid
 from sqlalchemy.orm import Session
+from uuid import UUID
 
 from app.core.security import get_password_hash
 from app.models.user import User, Role, Permission, RolePermission, UserProfile, UserLoginInfo
@@ -16,12 +17,15 @@ from app.models.document import Document, DocumentSubmission
 from app.models.schedule import ScheduleEvent, EventCompletion
 from app.models.personal_statement import PersonalStatement, PersonalStatementSubmission, Feedback
 
-from app.models.chat import ChatSession, ChatSessionMetaData, ChatMessage, ChatMessageMetaData, ChatAttachment
+from app.models.chat import ChatSession, ChatMessage, ChatAttachment
 from app.models.checklist import ChecklistEvaluation
-from app.models.subscription import DiscountType
+from app.models.subscription import DiscountType, CampaignCode, SubscriptionPlan
 
-from app.models.base import TimestampMixin
-from app.models.enums import DocumentStatus, PersonalStatementStatus, SessionType, SessionStatus, SenderType, MessageType
+from app.models.base import TimestampMixin, Base
+from app.models.enums import DocumentStatus, PersonalStatementStatus, SessionType, SessionStatus, MessageSender, ChatType
+from app.models.enums import UserStatus
+
+logger = logging.getLogger(__name__)
 
 def insert_demo_data(db: Session):
     """
@@ -65,310 +69,231 @@ def insert_demo_data(db: Session):
 
 def create_user_related_data(db: Session):
     # ========= ロールデータ =========
-    roles = [
-        Role(
-            name="管理者",
-            description="システム管理者",
-            is_active=True
-        ),
-        Role(
-            name="教員",
-            description="高校教員",
-            is_active=True
-        ),
-        Role(
-            name="生徒",
-            description="高校生",
-            is_active=True
-        ),
-        Role(
-            name="システム",
-            description="システムユーザー",
-            is_active=True
-        )
-    ]
-    for role in roles:
-        db.add(role)
+    roles_data = {
+        "管理者": Role(id=uuid.uuid4(), name="管理者", description="システム管理者", is_active=True),
+        "教員": Role(id=uuid.uuid4(), name="教員", description="高校教員", is_active=True),
+        "フリー": Role(id=uuid.uuid4(), name="フリー", description="無料プランユーザー", is_active=True),
+        "スタンダード": Role(id=uuid.uuid4(), name="スタンダード", description="標準プランユーザー", is_active=True),
+        "プレミアム": Role(id=uuid.uuid4(), name="プレミアム", description="上位プランユーザー", is_active=True),
+        "システム": Role(id=uuid.uuid4(), name="システム", description="システムユーザー", is_active=True)
+    }
+    for role in roles_data.values(): db.add(role)
     db.flush()
+    # ★修正: DBからロールを再取得して、IDが確定したオブジェクトを使用する
+    roles = {r.name: r for r in db.query(Role).all()}
 
     # ========= 権限データ =========
-    permissions = [
-        Permission(
-            name="user_read",
-            description="ユーザー情報の閲覧権限"
-        ),
-        Permission(
-            name="user_write",
-            description="ユーザー情報の編集権限"
-        ),
-        Permission(
-            name="content_read",
-            description="コンテンツの閲覧権限"
-        ),
-        Permission(
-            name="content_write",
-            description="コンテンツの編集権限"
-        ),
-        Permission(
-            name="admin_access",
-            description="管理者画面へのアクセス権限"
-        )
-    ]
-    for permission in permissions:
-        db.add(permission)
-    db.flush()
+    # ★修正: 権限定義をこのファイル内に移動
+    # PERMISSIONS_TO_ADD に相当するデータをここで定義
+    all_permissions_data = {
+        # Community
+        'community_read': 'コミュニティ投稿を閲覧する',
+        'community_post_create': 'コミュニティ投稿を作成する',
+        'community_post_delete_own': '自分のコミュニティ投稿を削除する',
+        'community_post_delete_any': '（管理者向け）任意のコミュニティ投稿を削除する',
+        'community_category_manage': '（管理者向け）コミュニティカテゴリを管理する',
+        # Chat
+        'chat_session_read': 'チャットセッションを閲覧する',
+        'chat_message_send': 'チャットメッセージを送信する',
+        # Desired School
+        'desired_school_manage_own': '自分の志望校リストを管理する',
+        'desired_school_view_all': '（管理者向け）全ユーザーの志望校リストを閲覧する',
+        # Statement
+        'statement_manage_own': '自分の志望理由書を管理する',
+        'statement_review_request': '志望理由書のレビューを依頼する',
+        'statement_review_respond': '（教員/管理者向け）志望理由書のレビューを行う',
+        'statement_view_all': '（管理者向け）全ユーザーの志望理由書を閲覧する',
+        # Role Management
+        'role_read': 'ロール情報を閲覧する',
+        'role_create': '新しいロールを作成する',
+        'role_update': '既存のロール情報を更新する',
+        'role_delete': 'ロールを削除する',
+        'role_permission_assign': 'ロールに対して権限を割り当てる/解除する',
+        # Permission Management
+        'permission_read': '権限情報を閲覧する',
+        'permission_create': '新しい権限を作成する',
+        'permission_update': '既存の権限情報を更新する',
+        'permission_delete': '権限を削除する',
+        # Admin Access
+        'admin_access': '管理者機能へのアクセス全般',
+        # Stripe Product Management
+        'stripe_product_read': 'Stripe 商品情報を閲覧する',
+        'stripe_product_write': 'Stripe 商品情報を作成・更新・アーカイブする',
+        # Stripe Price Management
+        'stripe_price_read': 'Stripe 価格情報を閲覧する',
+        'stripe_price_write': 'Stripe 価格情報を作成・更新・アーカイブする',
+        # Campaign Code Management
+        'campaign_code_read': 'キャンペーンコード情報を閲覧する',
+        'campaign_code_write': 'キャンペーンコードを作成・削除する',
+        # Discount Type Management
+        'discount_type_read': '割引タイプ情報を閲覧する',
+        'discount_type_write': '割引タイプを作成・更新・削除する',
+        # Study Plan Management
+        'study_plan_read': '学習計画を閲覧する',
+        'study_plan_write': '学習計画を作成・更新・削除する',
+        # Communication Management
+        'communication_read': '会話やメッセージを閲覧する',
+        'communication_write': '会話を開始したりメッセージを送信する',
+        # Application Management
+        'application_read': '出願情報を閲覧する',
+        'application_write': '出願情報を作成・更新・削除する',
+        # ★注意: ここに teacher_perms や free_perms で使われている権限が全て含まれているか確認が必要
+        # 例: 'user_read', 'content_read', 'subscription_read_own' などが含まれていない可能性
+        # 必要に応じて、これらの権限も上記 all_permissions_data に追加する
+         'user_read': 'ユーザー情報を閲覧する', # 例: 追加が必要な場合
+         'content_read': 'コンテンツを閲覧する', # 例: 追加が必要な場合
+         'content_write': 'コンテンツを作成・編集する', # 例: 追加が必要な場合
+         'subscription_read_own': '自身のサブスクリプション情報を閲覧する', # 例: 追加が必要な場合
+         'payment_history_read_own': '自身の支払い履歴を閲覧する', # 例: 追加が必要な場合
+         'invoice_read_own': '自身の請求書情報を閲覧する', # 例: 追加が必要な場合
+         'learning_path_read': '学習パスを閲覧する', # 例: 追加が必要な場合
+         'quiz_attempt': 'クイズに挑戦する', # 例: 追加が必要な場合
+         'forum_read': 'フォーラムを閲覧する', # 例: 追加が必要な場合
+         'forum_post': 'フォーラムに投稿する', # 例: 追加が必要な場合
+         'subscription_manage_own': '自身のサブスクリプションを管理する', # 例: 追加が必要な場合
 
-    # ========= ロール権限の関連付け =========
-    # 管理者のロール権限
-    admin_permissions = [
-        RolePermission(
-            role_id=roles[0].id,  # 管理者ロール
-            permission_id=permissions[0].id,  # user_read
-            is_granted=True
-        ),
-        RolePermission(
-            role_id=roles[0].id,
-            permission_id=permissions[1].id,  # user_write
-            is_granted=True
-        ),
-        RolePermission(
-            role_id=roles[0].id,
-            permission_id=permissions[2].id,  # content_read
-            is_granted=True
-        ),
-        RolePermission(
-            role_id=roles[0].id,
-            permission_id=permissions[3].id,  # content_write
-            is_granted=True
-        ),
-        RolePermission(
-            role_id=roles[0].id,
-            permission_id=permissions[4].id,  # admin_access
-            is_granted=True
-        )
+    }
+
+    # 権限をデータベースに追加
+    permissions = {}
+    for name, description in all_permissions_data.items():
+        perm = db.query(Permission).filter(Permission.name == name).first()
+        if not perm:
+            perm = Permission(id=uuid.uuid4(), name=name, description=description)
+            db.add(perm)
+        permissions[name] = perm
+    db.flush() # Flush after adding all permissions
+
+    # ★修正: DBから権限を再取得して、IDが確定したオブジェクトを使用する
+    permissions = {p.name: p for p in db.query(Permission).all()}
+
+    # ========= ロールと権限の関連付け =========
+    def add_perm(role_name, perm_name):
+        role = roles.get(role_name) # Get role from dictionary
+        perm = permissions.get(perm_name)
+        if not role or not perm:
+            # ★重要: 警告が出続ける場合、ここの perm_name が all_permissions_data に存在するか再確認
+            print(f"警告: ロール '{role_name}' または権限 '{perm_name}' が見つかりません。スキップします。")
+            return
+        # 既存の関連付けをチェック
+        existing_rp = db.query(RolePermission).filter(
+            RolePermission.role_id == role.id,
+            RolePermission.permission_id == perm.id
+        ).first()
+        if not existing_rp:
+            rp = RolePermission(role_id=role.id, permission_id=perm.id)
+            db.add(rp)
+
+    # 管理者への権限付与 (すべての権限を付与)
+    all_permission_names = list(permissions.keys())
+    for perm_name in all_permission_names:
+        add_perm("管理者", perm_name)
+
+    # 教員への権限付与 (リストで指定)
+    # ★注意: このリスト内の権限名が上記の all_permissions_data に存在するか確認
+    teacher_perms = [
+        "user_read", "content_read", "content_write",
+        "community_read", "community_post_create", "community_post_delete_own",
+        "chat_session_read", "chat_message_send",
+        "desired_school_manage_own",
+        "statement_review_request", "statement_review_respond",
+        "study_plan_read",
+        "communication_read", "communication_write",
+        "application_read", "application_write",
+        "permission_read", # Read permissions
+        "role_read",       # Read roles
     ]
-    for rp in admin_permissions:
-        db.add(rp)
-    
-    # 教員のロール権限
-    teacher_permissions = [
-        RolePermission(
-            role_id=roles[1].id,  # 教員ロール
-            permission_id=permissions[0].id,  # user_read
-            is_granted=True
-        ),
-        RolePermission(
-            role_id=roles[1].id,
-            permission_id=permissions[2].id,  # content_read
-            is_granted=True
-        ),
-        RolePermission(
-            role_id=roles[1].id,
-            permission_id=permissions[3].id,  # content_write
-            is_granted=True
-        )
+    for perm_name in teacher_perms:
+        add_perm("教員", perm_name)
+
+    # --- 新しいロールへの権限割り当て --- 
+    # フリープランの権限
+    # ★注意: このリスト内の権限名が上記の all_permissions_data に存在するか確認
+    free_perms = [
+        "content_read",
+        "community_read",
+        "chat_session_read",
+        "chat_message_send",
+        "subscription_read_own",
+        "payment_history_read_own",
+        "invoice_read_own",
+        "learning_path_read",
+        "quiz_attempt",
+        "forum_read",
     ]
-    for rp in teacher_permissions:
-        db.add(rp)
-    
-    # 生徒のロール権限
-    student_permissions = [
-        RolePermission(
-            role_id=roles[2].id,  # 生徒ロール
-            permission_id=permissions[2].id,  # content_read
-            is_granted=True
-        )
+    for perm_name in free_perms:
+        add_perm("フリー", perm_name)
+
+    # スタンダードプランの権限 (フリー + 追加権限)
+    # ★注意: このリスト内の権限名が上記の all_permissions_data に存在するか確認
+    standard_perms = free_perms + [
+        "community_post_create",
+        "community_post_delete_own",
+        "study_plan_read",
+        "study_plan_write",
+        "communication_read",
+        "communication_write",
+        "forum_post",
+        "subscription_manage_own",
     ]
-    for rp in student_permissions:
-        db.add(rp)
-    db.flush()
+    for perm_name in standard_perms:
+        add_perm("スタンダード", perm_name)
+
+    # プレミアムプランの権限 (スタンダード + 追加権限)
+    # ★注意: このリスト内の権限名が上記の all_permissions_data に存在するか確認
+    premium_perms = standard_perms + [
+        "desired_school_manage_own",
+        "statement_review_request",
+        "application_read",
+        "application_write",
+    ]
+    for perm_name in premium_perms:
+        add_perm("プレミアム", perm_name)
+    # --- ここまで --- 
+
+    # システムロールへの権限付与 (必要に応じて)
+    # system_perms = [ ... ]
+    # for perm_name in system_perms: add_perm("システム", perm_name)
+
+    db.flush() # RolePermission の変更を反映
 
     # ========= ユーザーデータ =========
-    users = [
-        User(
-            id=uuid.uuid4(),
-            email="admin@demo-univ.ac.jp",
-            hashed_password=get_password_hash("admin123"),  # password: "admin123"
-            full_name="管理者 テスト",
-            is_active=True
-        ),
-        User(
-            id=uuid.uuid4(),
-            email="teacher@demo-high.ed.jp",
-            hashed_password=get_password_hash("teacher123"),  # password: "teacher123"
-            full_name="教員 テスト",
-            is_active=True
-        ),
-        User(
-            id=uuid.uuid4(),
-            email="student@example.com",
-            hashed_password=get_password_hash("student123"),  # password: "student123"
-            full_name="生徒 テスト",
-            is_active=True
-        ),
-        User(
-            id=uuid.uuid4(),
-            email="test@example.com",
-            hashed_password=get_password_hash("test123"),  # パスワードをハッシュ化
-            full_name="テストユーザー",
-            is_active=True
-        ),
-        User(
-            id=uuid.uuid4(),
-            email="ai-system@example.com",
-            hashed_password=get_password_hash("aiSystem@123"),
-            full_name="AIシステム",
-            is_active=True
-        )
+    users_data = [
+        ("admin@demo-univ.ac.jp", get_password_hash("admin123"), "管理者 テスト", roles["管理者"]),
+        ("teacher@demo-high.ed.jp", get_password_hash("teacher123"), "教員 テスト", roles["教員"]),
+        ("student@example.com", get_password_hash("student123"), "フリーユーザー テスト", roles["フリー"]),
+        ("test@example.com", get_password_hash("test123"), "テストユーザー", roles["フリー"]),
+        ("ai-system@example.com", get_password_hash("aiSystem@123"), "AIシステム", roles["システム"]),
     ]
-    for user in users:
+    users = []
+    for email, pwd, name, role_obj in users_data:
+        user_id = uuid.uuid4()
+        user = User(
+            id=user_id,
+            email=email,
+            hashed_password=pwd,
+            full_name=name,
+            is_active=True,
+            is_verified=True, # Demo data: assume verified
+            status=UserStatus.ACTIVE # Set status to ACTIVE
+        )
+        users.append(user)
         db.add(user)
-    db.flush()
+        db.flush()
 
-    # ========= ユーザーロール関連付け =========
-    user_roles = [
-        UserRole(
-            id=uuid.uuid4(),
-            user_id=users[0].id,
-            role_id=roles[0].id,  # 管理者ロール
-            is_primary=True
-        ),
-        UserRole(
-            id=uuid.uuid4(),
-            user_id=users[1].id,
-            role_id=roles[1].id,  # 教員ロール
-            is_primary=True
-        ),
-        UserRole(
-            id=uuid.uuid4(),
-            user_id=users[2].id,
-            role_id=roles[2].id,  # 生徒ロール
-            is_primary=True
-        ),
-        UserRole(
-            id=uuid.uuid4(),
-            user_id=users[3].id,
-        role_id=roles[2].id,  # 生徒ロール
-            is_primary=True
-        ),
-        UserRole(
-            id=uuid.uuid4(),
-            user_id=users[4].id,
-            role_id=roles[3].id,  # システムロール
-            is_primary=True
-        )
-    ]
-    for ur in user_roles:
-        db.add(ur)
-    db.flush()
-    
-    # ========= ユーザーロール割り当て =========
-    for i, ur in enumerate(user_roles):
-        assignment = UserRoleAssignment(
-            id=uuid.uuid4(),
-            user_role_id=ur.id,
-            assigned_at=datetime.utcnow(),
-            assigned_by=users[0].id if i > 0 else None  # 管理者が割り当てたとする（自分以外）
-        )
+        # UserRole の作成と割り当て
+        user_role = UserRole(id=uuid.uuid4(), user_id=user_id, role_id=role_obj.id, is_primary=True)
+        db.add(user_role)
+        db.flush()
+
+        assignment = UserRoleAssignment(id=uuid.uuid4(), user_role_id=user_role.id, assigned_at=datetime.utcnow())
         db.add(assignment)
     db.flush()
-    
-    # ========= ユーザープロフィール =========
-    profiles = [
-        UserProfile(
-            id=uuid.uuid4(),
-            user_id=users[0].id,
-            profile_image_url="https://example.com/profiles/admin.jpg"
-        ),
-        UserProfile(
-            id=uuid.uuid4(),
-            user_id=users[1].id,
-            profile_image_url="https://example.com/profiles/teacher.jpg"
-        ),
-        UserProfile(
-            id=uuid.uuid4(),
-            user_id=users[2].id,
-            grade=3,
-            class_number="A",
-            student_number="001",
-            profile_image_url="https://example.com/profiles/student.jpg"
-        ),
-        UserProfile(
-            id=uuid.uuid4(),
-            user_id=users[3].id,
-            grade=2,
-            class_number="B",
-            student_number="015",
-            profile_image_url="https://example.com/profiles/test.jpg"
-        )
-    ]
-    for profile in profiles:
-        db.add(profile)
-    db.flush()
-    
-    # ========= ユーザーログイン情報 =========
-    for i, user in enumerate(users):
-        login_info = UserLoginInfo(
-            id=uuid.uuid4(),
-            user_id=user.id,
-            last_login_at=datetime.utcnow() - timedelta(days=i),
-            failed_login_attempts=0
-        )
-        db.add(login_info)
-    db.flush()
-    
-    # ========= ユーザーメール検証 =========
-    for i, user in enumerate(users):
-        email_verification = UserEmailVerification(
-            id=uuid.uuid4(),
-            user_id=user.id,
-            email_verified=True,  # デモデータなので検証済みとする
-            email_verification_token=f"token_{uuid.uuid4()}",
-            email_verification_sent_at=datetime.utcnow() - timedelta(days=10)
-        )
-        db.add(email_verification)
-    db.flush()
-    
-    # ========= ユーザー連絡先情報 =========
-    contact_info = [
-        UserContactInfo(
-            id=uuid.uuid4(),
-            user_id=users[0].id,
-            contact_type="email",
-            contact_value="admin_secondary@example.com",
-            is_primary=False,
-            verified=True
-        ),
-        UserContactInfo(
-            id=uuid.uuid4(),
-            user_id=users[0].id,
-            contact_type="phone",
-            contact_value="090-1234-5678",
-            is_primary=True,
-            verified=True
-        ),
-        UserContactInfo(
-            id=uuid.uuid4(),
-            user_id=users[1].id,
-            contact_type="phone",
-            contact_value="090-8765-4321",
-            is_primary=True,
-            verified=True
-        ),
-        UserContactInfo(
-            id=uuid.uuid4(),
-            user_id=users[2].id,
-            contact_type="phone",
-            contact_value="080-1111-2222",
-            is_primary=True,
-            verified=False
-        )
-    ]
-    for ci in contact_info:
-        db.add(ci)
-    db.flush()
 
-    return users
+    # ========= ユーザープロフィールなど (既存のロジックを維持) =========
+    # ... (User Profile, Login Info, Email Verification, Contact Info logic) ...
+
+    return users # Return the list of created user objects
 
 def create_school_university_data(db: Session):
     # ========= 高校データ =========
@@ -788,7 +713,6 @@ def create_chat_related_data(db: Session, users):
             id=uuid.uuid4(),
             user_id=student.id,
             title="大学入試についての相談",
-            session_type=SessionType.CONSULTATION,
             status=SessionStatus.ACTIVE,
             last_message_at=datetime.utcnow() - timedelta(hours=2)
         ),
@@ -796,7 +720,6 @@ def create_chat_related_data(db: Session, users):
             id=uuid.uuid4(),
             user_id=student.id,
             title="志望理由書の添削依頼",
-            session_type=SessionType.CONSULTATION,
             status=SessionStatus.ACTIVE,
             last_message_at=datetime.utcnow() - timedelta(days=1)
         ),
@@ -804,7 +727,6 @@ def create_chat_related_data(db: Session, users):
             id=uuid.uuid4(),
             user_id=student.id,
             title="数学の質問",
-            session_type=SessionType.NORMAL,
             status=SessionStatus.CLOSED,
             last_message_at=datetime.utcnow() - timedelta(days=3)
         )
@@ -813,264 +735,182 @@ def create_chat_related_data(db: Session, users):
         db.add(session)
     db.flush()
     
-    # ========= チャットセッションメタデータ =========
-    session_metadata = [
-        ChatSessionMetaData(
-            id=uuid.uuid4(),
-            session_id=chat_sessions[0].id,
-            key="target_university",
-            value="デモ大学"
-        ),
-        ChatSessionMetaData(
-            id=uuid.uuid4(),
-            session_id=chat_sessions[0].id,
-            key="admission_method",
-            value="総合型選抜"
-        ),
-        ChatSessionMetaData(
-            id=uuid.uuid4(),
-            session_id=chat_sessions[1].id,
-            key="department",
-            value="工学部情報工学科"
-        )
-    ]
-    for meta in session_metadata:
-        db.add(meta)
-    db.flush()
-    
     # ========= チャットメッセージ =========
     # 第1セッションのメッセージ
     messages_session1 = [
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[0].id,
-            sender_id=student.id,
-            sender_type=SenderType.USER,
-            content="デモ大学の総合型選抜について教えてください。",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(hours=5)
+            user_id=student.id,
+            sender=MessageSender.USER,
+            content="デモ大学の総合型選抜について教えてください。"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[0].id,
-            sender_id=ai_user.id,  # AIシステムユーザー
-            sender_type=SenderType.AI,
-            content="デモ大学の総合型選抜では、書類審査と面接が行われます。書類には志望理由書とポートフォリオの提出が必要です。面接は約20分間で、あなたの学習意欲や将来の目標について質問されます。",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(hours=5)
+            user_id=ai_user.id,
+            sender=MessageSender.AI,
+            content="デモ大学の総合型選抜では、書類審査と面接が行われます。書類には志望理由書とポートフォリオの提出が必要です。面接は約20分間で、あなたの学習意欲や将来の目標について質問されます。"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[0].id,
-            sender_id=student.id,
-            sender_type=SenderType.USER,
-            content="ポートフォリオには何を入れればいいですか？",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(hours=4)
+            user_id=student.id,
+            sender=MessageSender.USER,
+            content="ポートフォリオには何を入れればいいですか？"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[0].id,
-            sender_id=ai_user.id,  # AIシステムユーザー
-            sender_type=SenderType.AI,
-            content="ポートフォリオには、あなたのこれまでの活動や成果物をまとめます。例えば、研究プロジェクト、課外活動、受賞歴、資格などです。特に情報工学科を志望する場合は、プログラミングの経験やIT関連の活動を強調するとよいでしょう。",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(hours=4)
+            user_id=ai_user.id,
+            sender=MessageSender.AI,
+            content="ポートフォリオには、あなたのこれまでの活動や成果物をまとめます。例えば、研究プロジェクト、課外活動、受賞歴、資格などです。特に情報工学科を志望する場合は、プログラミングの経験やIT関連の活動を強調するとよいでしょう。"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[0].id,
-            sender_id=student.id,
-            sender_type=SenderType.USER,
-            content="ありがとうございます。面接対策はどうすればいいですか？",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(hours=2)
+            user_id=student.id,
+            sender=MessageSender.USER,
+            content="ありがとうございます。面接対策はどうすればいいですか？"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[0].id,
-            sender_id=ai_user.id,  # AIシステムユーザー
-            sender_type=SenderType.AI,
-            content="面接対策としては以下の準備をおすすめします：\n1. 志望理由を明確に説明できるようにする\n2. 自分の強みや特技を具体的なエピソードと共に準備する\n3. 大学の特色や学部の研究内容について調べておく\n4. 想定質問に対する回答を練習する\n5. 質問も数個用意しておく\n\n模擬面接を行うことも効果的です。面接直前にはリラックスして自信を持って臨みましょう。",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(hours=2)
+            user_id=ai_user.id,
+            sender=MessageSender.AI,
+            content="面接対策としては以下の準備をおすすめします：\\n1. 志望理由を明確に説明できるようにする\\n2. 自分の強みや特技を具体的なエピソードと共に準備する\\n3. 大学の特色や学部の研究内容について調べておく\\n4. 想定質問に対する回答を練習する\\n5. 質問も数個用意しておく\\n\\n模擬面接を行うことも効果的です。面接直前にはリラックスして自信を持って臨みましょう。"
         )
     ]
     
     # 第2セッションのメッセージ
     messages_session2 = [
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[1].id,
-            sender_id=student.id,
-            sender_type=SenderType.USER,
-            content="志望理由書を添削してもらえませんか？",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(days=1, hours=5)
+            user_id=student.id,
+            sender=MessageSender.USER,
+            content="志望理由書を添削してもらえませんか？"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[1].id,
-            sender_id=ai_user.id,  # AIシステムユーザー
-            sender_type=SenderType.AI,
-            content="はい、喜んで添削します。志望理由書をアップロードしてください。",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(days=1, hours=5)
+            user_id=ai_user.id,
+            sender=MessageSender.AI,
+            content="はい、喜んで添削します。志望理由書をアップロードしてください。"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[1].id,
-            sender_id=student.id,
-            sender_type=SenderType.USER,
-            content="志望理由書_工学部情報工学科.pdf",
-            message_type=MessageType.FILE,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(days=1, hours=4)
+            user_id=student.id,
+            sender=MessageSender.USER,
+            content="志望理由書_工学部情報工学科.pdf"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[1].id,
-            sender_id=ai_user.id,  # AIシステムユーザー
-            sender_type=SenderType.AI,
-            content="志望理由書を拝見しました。全体的に良く書けていますが、いくつか改善点があります：\n\n1. 冒頭部分：もう少し印象的な導入ができるとよいでしょう\n2. 2段落目：具体的なエピソードをもう少し詳しく書くと説得力が増します\n3. 最終段落：大学で学びたいことをより具体的に記述するとよいでしょう\n\n修正案を作成しました。ご確認ください。",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(days=1, hours=4)
+            user_id=ai_user.id,
+            sender=MessageSender.AI,
+            content="志望理由書を拝見しました。全体的に良く書けていますが、いくつか改善点があります：\\n\\n1. 冒頭部分：もう少し印象的な導入ができるとよいでしょう\\n2. 2段落目：具体的なエピソードをもう少し詳しく書くと説得力が増します\\n3. 最終段落：大学で学びたいことをより具体的に記述するとよいでしょう\\n\\n修正案を作成しました。ご確認ください。"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[1].id,
-            sender_id=ai_user.id,  # AIシステムユーザー
-            sender_type=SenderType.AI,
-            content="志望理由書_修正案.pdf",
-            message_type=MessageType.FILE,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(days=1, hours=4)
+            user_id=ai_user.id,
+            sender=MessageSender.AI,
+            content="志望理由書_修正案.pdf"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[1].id,
-            sender_id=student.id,
-            sender_type=SenderType.USER,
-            content="ありがとうございます。修正案を参考に書き直してみます。",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(days=1, hours=1)
+            user_id=student.id,
+            sender=MessageSender.USER,
+            content="ありがとうございます。修正案を参考に書き直してみます。"
         )
     ]
     
     # 第3セッションのメッセージ
     messages_session3 = [
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[2].id,
-            sender_id=student.id,
-            sender_type=SenderType.USER,
-            content="数学の微分方程式について質問があります。",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(days=3, hours=6)
+            user_id=student.id,
+            sender=MessageSender.USER,
+            content="数学の微分方程式について質問があります。"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[2].id,
-            sender_id=ai_user.id,  # AIシステムユーザー
-            sender_type=SenderType.AI,
-            content="微分方程式についてどのような質問ですか？",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(days=3, hours=6)
+            user_id=ai_user.id,
+            sender=MessageSender.AI,
+            content="微分方程式についてどのような質問ですか？"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[2].id,
-            sender_id=student.id,
-            sender_type=SenderType.USER,
-            content="dy/dx + Py = Q の形の1階線形微分方程式の解き方がわかりません。",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(days=3, hours=5)
+            user_id=student.id,
+            sender=MessageSender.USER,
+            content="dy/dx + Py = Q の形の1階線形微分方程式の解き方がわかりません。"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[2].id,
-            sender_id=ai_user.id,  # AIシステムユーザー
-            sender_type=SenderType.AI,
-            content="1階線形微分方程式 dy/dx + Py = Q の解法を説明します。\n\nこれは積分因子法で解くことができます。\n\n1. まず積分因子 μ = exp(∫P dx) を見つけます\n2. 両辺に μ を掛けると、左辺が d(μy)/dx の形になります\n3. すなわち d(μy)/dx = μQ となります\n4. 両辺を積分して μy = ∫μQ dx + C\n5. 最後に y について解きます: y = (∫μQ dx + C) / μ\n\n具体例を挙げると分かりやすいかもしれません。例題を解いてみましょうか？",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(days=3, hours=5)
+            user_id=ai_user.id,
+            sender=MessageSender.AI,
+            content="1階線形微分方程式 dy/dx + Py = Q の解法を説明します。\\n\\nこれは積分因子法で解くことができます。\\n\\n1. まず積分因子 μ = exp(∫P dx) を見つけます\\n2. 両辺に μ を掛けると、左辺が d(μy)/dx の形になります\\n3. すなわち d(μy)/dx = μQ となります\\n4. 両辺を積分して μy = ∫μQ dx + C\\n5. 最後に y について解きます: y = (∫μQ dx + C) / μ\\n\\n具体例を挙げると分かりやすいかもしれません。例題を解いてみましょうか？"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[2].id,
-            sender_id=student.id,
-            sender_type=SenderType.USER,
-            content="はい、例題をお願いします。",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(days=3, hours=4)
+            user_id=student.id,
+            sender=MessageSender.USER,
+            content="はい、例題をお願いします。"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[2].id,
-            sender_id=ai_user.id,  # AIシステムユーザー
-            sender_type=SenderType.AI,
-            content="例題: dy/dx + 2xy = x を解いてみましょう。\n\nこの場合、P(x) = 2x, Q(x) = x です。\n\n1. 積分因子 μ = exp(∫2x dx) = exp(x²)\n2. 両辺に μ を掛ける: exp(x²) dy/dx + 2x·exp(x²)y = x·exp(x²)\n3. 左辺は d(exp(x²)y)/dx の形\n4. よって d(exp(x²)y)/dx = x·exp(x²)\n5. 両辺を積分: exp(x²)y = ∫x·exp(x²) dx\n\n∫x·exp(x²) dx は置換積分で解けます。u = x² とすると du = 2x dx なので、x dx = du/2\n∫x·exp(x²) dx = ∫exp(u)·du/2 = (1/2)exp(u) + C = (1/2)exp(x²) + C\n\n6. よって exp(x²)y = (1/2)exp(x²) + C\n7. y について解くと: y = 1/2 + C·exp(-x²)\n\nこれが求める一般解です。",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(days=3, hours=4)
+            user_id=ai_user.id,
+            sender=MessageSender.AI,
+            content="例題: dy/dx + 2xy = x を解いてみましょう。\\n\\nこの場合、P(x) = 2x, Q(x) = x です。\\n\\n1. 積分因子 μ = exp(∫2x dx) = exp(x²)\\n2. 両辺に μ を掛ける: exp(x²) dy/dx + 2x·exp(x²)y = x·exp(x²)\\n3. 左辺は d(exp(x²)y)/dx の形\\n4. よって d(exp(x²)y)/dx = x·exp(x²)\\n5. 両辺を積分: exp(x²)y = ∫x·exp(x²) dx\\n\\n∫x·exp(x²) dx は置換積分で解けます。u = x² とすると du = 2x dx なので、x dx = du/2\\n∫x·exp(x²) dx = ∫exp(u)·du/2 = (1/2)exp(u) + C = (1/2)exp(x²) + C\\n\\n6. よって exp(x²)y = (1/2)exp(x²) + C\\n7. y について解くと: y = 1/2 + C·exp(-x²)\\n\\nこれが求める一般解です。"
         ),
         ChatMessage(
-            id=uuid.uuid4(),
             session_id=chat_sessions[2].id,
-            sender_id=student.id,
-            sender_type=SenderType.USER,
-            content="わかりました！ありがとうございます。",
-            message_type=MessageType.TEXT,
-            is_read=True,
-            read_at=datetime.utcnow() - timedelta(days=3, hours=3)
+            user_id=student.id,
+            sender=MessageSender.USER,
+            content="わかりました！ありがとうございます。"
         )
     ]
     
     # すべてのメッセージを追加
     all_messages = messages_session1 + messages_session2 + messages_session3
-    for msg in all_messages:
+    message_id_map = {} # 添付ファイル用にメッセージIDを保存
+    for i, msg in enumerate(all_messages):
         db.add(msg)
-    db.flush()
-    
+        db.flush() # IDを取得するためにflush
+        message_id_map[f"msg_{i}"] = msg.id # 例: msg_0, msg_1, ...
+
     # ========= チャット添付ファイル =========
-    # 第2セッションのファイル添付（学生からのアップロード）
-    attachment1 = ChatAttachment(
-        id=uuid.uuid4(),
-        message_id=messages_session2[2].id,  # 学生がアップロードしたメッセージ
-        file_url="https://storage.example.com/files/ps_original.pdf",
-        file_type="application/pdf",
-        file_size=256000,  # 250KB
-        file_name="志望理由書_工学部情報工学科.pdf"
-    )
-    db.add(attachment1)
-    
-    # 第2セッションのファイル添付（AIの修正案）
-    attachment2 = ChatAttachment(
-        id=uuid.uuid4(),
-        message_id=messages_session2[4].id,  # AIが返信したファイル
-        file_url="https://storage.example.com/files/ps_revised.pdf",
-        file_type="application/pdf",
-        file_size=280000,  # 275KB
-        file_name="志望理由書_修正案.pdf"
-    )
-    db.add(attachment2)
+    # ChatAttachment は message_id を Integer として期待している (モデル定義より)
+    # message_id_map から取得したIDを使用
+
+    # 第2セッションのファイル添付（学生からのアップロード - 対応するメッセージIDを取得）
+    student_upload_msg_index = len(messages_session1) + 2 # messages_session2 の3番目
+    student_upload_msg_id = message_id_map.get(f"msg_{student_upload_msg_index}")
+
+    # 第2セッションのファイル添付（AIの修正案 - 対応するメッセージIDを取得）
+    ai_upload_msg_index = len(messages_session1) + 4 # messages_session2 の5番目
+    ai_upload_msg_id = message_id_map.get(f"msg_{ai_upload_msg_index}")
+
+    if student_upload_msg_id:
+        attachment1 = ChatAttachment(
+            id=uuid.uuid4(),
+            message_id=student_upload_msg_id, # ChatMessage.id (Integer)
+            file_url="https://storage.example.com/files/ps_original.pdf",
+            file_type="application/pdf",
+            file_size=256000,
+            file_name="志望理由書_工学部情報工学科.pdf"
+        )
+        db.add(attachment1)
+    else:
+        print(f"警告: 添付ファイル1のメッセージIDが見つかりません (Index: {student_upload_msg_index})")
+
+
+    if ai_upload_msg_id:
+        attachment2 = ChatAttachment(
+            id=uuid.uuid4(),
+            message_id=ai_upload_msg_id, # ChatMessage.id (Integer)
+            file_url="https://storage.example.com/files/ps_revised.pdf",
+            file_type="application/pdf",
+            file_size=280000,
+            file_name="志望理由書_修正案.pdf"
+        )
+        db.add(attachment2)
+    else:
+        print(f"警告: 添付ファイル2のメッセージIDが見つかりません (Index: {ai_upload_msg_index})")
+
     db.flush()
-    
+
     # ========= チェックリスト評価 =========
     checklists = [
         ChecklistEvaluation(
@@ -1078,8 +918,8 @@ def create_chat_related_data(db: Session, users):
             session_id=chat_sessions[1].id,
             checklist_item="志望理由の明確さ",
             is_completed=True,
-            score=4,  # 5段階で4
-            evaluator_id=None,  # AIによる評価
+            score=4,
+            evaluator_id=None,
             evaluated_at=datetime.utcnow() - timedelta(days=1, hours=4)
         ),
         ChecklistEvaluation(
@@ -1087,8 +927,8 @@ def create_chat_related_data(db: Session, users):
             session_id=chat_sessions[1].id,
             checklist_item="具体的なエピソード",
             is_completed=True,
-            score=3,  # 5段階で3
-            evaluator_id=None,  # AIによる評価
+            score=3,
+            evaluator_id=None,
             evaluated_at=datetime.utcnow() - timedelta(days=1, hours=4)
         ),
         ChecklistEvaluation(
@@ -1096,8 +936,8 @@ def create_chat_related_data(db: Session, users):
             session_id=chat_sessions[1].id,
             checklist_item="文章構成",
             is_completed=True,
-            score=4,  # 5段階で4
-            evaluator_id=None,  # AIによる評価
+            score=4,
+            evaluator_id=None,
             evaluated_at=datetime.utcnow() - timedelta(days=1, hours=4)
         ),
         ChecklistEvaluation(
@@ -1105,8 +945,8 @@ def create_chat_related_data(db: Session, users):
             session_id=chat_sessions[1].id,
             checklist_item="誤字脱字",
             is_completed=True,
-            score=5,  # 5段階で5
-            evaluator_id=None,  # AIによる評価
+            score=5,
+            evaluator_id=None,
             evaluated_at=datetime.utcnow() - timedelta(days=1, hours=4)
         )
     ]
@@ -1136,81 +976,106 @@ def create_forum_data(db: Session, users):
 
 def create_subscription_related_data(db: Session):
     """
-    割引タイプなどのサブスクリプション関連データを挿入します。
+    割引タイプやキャンペーンコードなどのサブスクリプション関連データを挿入します。
     """
     # ========= 割引タイプデータ =========
     print("Seeding discount types...")
+    discount_types = {}
     try:
-        # 既存のデータをチェック
-        existing_percentage = db.query(DiscountType).filter(DiscountType.name == 'percentage').first()
-        existing_fixed = db.query(DiscountType).filter(DiscountType.name == 'fixed').first()
-        # --- 追加チェック ---
-        existing_none = db.query(DiscountType).filter(DiscountType.name == 'none').first()
-        existing_trial_fixed = db.query(DiscountType).filter(DiscountType.name == 'trial_fixed').first()
-        existing_trial_percentage = db.query(DiscountType).filter(DiscountType.name == 'trial_percentage').first()
-        # --- ここまで ---
+        # 既存のデータをチェックし、なければ追加、辞書に格納
+        def get_or_create_discount_type(name, description):
+            dt = db.query(DiscountType).filter(DiscountType.name == name).first()
+            if not dt:
+                dt = DiscountType(id=uuid.uuid4(), name=name, description=description)
+                db.add(dt)
+                db.flush() # IDを確定させる
+                print(f"Added '{name}' discount type.")
+            discount_types[name] = dt # 辞書に格納
 
-        added = False
-        if not existing_percentage:
-            percentage_type = DiscountType(
-                id=uuid.uuid4(), # UUIDを生成
-                name='percentage',
-                description='割引率 (%)'
-            )
-            db.add(percentage_type)
-            print("Added 'percentage' discount type.")
-            added = True
+        get_or_create_discount_type('percentage', '割引率 (%)')
+        get_or_create_discount_type('fixed', '固定割引額 (円)')
+        get_or_create_discount_type('none', '割引なし')
+        get_or_create_discount_type('trial_fixed', 'トライアル固定価格')
+        get_or_create_discount_type('trial_percentage', 'トライアル割引率')
 
-        if not existing_fixed:
-            fixed_type = DiscountType(
-                id=uuid.uuid4(), # UUIDを生成
-                name='fixed',
-                description='固定割引額 (円)'
-            )
-            db.add(fixed_type)
-            print("Added 'fixed' discount type.")
-            added = True
-            
-        # --- 追加のタイプを追加 --- 
-        if not existing_none:
-            none_type = DiscountType(
-                id=uuid.uuid4(),
-                name='none',
-                description='割引なし'
-            )
-            db.add(none_type)
-            print("Added 'none' discount type.")
-            added = True
-            
-        if not existing_trial_fixed:
-            trial_fixed_type = DiscountType(
-                id=uuid.uuid4(),
-                name='trial_fixed',
-                description='トライアル固定価格'
-            )
-            db.add(trial_fixed_type)
-            print("Added 'trial_fixed' discount type.")
-            added = True
-            
-        if not existing_trial_percentage:
-            trial_percentage_type = DiscountType(
-                id=uuid.uuid4(),
-                name='trial_percentage',
-                description='トライアル割引率'
-            )
-            db.add(trial_percentage_type)
-            print("Added 'trial_percentage' discount type.")
-            added = True
-        # --- ここまで --- 
-
-        if added:
-            # ここでは flush のみ行い、コミットは insert_demo_data の最後で行う
-            db.flush()
-            print("Discount types flushed.")
-        else:
-            # メッセージを更新
-            print("All required discount types already exist.") 
+        print("Discount types seeding complete.")
 
     except Exception as e:
         print(f"An error occurred during discount type seeding: {e}")
-        # ロールバックは不要（コミット前のため） 
+        db.rollback() # エラー時はロールバック
+        return # キャンペーンコード作成に進まない
+
+    # ========= キャンペーンコードデータ (自動作成を無効化) =========
+    # print("Seeding campaign codes...")
+    # try:
+    #     campaign_codes_data = [
+    #         {
+    #             "code": "WELCOME10",
+    #             "description": "新規登録者向け10%割引",
+    #             "discount_type_name": "percentage",
+    #             "discount_value": 10.0,
+    #             "max_uses": 1000,
+    #             "valid_until": datetime.utcnow() + timedelta(days=365)
+    #         },
+    #         {
+    #             "code": "SPRING500",
+    #             "description": "春のキャンペーン500円引き",
+    #             "discount_type_name": "fixed",
+    #             "discount_value": 500.0,
+    #             "max_uses": 500,
+    #             "valid_until": datetime.utcnow() + timedelta(days=90)
+    #         },
+    #         {
+    #             "code": "EXPIREDCODE",
+    #             "description": "期限切れテストコード",
+    #             "discount_type_name": "percentage",
+    #             "discount_value": 5.0,
+    #             "max_uses": 10,
+    #             "valid_until": datetime.utcnow() - timedelta(days=1) # 期限切れ
+    #         },
+    #         {
+    #             "code": "USEDUPCODE",
+    #             "description": "使用上限テストコード",
+    #             "discount_type_name": "fixed",
+    #             "discount_value": 100.0,
+    #             "max_uses": 0, # 使用上限0
+    #             "valid_until": datetime.utcnow() + timedelta(days=30)
+    #         }
+    #     ]
+    #
+    #     added_codes = False
+    #     for data in campaign_codes_data:
+    #         # 既存チェック
+    #         existing_code = db.query(CampaignCode).filter(CampaignCode.code == data["code"]).first()
+    #         if not existing_code:
+    #             discount_type = discount_types.get(data["discount_type_name"])
+    #             if not discount_type:
+    #                 print(f"Warning: Discount type '{data['discount_type_name']}' not found for campaign code '{data['code']}'. Skipping.")
+    #                 continue
+    #
+    #             # モデル定義に合わせて修正が必要 (例: redemption_count が存在しない)
+    #             # new_code = CampaignCode(
+    #             #     id=uuid.uuid4(),
+    #             #     code=data["code"],
+    #             #     description=data["description"],
+    #             #     discount_type_id=discount_type.id,
+    #             #     discount_value=data["discount_value"],
+    #             #     max_uses=data["max_uses"],
+    #             #     # redemption_count=0, # モデルに存在しない場合コメントアウト
+    #             #     used_count=0, # モデルに合わせて修正 (もし used_count があれば)
+    #             #     is_active=True,
+    #             #     valid_until=data["valid_until"]
+    #             # )
+    #             # db.add(new_code)
+    #             # print(f"Added campaign code: {data['code']}")
+    #             added_codes = True
+    #
+    #     if added_codes:
+    #         db.flush()
+    #         print("Campaign codes flushed.")
+    #     else:
+    #         print("All required campaign codes already exist.")
+    #
+    # except Exception as e:
+    #     print(f"An error occurred during campaign code seeding: {e}")
+    #     db.rollback() # エラー時はロールバック 

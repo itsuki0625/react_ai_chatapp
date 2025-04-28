@@ -1,50 +1,59 @@
 from sqlalchemy.orm import Session, joinedload, selectinload, contains_eager
-from sqlalchemy import func, or_
-from app.models.user import User, Role, UserEmailVerification, UserTwoFactorAuth, UserLoginInfo, UserRole as ModelUserRole, UserProfile
+from sqlalchemy import func, or_, select, delete as sql_delete
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.models.user import User, Role, UserEmailVerification, UserTwoFactorAuth, UserLoginInfo, UserRole as ModelUserRole, UserProfile, RolePermission
 from app.models.enums import AccountLockReason
-from app.schemas.user import UserCreate, UserUpdate, UserRole as SchemaUserRole, UserStatus as SchemaUserStatus
+from app.schemas.user import UserCreate, UserUpdate, UserStatus as SchemaUserStatus
 from app.core.security import get_password_hash
 from uuid import UUID
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Tuple
 import uuid
 import logging
+from app.crud import crud_role
 
 # --- 追加: ロガーの取得 ---
 logger = logging.getLogger(__name__)
 # --- ロガー取得ここまで ---
 
-def get_user_by_email(db: Session, email: str) -> Optional[User]:
-    return db.query(User).filter(User.email == email).first()
+async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
+    result = await db.execute(select(User).filter(User.email == email))
+    return result.scalars().first()
 
-def get_user(db: Session, user_id: UUID) -> Optional[User]:
-    # Ensure necessary relations are loaded for UserResponse computed fields
-    return db.query(User).options(
-        selectinload(User.user_roles).selectinload(ModelUserRole.role), # Needed for computed role
-        selectinload(User.login_info) # Needed for computed last_login_at
-    ).filter(User.id == user_id).first()
+async def get_user(db: AsyncSession, user_id: UUID) -> Optional[User]:
+    result = await db.execute(
+        select(User).options(
+            selectinload(User.user_roles)
+            .selectinload(ModelUserRole.role)
+            .selectinload(Role.role_permissions)
+            .selectinload(RolePermission.permission),
+            selectinload(User.login_info)
+        ).filter(User.id == user_id)
+    )
+    return result.scalars().first()
 
-def get_role_by_name(db: Session, role_name: str) -> Optional[Role]:
-    return db.query(Role).filter(Role.name == role_name).first()
+async def get_role_by_name(db: AsyncSession, role_name: str) -> Optional[Role]:
+    result = await db.execute(select(Role).filter(Role.name == role_name))
+    return result.scalars().first()
 
-def get_multi_users(
-    db: Session,
+async def get_multi_users(
+    db: AsyncSession,
     skip: int = 0,
     limit: int = 100,
     search: Optional[str] = None,
-    role: Optional[SchemaUserRole] = None,
+    role: Optional[str] = None,
     status: Optional[SchemaUserStatus] = None,
 ) -> Tuple[List[User], int]:
-    query = db.query(User)
+    stmt = select(User)
 
-    query = query.options(
+    stmt = stmt.options(
         selectinload(User.user_roles).selectinload(ModelUserRole.role),
         selectinload(User.login_info)
     )
 
     if search:
         search_term = f"%{search.lower()}%"
-        query = query.filter(
+        stmt = stmt.where(
             or_(
                 func.lower(User.full_name).like(search_term),
                 func.lower(User.email).like(search_term)
@@ -52,13 +61,18 @@ def get_multi_users(
         )
 
     if role:
-        query = query.join(User.user_roles).join(ModelUserRole.role).filter(Role.name == role.value)
+        stmt = stmt.join(User.user_roles).join(ModelUserRole.role).where(Role.name == role)
 
     if status:
-        query = query.filter(User.status == status)
+        stmt = stmt.where(User.status == status)
 
-    total = query.count()
-    users = query.offset(skip).limit(limit).all()
+    count_stmt = select(func.count()).select_from(stmt.alias())
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar_one()
+
+    stmt = stmt.offset(skip).limit(limit).order_by(User.created_at.desc())
+    result = await db.execute(stmt)
+    users = result.scalars().unique().all()
 
     if users:
         logger.info(f"CRUD: Fetched user 0 full_name: {getattr(users[0], 'full_name', 'N/A')}")
@@ -77,9 +91,9 @@ def get_multi_users(
 
     return users, total
 
-def create_user(db: Session, *, user_in: UserCreate) -> User:
-    role_name = user_in.role.value
-    db_role = get_role_by_name(db, role_name)
+async def create_user(db: AsyncSession, *, user_in: UserCreate) -> User:
+    role_name = user_in.role
+    db_role = await crud_role.get_role_by_name(db, role_name)
     if not db_role:
         raise ValueError(f"Role '{role_name}' not found in database.")
 
@@ -94,7 +108,7 @@ def create_user(db: Session, *, user_in: UserCreate) -> User:
         updated_at=datetime.utcnow()
     )
     db.add(db_user)
-    db.flush()
+    await db.flush()
 
     user_role_assoc = ModelUserRole(
         user_id=db_user.id,
@@ -107,22 +121,22 @@ def create_user(db: Session, *, user_in: UserCreate) -> User:
         email_verification = UserEmailVerification(
             id=uuid.uuid4(), user_id=db_user.id, email_verified=False, created_at=datetime.utcnow(), updated_at=datetime.utcnow()
         )
-        db.add(email_verification)
         login_info = UserLoginInfo(
             id=uuid.uuid4(), user_id=db_user.id, failed_login_attempts=0, created_at=datetime.utcnow(), updated_at=datetime.utcnow()
         )
+        db.add(email_verification)
         db.add(login_info)
-        db.commit()
-        db.refresh(db_user, attribute_names=['user_roles', 'user_roles.role'])
+        await db.commit()
+        await db.refresh(db_user, attribute_names=['user_roles', 'user_roles.role'])
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Error creating user and related records for {user_in.email}: {e}")
         raise e
 
     return db_user
 
-def update_user(
-    db: Session,
+async def update_user(
+    db: AsyncSession,
     *,
     db_user: User,
     user_in: UserUpdate
@@ -140,24 +154,45 @@ def update_user(
         status_value = update_data["status"]
         if isinstance(status_value, SchemaUserStatus):
             db_user.status = status_value
+        elif isinstance(status_value, str):
+            try:
+                db_user.status = SchemaUserStatus(status_value)
+            except ValueError:
+                logger.warning(f"Invalid status value '{status_value}' received for update.")
         del update_data["status"]
 
-    if "role" in update_data:
-        new_role_enum = update_data.get("role")
-        if isinstance(new_role_enum, SchemaUserRole):
-            new_role_name = new_role_enum.value
-            logger.warning(f"Updating user role for {db_user.email} to {new_role_name}. Simplified logic - assumes single primary role update.")
-            current_user_role = db.query(ModelUserRole).filter(ModelUserRole.user_id == db_user.id, ModelUserRole.is_primary == True).first()
+    if "role" in update_data and update_data["role"] is not None:
+        new_role_name: str = update_data["role"]
+
+        new_role_db = await crud_role.get_role_by_name(db, new_role_name)
+
+        if new_role_db:
+            current_user_role_result = await db.execute(
+                select(ModelUserRole).filter(
+                    ModelUserRole.user_id == db_user.id,
+                    ModelUserRole.is_primary == True
+                )
+            )
+            current_user_role = current_user_role_result.scalars().first()
+
             if current_user_role:
-                new_role_db = get_role_by_name(db, new_role_name)
-                if new_role_db:
-                    if current_user_role.role_id != new_role_db.id:
-                        current_user_role.role = new_role_db
-                        db.add(current_user_role)
+                if current_user_role.role_id != new_role_db.id:
+                    logger.info(f"Updating primary role for user {db_user.id} from {current_user_role.role_id} to {new_role_db.id} ({new_role_name})")
+                    current_user_role.role_id = new_role_db.id
+                    db.add(current_user_role)
                 else:
-                     logger.error(f"Role '{new_role_name}' not found for update.")
+                    logger.info(f"User {db_user.id} already has primary role '{new_role_name}'. No change needed.")
             else:
-                logger.error(f"Primary UserRole association not found for user {db_user.id}")
+                logger.warning(f"Primary UserRole association not found for user {db_user.id}. Creating new one for role '{new_role_name}'.")
+                new_user_role_assoc = ModelUserRole(
+                    user_id=db_user.id,
+                    role_id=new_role_db.id,
+                    is_primary=True
+                )
+                db.add(new_user_role_assoc)
+        else:
+            logger.error(f"Role '{new_role_name}' was not found during update process for user {db_user.id}. This should have been caught earlier.")
+
         del update_data["role"]
 
     for field, value in update_data.items():
@@ -171,23 +206,23 @@ def update_user(
 
     db_user.updated_at = datetime.utcnow()
     db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
+    await db.commit()
+    await db.refresh(db_user)
     return db_user
 
-def remove_user(db: Session, *, user_id: UUID) -> Optional[User]:
-    user = db.query(User).get(user_id)
+async def remove_user(db: AsyncSession, *, user_id: UUID) -> Optional[User]:
+    user = await get_user(db, user_id)
     if user:
-        db.query(UserEmailVerification).filter(UserEmailVerification.user_id == user_id).delete(synchronize_session=False)
-        db.query(UserLoginInfo).filter(UserLoginInfo.user_id == user_id).delete(synchronize_session=False)
-        db.query(UserTwoFactorAuth).filter(UserTwoFactorAuth.user_id == user_id).delete(synchronize_session=False)
-        db.delete(user)
-        db.commit()
+        logger.info(f"Deleting user object for user {user_id}")
+        await db.delete(user)
+        await db.commit()
+        logger.info(f"Successfully deleted user {user_id}")
         return user
+    logger.warning(f"User with ID {user_id} not found for deletion.")
     return None
 
-def verify_user_email(db: Session, user_id: UUID) -> bool:
-    user = get_user(db, user_id)
+async def verify_user_email(db: AsyncSession, user_id: UUID) -> bool:
+    user = await get_user(db, user_id)
     if not user:
         return False
     user.is_verified = True
@@ -195,17 +230,18 @@ def verify_user_email(db: Session, user_id: UUID) -> bool:
         user.email_verification.email_verified = True
         user.email_verification.updated_at = datetime.utcnow()
     user.updated_at = datetime.utcnow()
-    db.commit()
+    await db.commit()
     return True
 
-def setup_2fa(db: Session, user_id: UUID, totp_secret: str) -> bool:
-    user = get_user(db, user_id)
+async def setup_2fa(db: AsyncSession, user_id: UUID, totp_secret: str) -> bool:
+    user = await get_user(db, user_id)
     if not user:
         return False
     user.is_2fa_enabled = True
     user.totp_secret = totp_secret
     user.updated_at = datetime.utcnow()
-    two_factor_auth = db.query(UserTwoFactorAuth).filter(UserTwoFactorAuth.user_id == user_id).first()
+    result = await db.execute(select(UserTwoFactorAuth).filter(UserTwoFactorAuth.user_id == user_id))
+    two_factor_auth = result.scalars().first()
     if two_factor_auth:
         two_factor_auth.enabled = True
         two_factor_auth.secret = totp_secret
@@ -220,27 +256,29 @@ def setup_2fa(db: Session, user_id: UUID, totp_secret: str) -> bool:
             updated_at=datetime.utcnow()
         )
         db.add(two_factor_auth)
-    db.commit()
+    await db.commit()
     return True
 
-def disable_2fa(db: Session, user_id: UUID) -> bool:
-    user = get_user(db, user_id)
+async def disable_2fa(db: AsyncSession, user_id: UUID) -> bool:
+    user = await get_user(db, user_id)
     if not user:
         return False
     user.is_2fa_enabled = False
     user.totp_secret = None
     user.updated_at = datetime.utcnow()
-    two_factor_auth = db.query(UserTwoFactorAuth).filter(UserTwoFactorAuth.user_id == user_id).first()
+    result = await db.execute(select(UserTwoFactorAuth).filter(UserTwoFactorAuth.user_id == user_id))
+    two_factor_auth = result.scalars().first()
     if two_factor_auth:
         two_factor_auth.enabled = False
         two_factor_auth.secret = None
         two_factor_auth.updated_at = datetime.utcnow()
-    db.commit()
+    await db.commit()
     return True
 
-def record_login_attempt(db: Session, user_id: UUID, success: bool) -> None:
-    user = get_user(db, user_id)
-    login_info = db.query(UserLoginInfo).filter(UserLoginInfo.user_id == user_id).first()
+async def record_login_attempt(db: AsyncSession, user_id: UUID, success: bool) -> None:
+    user = await get_user(db, user_id)
+    result = await db.execute(select(UserLoginInfo).filter(UserLoginInfo.user_id == user_id))
+    login_info = result.scalars().first()
     if not user or not login_info:
          print(f"User or login info not found for user_id: {user_id}")
          return
@@ -260,11 +298,12 @@ def record_login_attempt(db: Session, user_id: UUID, success: bool) -> None:
             login_info.account_lock_reason = AccountLockReason.FAILED_ATTEMPTS
     login_info.updated_at = now
     db.add(login_info)
-    db.commit()
+    await db.commit()
 
-def is_account_locked(db: Session, user_id: UUID) -> bool:
-    user = get_user(db, user_id)
-    login_info = db.query(UserLoginInfo).filter(UserLoginInfo.user_id == user_id).first()
+async def is_account_locked(db: AsyncSession, user_id: UUID) -> bool:
+    user = await get_user(db, user_id)
+    result = await db.execute(select(UserLoginInfo).filter(UserLoginInfo.user_id == user_id))
+    login_info = result.scalars().first()
     if not user or not login_info:
         return False
     now = datetime.utcnow()
@@ -274,6 +313,6 @@ def is_account_locked(db: Session, user_id: UUID) -> bool:
         login_info.locked_until = None
         login_info.account_lock_reason = None
         db.add(login_info)
-        db.commit()
+        await db.commit()
     return False
 

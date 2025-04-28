@@ -16,6 +16,13 @@ class Role(Base, TimestampMixin):
     # Relationships
     user_roles = relationship("UserRole", back_populates="role")
     role_permissions = relationship("RolePermission", back_populates="role")
+    permissions = relationship(
+        "Permission",
+        secondary="role_permissions",
+        back_populates="roles",
+        overlaps="role_permissions",
+        lazy="selectin"
+    )
 
 class Permission(Base, TimestampMixin):
     __tablename__ = 'permissions'
@@ -26,6 +33,13 @@ class Permission(Base, TimestampMixin):
 
     # Relationships
     role_permissions = relationship("RolePermission", back_populates="permission")
+    roles = relationship(
+        "Role",
+        secondary="role_permissions",
+        back_populates="permissions",
+        overlaps="role_permissions",
+        lazy="selectin"
+    )
 
 class RolePermission(Base, TimestampMixin):
     __tablename__ = 'role_permissions'
@@ -36,8 +50,8 @@ class RolePermission(Base, TimestampMixin):
     is_granted = Column(Boolean, default=True)
 
     # Relationships
-    role = relationship("Role", back_populates="role_permissions")
-    permission = relationship("Permission", back_populates="role_permissions")
+    role = relationship("Role", back_populates="role_permissions", overlaps="permissions,roles")
+    permission = relationship("Permission", back_populates="role_permissions", overlaps="permissions,roles")
 
 class User(Base, TimestampMixin):
     __tablename__ = 'users'
@@ -46,6 +60,7 @@ class User(Base, TimestampMixin):
     email = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)  # Active status for user
     school_id = Column(UUID(as_uuid=True), ForeignKey('schools.id'))
     status = Column(SQLAlchemyEnum(UserStatus), nullable=False, default=UserStatus.PENDING)
     

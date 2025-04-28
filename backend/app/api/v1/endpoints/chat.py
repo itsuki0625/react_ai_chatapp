@@ -1,25 +1,45 @@
-from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks, status
 from fastapi.responses import StreamingResponse
-from typing import List, Dict
+from typing import List, Dict, Optional
 from datetime import datetime
 import logging
-from app.schemas.chat import ChatRequest, ChatResponse, Message, ChatMessageCreate
+from app.schemas.chat import ChatRequest, ChatResponse, Message, ChatMessageCreate, ChatMessage as ChatMessageSchema, ChatSessionCreate, ChatType, ChatSessionStatus, ChatSessionSummary, ChatSession, ChatMessageResponse
 from app.core.config import settings
 from app.services.openai_service import stream_openai_response
 import uuid
 from openai import AsyncOpenAI
-from app.api.deps import get_current_user, User
-from sqlalchemy.orm import Session
-from app.database.database import get_db
-from app.crud.chat import get_or_create_chat_session, get_session_messages, save_chat_message, get_user_chat_sessions, update_session_title, update_session_status, get_archived_chat_sessions
+from app.api.deps import get_current_user, User, require_permission
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database.database import get_async_db
+from app.crud.chat import (
+    get_or_create_chat_session,
+    get_session_messages,
+    save_chat_message,
+    get_user_chat_sessions,
+    update_session_title,
+    update_session_status,
+    get_archived_chat_sessions,
+    get_chat_session_by_id,
+    get_chat_messages as get_chat_messages_history
+)
 from fastapi.middleware.cors import CORSMiddleware
 from app.crud.checklist import (
-    ChecklistEvaluator, 
-    create_evaluation, 
+    ChecklistEvaluator,
+    create_evaluation,
     get_evaluation_by_chat_id,
     update_evaluation
 )
 from uuid import UUID
+from sqlalchemy.orm import Session
+from app import models, crud
+from app.api import deps
+from app.models.chat import MessageSender
+from app.services.ai_service import (
+    get_self_analysis_agent_response,
+    get_admission_agent_response,
+    get_study_support_agent_response
+)
+from app.crud.async_chat import get_user_chat_sessions
 
 router = APIRouter()
 
@@ -37,27 +57,25 @@ async def chat_stream(
     request: Request,
     chat_request: ChatRequest,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission('chat_message_send')),
+    db: AsyncSession = Depends(get_async_db),
 ):
+    logger.info("--- chat_stream endpoint called ---")
     logger.info(f"Received message: {chat_request.message}")
     logger.info(f"Chat request: {chat_request}")
     
     try:
-        # チャットセッションを取得または作成
         chat_session = await get_or_create_chat_session(
             db=db,
             user_id=current_user.id,
             session_id=chat_request.session_id,
-            session_type=chat_request.session_type
+            chat_type=chat_request.chat_type.value
         )
-        print("セッションの作成に成功しました")
+        logger.info("セッションの取得または作成に成功しました")
         
-        # セッションIDを保持
         session_id = str(chat_session.id)
-        print("セッションIDの保持に成功しました")
+        logger.info(f"Session ID: {session_id}")
         
-        # 新しいセッションの場合のみタイトルを更新
         if not chat_request.session_id:
             title = chat_request.message[:30] + "..." if len(chat_request.message) > 30 else chat_request.message
             await update_session_title(
@@ -66,9 +84,8 @@ async def chat_stream(
                 current_user.id, 
                 title
             )
-        print("セッションのタイトルの更新に成功しました")
+            logger.info(f"Session title updated to: {title}")
 
-        # ユーザーメッセージを保存
         user_message = await save_chat_message(
             db=db,
             session_id=session_id,
@@ -76,16 +93,13 @@ async def chat_stream(
             sender_id=current_user.id,
             sender_type="USER"
         )
-        print("ユーザーメッセージの保存に成功しました")
+        logger.info(f"User message saved (ID: {user_message.id})")
 
-        # 既存のメッセージ履歴を取得
-        session_messages = await get_session_messages(
-            db, 
-            session_id, 
-            current_user.id,
-            chat_request.session_type
+        session_messages = await get_chat_messages_history(
+            db,
+            session_id
         )
-        print("既存のメッセージ履歴の取得に成功しました")
+        logger.info(f"Fetched {len(session_messages)} existing messages for the session")
         formatted_history = [
             {
                 "role": "assistant" if msg.sender_type == "AI" else "user",
@@ -93,31 +107,20 @@ async def chat_stream(
             }
             for msg in session_messages
         ]
-        print("メッセージ履歴のフォーマットに成功しました")
+        logger.info("Formatted message history")
 
-        # セッションタイプに応じてシステムメッセージを設定
-        if chat_request.session_type == "FAQ":
+        system_message = ""
+        if chat_request.chat_type == ChatType.FAQ:
             system_message = "あなたは総合型選抜に関する質問に答えるFAQボットです。"
+        elif chat_request.chat_type == ChatType.CONSULTATION:
+            logger.warning(f"Handling potentially unused chat_type: {chat_request.chat_type}")
+            system_message = settings.INSTRUCTION
         else:
             base_instruction = settings.INSTRUCTION
-            
-            # チェックリストの評価結果を取得
-            evaluation = get_evaluation_by_chat_id(db, UUID(session_id))
-            if evaluation:
-                checklist_status = "\n\n現在の進捗状況:\n"
-                for item in evaluation.checklist_items:
-                    checklist_status += f"- {item['item']}: {item['status']}\n"
-                    if item['status'] != "完了":
-                        checklist_status += f"  次の質問: {item['next_question']}\n"
-                
-                checklist_status += f"\n全体的な状況: {evaluation.completion_status}"
-                
-                system_message = f"{base_instruction}\n{checklist_status}"
-            else:
-                system_message = base_instruction
+            system_message = base_instruction
+            logger.info(f"Using base instruction for chat_type: {chat_request.chat_type}")
 
-        logger.info("システムメッセージの設定に成功しました")
-        logger.info(f"System message: {system_message}")
+        logger.info(f"System message: {system_message[:100]}...")
 
         messages = [
             {"role": "system", "content": system_message},
@@ -125,66 +128,89 @@ async def chat_stream(
             {"role": "user", "content": chat_request.message}
         ]
 
-        # AIメッセージを作成（内容は空で）
         ai_message = await save_chat_message(
             db=db,
             session_id=session_id,
             content="",
             sender_type="AI"
         )
-        print("AIメッセージの保存に成功しました")
+        logger.info(f"Empty AI message saved (ID: {ai_message.id})")
 
         async def stream_and_save():
             full_response = ""
-            async for chunk in stream_openai_response(messages, session_id):
-                if isinstance(chunk, str):
-                    sanitized = chunk.replace("data: ", "").strip()
-                    full_response += sanitized
-                    yield f'data: {sanitized}\n\n'
-            
-            # ストリーミング完了後、完全なAIレスポンスを保存
-            ai_message.content = full_response.replace("[DONE]", "").strip()
-            db.add(ai_message)
-            db.commit()
-
-            # 志望理由書相談チャットの場合のみチェックリスト評価を実行
-            if chat_request.session_type == "CONSULTATION":
-                try:
-                    # 新しいセッションでメッセージを再取得
-                    fresh_messages = await get_session_messages(
-                        db, 
-                        session_id, 
-                        current_user.id,
-                        chat_request.session_type
-                    )
-                    
-                    chat_history = [
-                        {
-                            "role": str(msg.sender_type).split('.')[-1].lower(),
-                            "content": msg.content,
-                            "timestamp": msg.created_at
-                        } for msg in fresh_messages
-                    ]
-                    logger.info(f"Chat history for evaluation: {chat_history}")
-                    
-                    evaluation_result = await checklist_evaluator.evaluate_chat(chat_history)
-                    logger.info(f"Evaluation result: {evaluation_result}")
-                    
-                    if evaluation_result:
-                        existing_evaluation = get_evaluation_by_chat_id(db, UUID(session_id))
-                        if existing_evaluation:
-                            update_evaluation(db, existing_evaluation.id, evaluation_result)
-                        else:
-                            create_evaluation(db, UUID(session_id), evaluation_result)
-                        logger.info("Evaluation created/updated successfully")
+            try:
+                async for chunk in stream_openai_response(messages, session_id):
+                    if isinstance(chunk, str):
+                        sanitized = chunk.replace("data: ", "").strip()
+                        if sanitized == "[DONE]":
+                            logger.info("Received [DONE] signal")
+                            break
+                        full_response += sanitized
+                        yield f'data: {sanitized}\n\n'
                     else:
-                        logger.error("Evaluation result is None")
-                except Exception as e:
-                    logger.error(f"Error in evaluate_checklist: {str(e)}")
-            
-            # 終了を示すメッセージ
-            yield 'data: [DONE]\n\n'
-        print("ストリーミングの終了を示すメッセージの送信に成功しました")
+                         logger.warning(f"Received non-string chunk: {type(chunk)}")
+
+                logger.info(f"Streaming finished. Full AI response length: {len(full_response)}")
+
+                if ai_message:
+                    ai_message.content = full_response
+                    ai_message.updated_at = datetime.utcnow()
+                    db.add(ai_message)
+                    await db.commit()
+                    await db.refresh(ai_message)
+                    logger.info(f"AI response saved/updated for message ID: {ai_message.id}")
+                else:
+                     logger.error("ai_message object was None before saving full response")
+
+                if chat_request.chat_type == ChatType.SELF_ANALYSIS:
+                    try:
+                        fresh_messages_history = await get_chat_messages_history(
+                            db,
+                            str(chat_session.id)
+                        )
+                        chat_history_for_eval = []
+                        if isinstance(fresh_messages_history, list):
+                            for msg_item in fresh_messages_history:
+                                if isinstance(msg_item, dict):
+                                     chat_history_for_eval.append({
+                                         "role": msg_item.get("role", "unknown"), 
+                                         "content": msg_item.get("content", "")
+                                     })
+                                elif hasattr(msg_item, 'sender_type') and hasattr(msg_item, 'content'):
+                                     chat_history_for_eval.append({
+                                         "role": "assistant" if msg_item.sender_type == "AI" else "user",
+                                         "content": msg_item.content
+                                     })
+                                else:
+                                     logger.warning(f"Unexpected item type in message history: {type(msg_item)}")
+                        else:
+                            logger.error(f"Expected list from get_chat_messages_history, got: {type(fresh_messages_history)}")
+
+                        logger.info(f"Chat history for evaluation ({len(chat_history_for_eval)} messages)")
+
+                        evaluation_result = await checklist_evaluator.evaluate_chat(chat_history_for_eval)
+                        logger.info(f"Evaluation result obtained: {evaluation_result is not None}")
+
+                        if evaluation_result:
+                            existing_evaluation = await get_evaluation_by_chat_id(db, UUID(session_id))
+                            if existing_evaluation:
+                                await update_evaluation(db, existing_evaluation.id, evaluation_result)
+                                logger.info("Evaluation updated successfully")
+                            else:
+                                await create_evaluation(db, UUID(session_id), evaluation_result)
+                                logger.info("Evaluation created successfully")
+                        else:
+                            logger.warning("Evaluation result was None, skipping DB update.")
+                    except Exception as eval_e:
+                        logger.error(f"Error during checklist evaluation or DB update: {str(eval_e)}")
+                        # ここでエラーを raise するかは検討事項
+
+                yield 'data: [DONE]\n\n'
+                logger.info("Sent final [DONE] signal")
+            except Exception as stream_err:
+                 logger.error(f"Error during streaming or saving: {stream_err}", exc_info=True)
+                 yield 'data: [ERROR] Streaming failed\n\n'
+                 yield 'data: [DONE]\n\n'
 
         return StreamingResponse(
             stream_and_save(),
@@ -196,9 +222,15 @@ async def chat_stream(
             }
         )
 
+    except ValueError as ve:
+        logger.error(f"Invalid chat type provided: {chat_request.chat_type}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        logger.error(f"Error in chat_stream: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in chat_stream endpoint: {str(e)}", exc_info=True)
+        if db.in_transaction():
+             await db.rollback()
+             logger.info("Rolled back transaction due to error")
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @router.delete("/sessions")
 async def end_session(request: Request):
@@ -208,7 +240,7 @@ async def end_session(request: Request):
 @router.post("", response_model=ChatResponse)
 async def chat_with_ai(
     chat_request: ChatRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('chat_message_send')),
 ):
     try:
         logger.info(f"Sending to OpenAI: {chat_request.message}")
@@ -256,654 +288,324 @@ async def chat_with_ai(
 
 @router.get("/sessions/archived")
 async def get_archived_chat_sessions_route(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    session_type: str = "CONSULTATION"
+    current_user: User = Depends(require_permission('chat_session_read')),
+    db: AsyncSession = Depends(get_async_db),
+    chat_type: str = "general"
 ):
-    """アーカイブされたチャットセッションを取得"""
     try:
-        sessions = await get_archived_chat_sessions(
-            db, 
-            current_user.id,
-            session_type
-        )
-        return sessions
+        archived_sessions = await get_archived_chat_sessions(db, current_user.id, chat_type)
+        return archived_sessions
+    except ValueError as ve:
+        logger.error(f"Invalid chat type requested: {chat_type}")
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        logger.error(f"Error getting archived chat sessions: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error fetching archived chat sessions: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch archived chat sessions")
 
-@router.get("/sessions/{session_id}/messages")
+@router.get("/sessions/{session_id}/messages", response_model=List[Dict])
 async def get_chat_messages(
     session_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    session_type: str = "CONSULTATION"
+    current_user: User = Depends(require_permission('chat_session_read')),
+    db: AsyncSession = Depends(get_async_db),
 ):
-    """特定のセッションのメッセージ履歴を取得"""
     try:
-        messages = await get_session_messages(
-            db, 
-            session_id, 
-            current_user.id,
-            session_type
-        )
+        session_uuid = UUID(session_id)
+        session = await get_chat_session_by_id(db, session_uuid)
+        if not session or session.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to view messages for this session")
+
+        messages = await get_chat_messages_history(db, session_id)
         return messages
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID format")
     except Exception as e:
-        logger.error(f"Error getting chat messages: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error fetching messages for session {session_id}: {str(e)}")
+        if db.in_transaction():
+            await db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to fetch messages")
 
 @router.patch("/sessions/{session_id}/archive")
 async def archive_chat_session(
     session_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    session_type: str = "CONSULTATION"
+    current_user: User = Depends(require_permission('chat_session_read')),
+    db: AsyncSession = Depends(get_async_db),
+    chat_type: str = "general"
 ):
-    """チャットセッションを非表示（アーカイブ）にする"""
     try:
-        await update_session_status(
-            db, 
-            session_id, 
-            current_user.id, 
-            "ARCHIVED",
-            session_type
-        )
-        return {"message": "Session archived successfully"}
+        session_uuid = UUID(session_id)
+        updated_session = await update_session_status(db, session_uuid, current_user.id, "ARCHIVED", chat_type)
+        if not updated_session:
+            logger.error(f"update_session_status returned None unexpectedly for session {session_id}")
+            raise HTTPException(status_code=500, detail="Failed to archive session due to unexpected error.")
+        return updated_session
+    except ValueError as ve:
+        detail = str(ve)
+        status_code = 400
+        if "Invalid session ID format" in detail:
+            status_code = 400
+        elif "Invalid chat type" in detail:
+            status_code = 400
+        else:
+            status_code = 400
+        logger.error(f"Error processing archive request: {detail}")
+        raise HTTPException(status_code=status_code, detail=detail)
+    except HTTPException as http_exc:
+        raise http_exc
     except Exception as e:
-        logger.error(f"Error archiving chat session: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error archiving session {session_id}: {str(e)}")
+        if db.in_transaction():
+             await db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to archive session")
 
-@router.get("/sessions")
+@router.get("/sessions", response_model=List[ChatSessionSummary])
 async def get_chat_sessions(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    session_type: str = "CONSULTATION"
+    current_user: User = Depends(require_permission('chat_session_read')),
+    db: AsyncSession = Depends(get_async_db),
+    chat_type: Optional[ChatType] = None,
+    status: Optional[ChatSessionStatus] = None
 ):
-    """ユーザーのチャットセッション一覧を取得"""
     try:
-        print(session_type)
         sessions = await get_user_chat_sessions(
-            db, 
+            db,
             current_user.id,
-            session_type
+            chat_type=chat_type,
+            status=status
         )
         return sessions
     except Exception as e:
-        logger.error(f"Error getting chat sessions: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error fetching chat sessions for user {current_user.id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch chat sessions")
 
 @router.get("/{chat_id}/checklist")
-async def get_checklist_evaluation(
+async def get_checklist_evaluation_endpoint(
     chat_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    session_type: str = "CONSULTATION"
+    current_user: User = Depends(require_permission('chat_session_read')),
+    db: AsyncSession = Depends(get_async_db),
 ):
-    # FAQチャットの場合はエラーを返す
-    if session_type != "CONSULTATION":
-        raise HTTPException(
-            status_code=400, 
-            detail="Checklist evaluation is only available for consultation chats"
-        )
-    
-    evaluation = get_evaluation_by_chat_id(db, chat_id)
-    if not evaluation:
-        raise HTTPException(status_code=404, detail="Checklist evaluation not found")
-    return evaluation
+    try:
+        session = await get_chat_session_by_id(db, chat_id)
+        if not session or session.user_id != current_user.id:
+             raise HTTPException(status_code=403, detail="Not authorized to view this evaluation")
+
+        evaluation = await get_evaluation_by_chat_id(db, chat_id)
+        if not evaluation:
+            return []
+
+        return evaluation.checklist_items
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid chat ID format")
+    except Exception as e:
+        logger.error(f"Error fetching checklist evaluation for chat {chat_id}: {str(e)}", exc_info=True)
+        if db.in_transaction():
+            await db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to fetch checklist evaluation")
 
 @router.post("/self-analysis")
 async def start_self_analysis_chat(
     chat_request: ChatRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('chat_message_send')),
+    db: AsyncSession = Depends(get_async_db)
 ):
-    """
-    自己分析AIとのチャットを開始する
-    専用のシステムプロンプトと分析ロジックを使用する
-    """
-    logger.info(f"自己分析チャット開始: {chat_request.message}")
-    
-    try:
-        # 自己分析用のセッションタイプを設定
-        chat_request.session_type = "SELF_ANALYSIS"
-        
-        # チャットセッションを取得または作成
-        chat_session = await get_or_create_chat_session(
-            db=db,
-            user_id=current_user.id,
-            session_id=chat_request.session_id,
-            session_type=chat_request.session_type
-        )
-        
-        # セッションIDを保持
-        session_id = str(chat_session.id)
-        
-        # 新しいセッションの場合のみタイトルを更新
-        if not chat_request.session_id:
-            title = "自己分析: " + (chat_request.message[:20] + "..." if len(chat_request.message) > 20 else chat_request.message)
-            await update_session_title(
-                db, 
-                chat_session.id, 
-                current_user.id, 
-                title
-            )
-
-        # ユーザーメッセージを保存
-        await save_chat_message(
-            db=db,
-            session_id=session_id,
-            content=chat_request.message,
-            sender_id=current_user.id,
-            sender_type="USER"
-        )
-
-        # 自己分析用のシステムメッセージを設定
-        system_message = """あなたは自己分析を支援するAIアシスタントです。
-ユーザーの興味・関心や能力、性格的な特徴を深掘りするような質問をしてください。
-回答から学生の強み・適性を分析し、志望理由書作成に役立つ洞察を提供してください。
-会話の中で以下の領域について情報を収集してください：
-1. 学業的関心・得意科目
-2. 課外活動・特別な経験
-3. 価値観・将来の目標
-4. 性格的特徴・強み
-5. 志望理由の背景
-質問は一度に1〜2個までとし、ユーザーが深く考えられるよう促してください。
-すべての情報が集まったら、最終的に「あなたの自己分析レポート」としてまとめを提供してください。"""
-
-        # 既存のメッセージ履歴を取得
-        session_messages = await get_session_messages(
-            db, 
-            session_id, 
-            current_user.id,
-            chat_request.session_type
-        )
-        
-        formatted_history = [
-            {
-                "role": "assistant" if msg.sender_type == "AI" else "user",
-                "content": msg.content
-            }
-            for msg in session_messages
-        ]
-
-        messages = [
-            {"role": "system", "content": system_message},
-            *formatted_history,
-            {"role": "user", "content": chat_request.message}
-        ]
-
-        # OpenAI APIを呼び出して回答を取得
-        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-        response = await client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
-            messages=messages,
-            temperature=0.7,
-        )
-        
-        ai_response = response.choices[0].message.content
-
-        # AIの回答を保存
-        await save_chat_message(
-            db=db,
-            session_id=session_id,
-            content=ai_response,
-            sender_type="AI"
-        )
-
-        return {
-            "session_id": session_id,
-            "message": ai_response
-        }
-        
-    except Exception as e:
-        logger.error(f"自己分析チャットエラー: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="自己分析チャットの処理中にエラーが発生しました"
-        )
+    logger.warning("Self-analysis chat endpoint not fully implemented with async DB.")
+    raise HTTPException(status_code=501, detail="Not Implemented Yet")
 
 @router.get("/self-analysis/report")
 async def get_self_analysis_report(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('chat_session_read')),
+    db: AsyncSession = Depends(get_async_db)
 ):
-    """
-    自己分析の結果レポートを取得する
-    過去の自己分析チャットの履歴から分析レポートを生成
-    """
-    try:
-        # 自己分析のセッションを取得
-        sessions = await get_user_chat_sessions(
-            db,
-            current_user.id,
-            "SELF_ANALYSIS"
-        )
-        
-        if not sessions:
-            raise HTTPException(
-                status_code=404,
-                detail="自己分析の履歴が見つかりません。まず自己分析チャットを行ってください。"
-            )
-        
-        # 最新のセッションを使用
-        latest_session = sessions[0]
-        session_id = str(latest_session.id)
-        
-        # セッションのメッセージを取得
-        messages = await get_session_messages(
-            db,
-            session_id,
-            current_user.id,
-            "SELF_ANALYSIS"
-        )
-        
-        if len(messages) < 4:  # 十分な対話がない場合
-            raise HTTPException(
-                status_code=400,
-                detail="自己分析が不十分です。もう少し対話を続けてから再度お試しください。"
-            )
-        
-        # 対話履歴から分析用のコンテキストを作成
-        chat_history = "\n".join([
-            f"{'AI: ' if msg.sender_type == 'AI' else 'ユーザー: '}{msg.content}"
-            for msg in messages
-        ])
-        
-        # レポート生成のシステムプロンプト
-        system_message = """あなたは学生の自己分析を支援するAIアシスタントです。
-以下の対話履歴に基づいて、学生の自己分析レポートを作成してください。
-レポートには以下の項目を含めてください：
-1. 学生の強み（スキル、知識、性格的特徴）
-2. 興味・関心分野
-3. 価値観・大切にしていること
-4. 学業・研究における適性
-5. 推奨される学問分野や進路
-6. 志望理由書に活かせるポイント
-
-レポートは客観的かつ建設的な内容にし、学生の可能性を広げるような分析を心がけてください。
-"""
-        
-        # OpenAI APIでレポート生成
-        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-        response = await client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": f"以下は学生との自己分析対話です。\n\n{chat_history}\n\nこの対話に基づいて自己分析レポートを作成してください。"}
-            ],
-            temperature=0.5,
-        )
-        
-        report = response.choices[0].message.content
-        
-        return {
-            "report": report,
-            "session_id": session_id,
-            "created_at": datetime.now().isoformat()
-        }
-        
-    except HTTPException as he:
-        # 既存のHTTPExceptionはそのまま再発生
-        raise he
-    except Exception as e:
-        logger.error(f"自己分析レポート生成エラー: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="自己分析レポートの生成中にエラーが発生しました"
-        )
+    logger.warning("Self-analysis report endpoint not fully implemented with async DB.")
+    raise HTTPException(status_code=501, detail="Not Implemented Yet")
 
 @router.post("/admission")
 async def start_admission_chat(
     chat_request: ChatRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('chat_message_send')),
+    db: AsyncSession = Depends(get_async_db)
 ):
-    """
-    総合型選抜AIとのチャットを開始する
-    """
-    logger.info(f"総合型選抜チャット開始: {chat_request.message}")
-    
-    try:
-        # 総合型選抜用のセッションタイプを設定
-        chat_request.session_type = "ADMISSION"
-        
-        # チャットセッションを取得または作成
-        chat_session = await get_or_create_chat_session(
-            db=db,
-            user_id=current_user.id,
-            session_id=chat_request.session_id,
-            session_type=chat_request.session_type
-        )
-        
-        # セッションIDを保持
-        session_id = str(chat_session.id)
-        
-        # 新しいセッションの場合のみタイトルを更新
-        if not chat_request.session_id:
-            title = "総合型選抜: " + (chat_request.message[:20] + "..." if len(chat_request.message) > 20 else chat_request.message)
-            await update_session_title(
-                db, 
-                chat_session.id, 
-                current_user.id, 
-                title
-            )
-
-        # ユーザーメッセージを保存
-        await save_chat_message(
-            db=db,
-            session_id=session_id,
-            content=chat_request.message,
-            sender_id=current_user.id,
-            sender_type="USER"
-        )
-
-        # 総合型選抜用のシステムメッセージを設定
-        system_message = """あなたは総合型選抜（AO入試）に関するエキスパートAIアシスタントです。
-以下の点について詳しい情報と具体的なアドバイスを提供してください：
-1. 大学別の総合型選抜情報
-2. 出願書類（志望理由書、活動報告書など）の書き方
-3. 面接対策（想定質問と回答例）
-4. 小論文・課題対策
-5. 過去の合格事例や統計情報
-6. 出願スケジュール管理
-
-ユーザーの志望校や状況に合わせた具体的なアドバイスを心がけ、総合型選抜対策を包括的にサポートしてください。
-わからない質問には推測せず、正直に不明であることを伝えてください。"""
-
-        # 既存のメッセージ履歴を取得
-        session_messages = await get_session_messages(
-            db, 
-            session_id, 
-            current_user.id,
-            chat_request.session_type
-        )
-        
-        formatted_history = [
-            {
-                "role": "assistant" if msg.sender_type == "AI" else "user",
-                "content": msg.content
-            }
-            for msg in session_messages
-        ]
-
-        messages = [
-            {"role": "system", "content": system_message},
-            *formatted_history,
-            {"role": "user", "content": chat_request.message}
-        ]
-
-        # OpenAI APIを呼び出して回答を取得
-        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-        response = await client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
-            messages=messages,
-            temperature=0.7,
-        )
-        
-        ai_response = response.choices[0].message.content
-
-        # AIの回答を保存
-        await save_chat_message(
-            db=db,
-            session_id=session_id,
-            content=ai_response,
-            sender_type="AI"
-        )
-
-        return {
-            "session_id": session_id,
-            "message": ai_response
-        }
-        
-    except Exception as e:
-        logger.error(f"総合型選抜チャットエラー: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="総合型選抜チャットの処理中にエラーが発生しました"
-        )
+    logger.warning("Admission chat endpoint not fully implemented with async DB.")
+    raise HTTPException(status_code=501, detail="Not Implemented Yet")
 
 @router.post("/study-support")
 async def start_study_support_chat(
     chat_request: ChatRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('chat_message_send')),
+    db: AsyncSession = Depends(get_async_db)
 ):
-    """
-    汎用学習支援AIとのチャットを開始する
-    """
-    logger.info(f"学習支援チャット開始: {chat_request.message}")
-    
-    try:
-        # 学習支援用のセッションタイプを設定
-        chat_request.session_type = "STUDY_SUPPORT"
-        
-        # チャットセッションを取得または作成
-        chat_session = await get_or_create_chat_session(
-            db=db,
-            user_id=current_user.id,
-            session_id=chat_request.session_id,
-            session_type=chat_request.session_type
-        )
-        
-        # セッションIDを保持
-        session_id = str(chat_session.id)
-        
-        # 新しいセッションの場合のみタイトルを更新
-        if not chat_request.session_id:
-            title = "学習支援: " + (chat_request.message[:20] + "..." if len(chat_request.message) > 20 else chat_request.message)
-            await update_session_title(
-                db, 
-                chat_session.id, 
-                current_user.id, 
-                title
-            )
-
-        # ユーザーメッセージを保存
-        await save_chat_message(
-            db=db,
-            session_id=session_id,
-            content=chat_request.message,
-            sender_id=current_user.id,
-            sender_type="USER"
-        )
-
-        # 学習支援用のシステムメッセージを設定
-        system_message = """あなたは学習全般をサポートするAI教育アシスタントです。
-以下の点について正確な情報と効果的な学習方法を提供してください：
-1. 各教科（数学、英語、国語、理科、社会など）の学習方法
-2. 受験対策や効率的な勉強法
-3. 学習スケジュールの立て方
-4. 苦手科目の克服方法
-5. モチベーション維持のコツ
-6. 学習リソースの活用法
-
-ユーザーの学年や学力レベルに合わせた適切なアドバイスを心がけ、
-わかりやすく丁寧な説明を提供してください。
-必要に応じて例題や実践的なヒントも加えると効果的です。"""
-
-        # 既存のメッセージ履歴を取得
-        session_messages = await get_session_messages(
-            db, 
-            session_id, 
-            current_user.id,
-            chat_request.session_type
-        )
-        
-        formatted_history = [
-            {
-                "role": "assistant" if msg.sender_type == "AI" else "user",
-                "content": msg.content
-            }
-            for msg in session_messages
-        ]
-
-        messages = [
-            {"role": "system", "content": system_message},
-            *formatted_history,
-            {"role": "user", "content": chat_request.message}
-        ]
-
-        # OpenAI APIを呼び出して回答を取得
-        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-        response = await client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
-            messages=messages,
-            temperature=0.7,
-        )
-        
-        ai_response = response.choices[0].message.content
-
-        # AIの回答を保存
-        await save_chat_message(
-            db=db,
-            session_id=session_id,
-            content=ai_response,
-            sender_type="AI"
-        )
-
-        return {
-            "session_id": session_id,
-            "message": ai_response
-        }
-        
-    except Exception as e:
-        logger.error(f"学習支援チャットエラー: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="学習支援チャットの処理中にエラーが発生しました"
-        )
+    logger.warning("Study support chat endpoint not fully implemented with async DB.")
+    raise HTTPException(status_code=501, detail="Not Implemented Yet")
 
 @router.get("/analysis")
 async def get_chat_analysis(
     session_id: str = None,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('chat_session_read')),
+    db: AsyncSession = Depends(get_async_db)
+):
+    logger.warning("Chat analysis endpoint not fully implemented with async DB.")
+    raise HTTPException(status_code=501, detail="Not Implemented Yet")
+
+@router.post("/sessions/", response_model=ChatSession, status_code=status.HTTP_201_CREATED)
+async def create_new_chat_session(
+    *,
+    session_in: ChatSessionCreate,
+    db: AsyncSession = Depends(deps.get_async_db),
+    current_user: models.User = Depends(deps.get_current_user)
 ):
     """
-    AIチャット対話の分析結果を取得する
-    特定のセッションIDが提供されない場合は、すべてのチャットセッションの総合分析を返す
+    指定されたタイプ (リクエストボディの chat_type) の新しいチャットセッションを作成します。
     """
-    try:
-        if session_id:
-            # 特定のセッションの分析
-            messages = await get_session_messages(
-                db,
-                session_id,
-                current_user.id
-            )
-            
-            if not messages:
-                raise HTTPException(
-                    status_code=404,
-                    detail="指定されたチャットセッションが見つからないか、メッセージがありません"
-                )
-            
-            # セッションのタイプを確認
-            session = await get_or_create_chat_session(
-                db=db,
-                user_id=current_user.id,
-                session_id=session_id
-            )
-            session_type = session.session_type
-            
-            # 分析のためのメッセージ履歴を整形
-            chat_history = [
-                {
-                    "role": "assistant" if msg.sender_type == "AI" else "user",
-                    "content": msg.content,
-                    "timestamp": msg.created_at.isoformat()
-                }
-                for msg in messages
-            ]
-            
-            # 分析用のプロンプトを設定
-            analysis_prompt = f"""以下のチャット履歴を詳細に分析し、以下の点についてレポートを作成してください。
-チャットタイプ: {session_type}
+    session = await crud.chat.get_or_create_chat_session(
+        db=db,
+        user_id=current_user.id,
+        chat_type=session_in.chat_type.value
+    )
+    return session
 
-1. 主な話題やテーマ
-2. ユーザーの関心事や懸念点
-3. 特に重要な情報やインサイト
-4. フォローアップが必要な項目
-5. 次のステップの提案
+@router.get("/sessions/{session_id}", response_model=ChatSession)
+def read_chat_session(
+    session_id: UUID,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user)
+):
+    """
+    特定のチャットセッションの詳細を取得します。
+    メッセージは含まれません。メッセージ取得は別のエンドポイントを使用します。
+    """
+    session = crud.chat.get_chat_session(db=db, session_id=session_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+    if session.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this session")
+    return session
 
-チャット履歴:
-{str(chat_history)}
+@router.post("/sessions/{session_id}/messages/", response_model=ChatMessageSchema, status_code=status.HTTP_201_CREATED)
+async def create_new_chat_message(
+    session_id: UUID,
+    message_in: ChatMessageCreate,
+    db: AsyncSession = Depends(deps.get_async_db),
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """
+    チャットセッションに新しいメッセージを追加し、セッションタイプに応じた
+    AI Agent を呼び出して応答を生成・保存し、そのAI応答メッセージを返します。
+    """
+    # 1. セッションの存在と所有権を確認
+    session = await crud.chat.get_chat_session_by_id(db, session_id=session_id)
 
-分析結果はJSON形式ではなく、読みやすい日本語のテキスト形式で提供してください。
-"""
-        else:
-            # すべてのセッションの総合分析
-            sessions = await get_user_chat_sessions(
-                db,
-                current_user.id
-            )
-            
-            if not sessions:
-                raise HTTPException(
-                    status_code=404,
-                    detail="チャットセッションが見つかりません"
-                )
-            
-            # セッションの概要を収集
-            session_summaries = []
-            for session in sessions[:5]:  # 最新の5セッションのみ分析
-                messages = await get_session_messages(
-                    db,
-                    str(session.id),
-                    current_user.id
-                )
-                
-                if messages:
-                    session_summaries.append({
-                        "session_id": str(session.id),
-                        "title": session.title,
-                        "type": session.session_type,
-                        "created_at": session.created_at.isoformat(),
-                        "message_count": len(messages),
-                        "first_user_message": messages[0].content if messages[0].sender_type == "USER" else (messages[1].content if len(messages) > 1 and messages[1].sender_type == "USER" else "")
-                    })
-            
-            # 分析用のプロンプトを設定
-            analysis_prompt = f"""以下のユーザーのチャットセッション概要を分析し、全体的な傾向と洞察をレポートしてください。
-
-セッション概要:
-{str(session_summaries)}
-
-以下の点に注目して分析してください:
-1. ユーザーの主な関心領域
-2. 繰り返し出現するテーマや質問
-3. 時間経過に伴う関心の変化
-4. 学習パターンの特徴
-5. 改善のための提案
-6. 次に取り組むべき学習テーマの提案
-
-分析結果はJSON形式ではなく、読みやすい日本語のテキスト形式で提供してください。
-"""
-
-        # OpenAI APIを使用して分析を実行
-        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-        response = await client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "あなたはチャット対話を分析する専門家です。客観的かつ洞察に富んだ分析を提供してください。"},
-                {"role": "user", "content": analysis_prompt}
-            ],
-            temperature=0.5,
-        )
-        
-        analysis = response.choices[0].message.content
-        
-        return {
-            "analysis": analysis,
-            "created_at": datetime.now().isoformat(),
-            "session_id": session_id if session_id else None
-        }
-        
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logger.error(f"チャット分析エラー: {str(e)}")
+    if not session or session.user_id != current_user.id:
         raise HTTPException(
-            status_code=500,
-            detail="チャット分析の処理中にエラーが発生しました"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chat session not found or access denied",
         )
+
+    # 2. ユーザーメッセージをデータベースに保存
+    user_message = await crud.chat.save_chat_message(
+        db=db, 
+        session_id=session_id,
+        content=message_in.content,
+        user_id=current_user.id,
+        sender_type="USER"
+    )
+
+    # --- ここからAI応答生成 (Agent SDK使用 & タイプ別呼び出し) ---
+    ai_response_content = "AI応答の生成中にエラーが発生しました。" # デフォルトのエラーメッセージ
+    try:
+        # 3. セッションタイプに応じて呼び出すAgent関数を選択
+        agent_function = None
+        if session.chat_type == ChatType.SELF_ANALYSIS:
+            agent_function = get_self_analysis_agent_response
+        elif session.chat_type == ChatType.ADMISSION:
+            agent_function = get_admission_agent_response
+        elif session.chat_type == ChatType.STUDY_SUPPORT:
+            agent_function = get_study_support_agent_response
+        # elif session.chat_type == ChatType.GENERAL: # GENERAL の場合の処理も必要？
+        #     # agent_function = get_general_agent_response # (もしあれば)
+        #     pass # GENERAL 用の Agent がなければ何もしないかエラー
+        else:
+            # 未対応のチャットタイプの場合 (現状 GENERAL などが該当)
+            # 必要であれば GENERAL 用の処理を追加する
+            logger.warning(f"AI agent call not implemented for chat type '{session.chat_type}' in session {session_id}")
+            # raise HTTPException(status_code=501, detail=f"AI agent for chat type '{session.chat_type}' is not implemented.")
+            # 一旦、AI応答なしで進めるか、固定メッセージを返すなど検討
+            ai_response_content = "このチャットタイプに対するAI応答は現在実装されていません。"
+            # この場合は agent_function は None のまま
+
+        # 4. 選択したAgent関数を呼び出して応答を取得
+        if agent_function:
+            logger.info(f"Calling {agent_function.__name__} for session {session_id} (type: {session.chat_type})...")
+            # TODO: 会話履歴 (history) をAgentに渡す処理を追加する
+            # 現状はユーザーの最後のメッセージのみを渡している
+            history = await crud.chat.get_session_messages(db, str(session_id), current_user.id, session.chat_type.value)
+            formatted_history = [
+                {"role": "assistant" if msg.sender == "AI" else "user", "content": msg.content}
+                for msg in history # user_message は含めない (agent_function の引数で渡すため)
+                if msg.id != user_message.id # 保存したばかりのユーザーメッセージは除く
+            ]
+            ai_response = await agent_function(
+                user_input=user_message.content,
+                history=formatted_history # 会話履歴を渡す (Agent SDK側の対応確認が必要)
+            )
+
+            if ai_response is not None:
+                ai_response_content = ai_response
+            else:
+                 # AI AgentがNoneを返した場合 (サービス側の関数内でログ出力・エラー応答済みのはず)
+                 logger.warning(f"AI Agent ({agent_function.__name__}) returned None for session {session_id}")
+                 ai_response_content = "申し訳ありません、応答を生成できませんでした。" # フォールバック
+        # else: # agent_function が None の場合の ai_response_content は上で設定済み
+        #     pass
+
+    except HTTPException as http_exc:
+        # chat_type が未対応の場合など、意図したHTTPエラーはそのままraise
+        raise http_exc
+    except Exception as e:
+        logger.error(f"Error during AI Agent execution for session {session_id} (type: {session.chat_type}): {e}", exc_info=True)
+        ai_response_content = f"{session.chat_type.name if session.chat_type else 'AI'} の実行中に内部エラーが発生しました。"
+        # AI実行エラーが発生しても、AIメッセージレコード自体は保存する (エラー内容を含む)
+
+    # 5. AIの応答をデータベースに保存
+    logger.info(f"Saving AI Agent message for session {session_id} (type: {session.chat_type})...")
+    ai_message = await crud.chat.save_chat_message(
+        db=db, 
+        session_id=session_id,
+        content=ai_response_content,
+        sender_type="AI" # sender_type を AI に
+        # sender_id は AI なので不要
+    )
+    logger.info(f"AI Agent message saved (ID: {ai_message.id})")
+
+    return ai_message
+
+@router.get("/sessions/{session_id}/messages/", response_model=List[ChatMessageSchema])
+async def read_chat_messages(
+    session_id: UUID,
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(deps.get_async_db),
+    current_user: models.User = Depends(deps.get_current_user)
+):
+    """
+    指定されたチャットセッションのメッセージ履歴を取得します。
+    """
+    # セッションの存在と所有権を確認 (crud 層で行う想定だったが、ここで一旦行う)
+    session = await crud.chat.get_chat_session_by_id(db, session_id=session_id)
+
+    if not session or session.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chat session not found or access denied",
+        )
+
+    # messages = crud.chat.get_chat_messages(db, session_id=session_id, skip=skip, limit=limit)
+    # 非同期版の関数を呼び出し、session_type も渡す
+    messages = await crud.chat.get_session_messages(
+        db=db,
+        session_id=str(session_id),
+        user_id=current_user.id,
+        chat_type=session.chat_type.value
+    )
+
+    # スキップとリミットの適用 (get_session_messages がサポートしない場合)
+    # messages = messages[skip : skip + limit]
+
+    return messages

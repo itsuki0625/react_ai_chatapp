@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { StyledH1, StyledH2 } from '@/components/common/CustomHeadings';
 import { SubscriptionPlan, CampaignCodeVerificationResult, Subscription, VerifyCampaignCodeResponse } from '@/types/subscription';
 import { subscriptionService } from '@/services/subscriptionService';
@@ -10,101 +11,34 @@ import { formatAmount } from '@/utils/formatting';
 import { Button } from '@/components/common/Button';
 import toast from 'react-hot-toast';
 
-interface SubscriptionPlansPageProps {
-  isAuthenticated?: boolean;
-}
-
-export const SubscriptionPlansPage: React.FC<SubscriptionPlansPageProps> = ({ isAuthenticated: initialIsAuthenticated = false }) => {
+export const SubscriptionPlansPage: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
-  // 認証状態を内部でも管理（props更新にも反応できるように）
-  const [isAuthenticated, setIsAuthenticated] = useState(initialIsAuthenticated);
-  
-  // 内部状態管理
+  const { data: session, status } = useSession();
+  const isAuthenticated = status === 'authenticated';
+
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [currentSubscription, setCurrentSubscription] = useState<UserSubscription | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [campaignCode, setCampaignCode] = useState<string>('');
   const [campaignCodeVerificationResult, setCampaignCodeVerificationResult] = useState<CampaignCodeVerificationResult | null>(null);
 
-  // ローディング状態
-  const [isLoading, setIsLoading] = useState(false);
+  const [isPageLoading, setIsPageLoading] = useState(true);
   const [isLoadingPlans, setIsLoadingPlans] = useState(true);
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(true);
   const [isCreatingCheckoutSession, setIsCreatingCheckoutSession] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
-  // エラー状態
   const [error, setError] = useState<string | null>(null);
-  const [hasSessionCookie, setHasSessionCookie] = useState(false);
-  const [prevAuthState, setPrevAuthState] = useState(initialIsAuthenticated);
 
-  // 初期レンダリング時にpropsからの認証状態を設定
   useEffect(() => {
-    // 前回の認証状態と同じ場合はスキップして無限ループを回避
-    if (initialIsAuthenticated !== prevAuthState) {
-      console.log('SubscriptionPlansPage - initialIsAuthenticated changed:', initialIsAuthenticated);
-      console.log('SubscriptionPlansPage - Current isAuthenticated state:', isAuthenticated);
-      
-      setIsAuthenticated(initialIsAuthenticated);
-      setPrevAuthState(initialIsAuthenticated);
+    if (status === 'loading' || isLoadingPlans || isLoadingSubscription) {
+      setIsPageLoading(true);
+    } else {
+      setIsPageLoading(false);
     }
-  }, [initialIsAuthenticated, isAuthenticated, prevAuthState]);
+  }, [status, isLoadingPlans, isLoadingSubscription]);
 
-  // クライアントサイドでのみセッションクッキーをチェック
-  const checkSessionCookie = useCallback(() => {
-    if (typeof window === 'undefined') {
-      return false;
-    }
-    
-    try {
-      const hasCookie = document.cookie
-        .split(';')
-        .map(cookie => cookie.trim())
-        .some(cookie => cookie.startsWith('session='));
-      
-      console.log('SubscriptionPlansPage - checkSessionCookie result:', hasCookie);
-      setHasSessionCookie(hasCookie);
-      return hasCookie;
-    } catch (error) {
-      console.error('SubscriptionPlansPage - Error checking session cookie:', error);
-      return false;
-    }
-  }, []);
-
-  // マウント時にセッションクッキーを確認
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      checkSessionCookie();
-    }
-  }, [checkSessionCookie]);
-
-  // セッションクッキーの変更を監視
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    
-    // クッキー変更を検出するための定期チェック（頻度を下げて5秒ごと）
-    const intervalId = setInterval(() => {
-      const hasCookie = checkSessionCookie();
-      
-      // Cookieの状態が変わった場合にのみ認証状態を更新
-      if (hasCookie && !isAuthenticated) {
-        console.log('SubscriptionPlansPage - Cookie check: Session cookie exists but isAuthenticated is false, updating auth state');
-        setIsAuthenticated(true);
-        setPrevAuthState(true);
-      } else if (!hasCookie && isAuthenticated && !initialIsAuthenticated) {
-        // 親からの認証状態が優先。親がfalseの場合にのみ更新
-        console.log('SubscriptionPlansPage - Cookie check: No session cookie but isAuthenticated is true, updating auth state');
-        setIsAuthenticated(false);
-        setPrevAuthState(false);
-      }
-    }, 5000); // 5秒間隔に変更
-    
-    return () => clearInterval(intervalId);
-  }, [checkSessionCookie, isAuthenticated, initialIsAuthenticated]);
-
-  // クエリパラメータから初期選択プランとキャンペーンコードを取得
   useEffect(() => {
     const planId = searchParams?.get('plan');
     const code = searchParams?.get('code');
@@ -113,109 +47,94 @@ export const SubscriptionPlansPage: React.FC<SubscriptionPlansPageProps> = ({ is
       setCampaignCode(code);
     }
     
-    // 初期データ取得
-    fetchData();
+    // fetchData(); // fetchData は status 変更時に呼ばれる
     
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  // 認証状態が変わった時にデータを再取得
   useEffect(() => {
-    console.log('SubscriptionPlansPage - Authentication state changed:', isAuthenticated);
-    
-    // 認証状態が変わった場合はデータを再取得
-    fetchData();
-    
+    console.log('SubscriptionPlansPage - Authentication status changed:', status);
+    // status が 'loading' でない場合に fetchData を呼び出す（二重呼び出し防止）
+    if (status !== 'loading') {
+        fetchData();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  }, [status]);
 
-  // データ取得関数
   const fetchData = useCallback(async () => {
+    setIsLoadingPlans(true);
+    setIsLoadingSubscription(true);
+    setError(null);
+    setCurrentSubscription(null);
+
     try {
-      // サブスクリプションプランの取得（認証不要）
-      setIsLoadingPlans(true);
       const fetchedPlans = await subscriptionService.getSubscriptionPlans();
-      
-      // デバッグログ：取得したプランの詳細を表示
-      console.log('Fetched Subscription Plans from Stripe:', JSON.stringify(fetchedPlans, null, 2));
-      
+      console.log('Fetched Subscription Plans:', JSON.stringify(fetchedPlans, null, 2));
       setPlans(fetchedPlans);
-      
-      // クエリパラメータで指定されたプランIDがあれば、対応するプランを選択
+
       const planId = searchParams?.get('plan');
       if (planId && fetchedPlans.length > 0) {
-        // プランIDは価格IDと同じになるため、どちらでも検索できるように
         const plan = fetchedPlans.find(p => p.id === planId || p.price_id === planId);
-        if (plan) {
-          setSelectedPlan(plan);
-        } else {
-          // 指定されたプランIDが見つからない場合は最初のプランを選択
-          setSelectedPlan(fetchedPlans[0]);
-        }
+        setSelectedPlan(plan || fetchedPlans[0]);
       } else if (fetchedPlans.length > 0) {
-        // クエリパラメータがない場合は最初のプランを選択
         setSelectedPlan(fetchedPlans[0]);
       }
+      setIsLoadingPlans(false);
 
-      // ユーザーのサブスクリプション情報を取得（認証が必要）
-      if (isAuthenticated) {
-        setIsLoadingSubscription(true);
+      if (status === 'authenticated') {
+        console.log('User is authenticated, fetching user subscription...');
         try {
           const subscription = await subscriptionService.getUserSubscription();
-          // SubscriptionからUserSubscriptionに変換
+          console.log('Fetched user subscription result:', subscription);
           if (subscription) {
-            const userSubscription: UserSubscription = {
-              id: subscription.id,
-              user_id: subscription.user_id,
-              plan_name: subscription.plan_name,
-              status: subscription.status,
-              stripe_customer_id: subscription.stripe_customer_id || undefined,
-              stripe_subscription_id: subscription.stripe_subscription_id || undefined,
-              current_period_start: subscription.current_period_start || undefined,
-              current_period_end: subscription.current_period_end || undefined,
-              cancel_at: subscription.cancel_at || undefined,
-              canceled_at: subscription.canceled_at || undefined,
-              is_active: subscription.is_active,
-              created_at: subscription.created_at,
-              updated_at: subscription.updated_at
-            };
-            setCurrentSubscription(userSubscription);
+             const subData = subscription as Subscription & { price_id?: string };
+             const userSubscription: UserSubscription = {
+               id: subData.id,
+               user_id: subData.user_id,
+               plan_name: subData.plan_name,
+               price_id: subData.price_id,
+               status: subData.status,
+               stripe_customer_id: subData.stripe_customer_id || undefined,
+               stripe_subscription_id: subData.stripe_subscription_id || undefined,
+               current_period_start: subData.current_period_start || undefined,
+               current_period_end: subData.current_period_end || undefined,
+               cancel_at: subData.cancel_at || undefined,
+               canceled_at: subData.canceled_at || undefined,
+               is_active: subData.is_active,
+               created_at: subData.created_at,
+               updated_at: subData.updated_at
+             };
+             setCurrentSubscription(userSubscription);
+             console.log('Set currentSubscription state:', userSubscription);
           } else {
-            setCurrentSubscription(null);
+            console.log('No active subscription found.');
           }
         } catch (subscriptionError) {
           console.error('Error fetching user subscription:', subscriptionError);
-          // サブスクリプション取得エラーはユーザーエクスペリエンスを中断しない
         } finally {
           setIsLoadingSubscription(false);
         }
       } else {
-        // 未認証の場合はサブスクリプション情報をクリア
-        setCurrentSubscription(null);
+        console.log('User not authenticated, skipping subscription fetch.');
         setIsLoadingSubscription(false);
       }
     } catch (error) {
-      console.error('Error fetching subscription data:', error);
-      setError('サブスクリプションデータの取得中にエラーが発生しました。');
-    } finally {
-      setIsLoadingPlans(false);
-      setIsLoading(false);
+      console.error('Error fetching data:', error);
+      setError('データの取得中にエラーが発生しました。');
+       setIsLoadingPlans(false);
+       setIsLoadingSubscription(false);
     }
-  }, [isAuthenticated, searchParams]);
+  }, [status]);
 
-  // プラン選択ハンドラ
   const handleSelectPlan = (plan: SubscriptionPlan) => {
     setSelectedPlan(plan);
-    // 新しいプランを選択したらキャンペーンコード検証結果をリセット
     setCampaignCodeVerificationResult(null);
     setCampaignCode('');
   };
 
-  // キャンペーンコード検証ハンドラ
   const handleVerifyCampaignCode = async (code: string, planId: string) => {
     try {
       const result = await subscriptionService.verifyCampaignCode(code, planId);
-      // VerifyCampaignCodeResponseからCampaignCodeVerificationResultに変換
       const verificationResult: CampaignCodeVerificationResult = {
         ...result,
         is_valid: result.valid
@@ -229,26 +148,23 @@ export const SubscriptionPlansPage: React.FC<SubscriptionPlansPageProps> = ({ is
     }
   };
 
-  // キャンペーンコード適用ハンドラ
   const handleApplyCampaignCode = (result: VerifyCampaignCodeResponse | CampaignCodeVerificationResult) => {
-    // 必要に応じて処理を追加
     console.log('キャンペーンコードが適用されました', result);
   };
 
-  // チェックアウトに進むハンドラ
   const handleProceedToCheckout = async () => {
     setCheckoutLoading(true);
-    console.log('SubscriptionPlansPage - handleProceedToCheckout called', { 
-      isAuthenticated, 
+    console.log('SubscriptionPlansPage - handleProceedToCheckout called', {
+      status,
       selectedPlan
     });
     
     try {
-      // isAuthenticatedプロップを信頼する（親コンポーネントで決定された認証状態）
-      if (!isAuthenticated) {
+      if (status !== 'authenticated') {
         console.log('SubscriptionPlansPage - User not authenticated, redirecting to login');
-        const returnUrl = encodeURIComponent(`/subscription/plans?plan=${selectedPlan?.id || ''}`);
+        const returnUrl = encodeURIComponent(`/subscription/plans?plan=${selectedPlan?.price_id || ''}`);
         window.location.href = `/login?redirect=${returnUrl}`;
+        setCheckoutLoading(false);
         return;
       }
 
@@ -258,31 +174,25 @@ export const SubscriptionPlansPage: React.FC<SubscriptionPlansPageProps> = ({ is
         return;
       }
 
-      setIsCreatingCheckoutSession(true);
       setError(null);
 
-      // リダイレクトURLの設定
       const successUrl = `${window.location.origin}/subscription/success?session_id={CHECKOUT_SESSION_ID}`;
       const cancelUrl = `${window.location.origin}/subscription/plans`;
 
-      // Stripeの価格IDを使用（プランIDと価格IDは同一になる）
       const priceId = selectedPlan.price_id;
       
       console.log('チェックアウトセッション作成リクエスト:', {
         price_id: priceId,
-        // plan_idとprice_idは同じ値を使用（DBテーブルなし）
         plan_id: priceId
       });
 
       try {
-        // チェックアウトセッションの作成
         const response = await subscriptionService.createCheckoutSession(
           priceId,
           successUrl,
           cancelUrl,
           {
-            user_id: currentSubscription?.user_id || '',
-            // メタデータとして保持する必要がある場合はprice_idを使用
+            user_id: session?.user?.id || '',
             price_id: priceId
           },
           campaignCodeVerificationResult?.is_valid && campaignCode 
@@ -294,7 +204,6 @@ export const SubscriptionPlansPage: React.FC<SubscriptionPlansPageProps> = ({ is
             : undefined
         );
 
-        // 成功した場合、Stripeのチェックアウトページへリダイレクト
         if (response) {
           window.location.href = response;
         } else {
@@ -302,20 +211,16 @@ export const SubscriptionPlansPage: React.FC<SubscriptionPlansPageProps> = ({ is
           console.error('チェックアウトセッションの作成に失敗しました。URLがありません。');
         }
       } catch (apiError) {
-        // API呼び出しのエラー処理
         console.error('チェックアウトセッション作成APIエラー:', apiError);
         
-        // エラーメッセージを取得
         let errorMessage = 'チェックアウトセッションの作成に失敗しました。';
         
         if (apiError instanceof Error) {
-          // 認証エラーの特別なハンドリング
           if (apiError.message.includes('認証') || apiError.message.includes('ログイン')) {
             toast.error('認証セッションが切れています。再ログインしてください。');
             
-            // 少し待ってからログインページにリダイレクト
             setTimeout(() => {
-              const returnUrl = encodeURIComponent(`/subscription/plans?plan=${selectedPlan?.id || ''}`);
+              const returnUrl = encodeURIComponent(`/subscription/plans?plan=${selectedPlan?.price_id || ''}`);
               window.location.href = `/login?redirect=${returnUrl}`;
             }, 1500);
             return;
@@ -330,13 +235,11 @@ export const SubscriptionPlansPage: React.FC<SubscriptionPlansPageProps> = ({ is
       console.error('チェックアウトセッション作成中の予期せぬエラー:', error);
       toast.error('チェックアウトセッションの作成に失敗しました。');
     } finally {
-      setIsCreatingCheckoutSession(false);
       setCheckoutLoading(false);
     }
   };
 
-  // ローディング中の表示
-  if (isLoadingPlans) {
+  if (isPageLoading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
         <LoadingSpinner />
@@ -344,7 +247,6 @@ export const SubscriptionPlansPage: React.FC<SubscriptionPlansPageProps> = ({ is
     );
   }
 
-  // エラー時の表示
   if (error) {
     return (
       <div className="text-center py-10">
@@ -362,8 +264,7 @@ export const SubscriptionPlansPage: React.FC<SubscriptionPlansPageProps> = ({ is
     );
   }
 
-  // 現在のサブスクリプションがある場合の表示
-  if (currentSubscription) {
+  if (status === 'authenticated' && currentSubscription && currentSubscription.is_active) {
     return (
       <div className="max-w-4xl mx-auto p-6">
         <StyledH1 className="mb-6">サブスクリプション</StyledH1>
@@ -373,18 +274,23 @@ export const SubscriptionPlansPage: React.FC<SubscriptionPlansPageProps> = ({ is
             <span className="font-semibold">プラン:</span> {currentSubscription.plan_name}
           </p>
           <p className="mb-2">
-            <span className="font-semibold">ステータス:</span> {currentSubscription.status === 'active' ? '有効' : '無効'}
+            <span className="font-semibold">ステータス:</span> {currentSubscription.status === 'active' ? '有効' : currentSubscription.status}
           </p>
           {currentSubscription.current_period_end && (
             <p className="mb-2">
               <span className="font-semibold">次回更新日:</span> {new Date(currentSubscription.current_period_end).toLocaleDateString('ja-JP')}
             </p>
           )}
+          {currentSubscription.cancel_at && (
+             <p className="mb-2 text-yellow-600">
+               <span className="font-semibold">キャンセル予定日:</span> {new Date(currentSubscription.cancel_at).toLocaleDateString('ja-JP')}
+             </p>
+           )}
           <p className="mt-4 text-gray-600">
             サブスクリプションの管理や解約は「マイページ」から行うことができます。
           </p>
           <Button 
-            onClick={() => router.push('/user/profile')}
+            onClick={() => router.push('/settings/profile')}
             className="mt-4"
           >
             マイページへ
@@ -394,44 +300,81 @@ export const SubscriptionPlansPage: React.FC<SubscriptionPlansPageProps> = ({ is
     );
   }
 
-  // プランリストと選択されたプランの表示
   return (
     <div className="max-w-4xl mx-auto p-6">
       <StyledH1 className="mb-6">サブスクリプションプラン</StyledH1>
 
-      {/* プラン選択部分 */}
       <div className="mb-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {plans.map((plan) => (
-          <div
-            key={plan.id}
-            className={`border rounded-lg p-6 cursor-pointer transition-all duration-300 ${
-              selectedPlan?.id === plan.id
-                ? 'border-blue-500 shadow-lg bg-blue-50'
-                : 'border-gray-200 hover:border-blue-300 hover:shadow'
-            }`}
-            onClick={() => handleSelectPlan(plan)}
-          >
-            <h3 className="text-xl font-semibold mb-2">{plan.name}</h3>
-            <p className="text-2xl font-bold mb-3">
-              {formatAmount(plan.amount)} <span className="text-sm font-normal">/ 月</span>
-            </p>
-            <p className="text-gray-600 mb-4">{plan.description}</p>
-            {plan.features && plan.features.length > 0 && (
-              <ul className="mb-4">
-                {plan.features.map((feature, index) => (
-                  <li key={index} className="flex items-start mb-2">
-                    <span className="text-green-500 mr-2">✓</span>
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ))}
+        {(() => { console.log('[Render Debug] currentSubscription:', currentSubscription); return null; })()}
+
+        {plans.map((plan) => {
+           const isActiveSub = currentSubscription ? currentSubscription.is_active : false;
+           const currentSubPriceId = currentSubscription?.price_id;
+           const planPriceId = plan.price_id;
+           const isCurrentPlan = isActiveSub && !!currentSubPriceId && currentSubPriceId === planPriceId;
+
+           console.log(`[Render Debug] Plan: ${plan.name} (${planPriceId}), IsCurrent: ${isCurrentPlan}`);
+
+           return (
+             <div
+               key={plan.id}
+               className={`border rounded-lg p-6 cursor-pointer transition-all duration-300 ${
+                 selectedPlan?.price_id === plan.price_id
+                   ? 'border-blue-500 shadow-lg bg-blue-50'
+                   : 'border-gray-200 hover:border-blue-300 hover:shadow'
+               } ${isCurrentPlan ? '!border-green-500 !bg-green-50 !cursor-default' : ''}`}
+               onClick={() => !isCurrentPlan && handleSelectPlan(plan)}
+             >
+               <h3 className="text-xl font-semibold mb-2">{plan.name}</h3>
+               <p className="text-2xl font-bold mb-3">
+                 {formatAmount(plan.amount)} <span className="text-sm font-normal">/ 月</span>
+               </p>
+               <p className="text-gray-600 mb-4">{plan.description}</p>
+
+               {isCurrentPlan && (
+                 <div className="mb-4 text-center">
+                   <span className="text-sm font-bold text-green-700 bg-green-100 px-3 py-1 rounded-full">
+                     現在のプラン
+                   </span>
+                 </div>
+               )}
+
+               {plan.features && plan.features.length > 0 && (
+                 <ul className="mb-4">
+                   {plan.features.map((feature, index) => (
+                     <li key={index} className="flex items-start mb-2">
+                       <span className="text-green-500 mr-2">✓</span>
+                       <span>{feature}</span>
+                     </li>
+                   ))}
+                 </ul>
+               )}
+
+               {!isCurrentPlan && selectedPlan?.price_id !== plan.price_id && (
+                 <Button
+                   variant="outline"
+                   className="w-full mt-4"
+                   onClick={(e) => { e.stopPropagation(); handleSelectPlan(plan); }}
+                   disabled={isPageLoading}
+                 >
+                   このプランを選択
+                 </Button>
+               )}
+                  {!isCurrentPlan && selectedPlan?.price_id === plan.price_id && (
+                    <Button
+                      variant="primary"
+                      className="w-full mt-4 bg-blue-600 text-white"
+                      disabled={true}
+                    >
+                      選択中
+                    </Button>
+                  )}
+             </div>
+           );
+         })}
       </div>
 
-      {/* 選択されたプラン情報と支払いボタン */}
-      {selectedPlan && (
+      {selectedPlan && (!currentSubscription || !currentSubscription.is_active) && (
         <div className="bg-white rounded-lg shadow-lg p-6 border border-gray-200">
           <StyledH2 className="mb-4">選択したプラン</StyledH2>
           <div className="mb-4">
@@ -455,10 +398,9 @@ export const SubscriptionPlansPage: React.FC<SubscriptionPlansPageProps> = ({ is
             </p>
           </div>
 
-          {/* キャンペーンコードフォーム */}
           <div className="mb-6">
             <CampaignCodeForm
-              onSubmit={(code) => handleVerifyCampaignCode(code, selectedPlan.id)}
+              onSubmit={(code) => handleVerifyCampaignCode(code, selectedPlan.price_id)}
               onApply={handleApplyCampaignCode}
               initialCode={campaignCode}
               onCodeChange={setCampaignCode}
@@ -467,15 +409,14 @@ export const SubscriptionPlansPage: React.FC<SubscriptionPlansPageProps> = ({ is
             />
           </div>
 
-          {/* チェックアウトボタン */}
           <button
-            className={`w-full text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center ${
-              isAuthenticated 
-                ? 'bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800' 
+            className={`w-full text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors duration-200 ${
+              status === 'authenticated'
+                ? (checkoutLoading ? 'bg-gray-500' : 'bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800')
                 : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'
             }`}
             onClick={handleProceedToCheckout}
-            disabled={checkoutLoading || !selectedPlan}
+            disabled={checkoutLoading || !selectedPlan || isPageLoading}
           >
             {checkoutLoading ? (
               <div className="flex items-center">
@@ -485,7 +426,7 @@ export const SubscriptionPlansPage: React.FC<SubscriptionPlansPageProps> = ({ is
                 </svg>
                 処理中...
               </div>
-            ) : isAuthenticated ? (
+            ) : status === 'authenticated' ? (
               'お支払いに進む'
             ) : (
               'ログインして続ける'

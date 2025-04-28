@@ -1,226 +1,317 @@
-import React, { useState, useEffect } from 'react';
-import { User, UserRole } from '@/types/user';
-import { UserCreatePayload, UserUpdatePayload } from '@/services/adminService';
+'use client';
 
-// --- formData の型定義を追加 ---
-interface FormDataState {
-  email?: string;
-  name?: string;
-  password?: string;
-  role?: 'admin' | 'teacher' | 'student'; // 英語キーを使用
-  status?: 'active' | 'inactive' | 'pending' | 'unpaid'; // 'unpaid' を追加
-}
-// --- ここまで ---
+import React, { useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import { User } from '@/types/user';
+import { RoleRead } from '@/types/role';
+import { UserCreatePayload, UserUpdatePayload } from '@/services/adminService';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { toast } from 'react-hot-toast';
+
+// Validation Schema - Ensure it matches form fields
+const userFormSchema = z.object({
+  name: z.string().min(1, { message: "名前は必須です。" }),
+  email: z.string().email({ message: "有効なメールアドレスを入力してください。" }),
+  role: z.string().min(1, { message: "ロールを選択してください。" }), // API expects string role name
+  status: z.enum(['active', 'inactive', 'pending', 'unpaid']), // Ensure 'unpaid' is included
+  password: z.string().optional(),
+  confirmPassword: z.string().optional(),
+}).refine(data => {
+  // Password confirmation check
+  if (data.password && data.password !== data.confirmPassword) {
+    return false;
+  }
+  return true;
+}, {
+  message: "パスワードが一致しません。",
+  path: ["confirmPassword"],
+});
+
+type UserFormValues = z.infer<typeof userFormSchema>;
 
 interface UserDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (userData: UserCreatePayload | UserUpdatePayload) => Promise<void>;
   user: User | null;
   mode: 'view' | 'edit' | 'add';
+  onSave: (data: UserCreatePayload | UserUpdatePayload) => void;
+  availableRoles: RoleRead[];
+  isLoadingRoles: boolean;
 }
+
+// Helper: API Payload
+const createSavePayload = (data: UserFormValues): UserCreatePayload | UserUpdatePayload => {
+    // --- 型定義を adminService.ts から参照 ---
+    type ExpectedRole = UserCreatePayload['role'];
+    type ExpectedStatus = UserCreatePayload['status'];
+    // --- ここまで ---
+
+    const payload: Partial<UserCreatePayload & UserUpdatePayload> = {
+        // --- FIX: Map form 'name' to backend 'full_name' ---
+        full_name: data.name,
+        // -----------------------------------------------------
+        email: data.email,
+        role: data.role as ExpectedRole, // Role from form should already match expected strings
+        status: data.status as ExpectedStatus, // Status from form needs to match expected strings ('unpaid' がもしバックエンドで非対応なら別途対応要)
+    };
+    if (data.password) {
+        payload.password = data.password;
+    }
+    // The final object should conform to either Create or Update payload
+    return payload as UserCreatePayload | UserUpdatePayload;
+};
+
+// Helper: Date Formatter (using Intl.DateTimeFormat)
+const formatModalDate = (dateString: string | undefined | null): string => {
+    if (!dateString) return '-';
+    try {
+        const date = new Date(dateString.endsWith('Z') ? dateString : dateString + 'Z');
+        if (isNaN(date.getTime())) {
+            return dateString;
+        }
+        return new Intl.DateTimeFormat('ja-JP', {
+             year: 'numeric', month: 'numeric', day: 'numeric',
+             hour: 'numeric', minute: 'numeric', second: 'numeric',
+             hour12: false,
+             timeZone: 'Asia/Tokyo'
+        }).format(date);
+    } catch (e) {
+        console.error("Modal Date formatting error:", e);
+        return dateString;
+    }
+};
 
 const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
   isOpen,
   onClose,
-  onSave,
   user,
   mode,
+  onSave,
+  availableRoles,
+  isLoadingRoles,
 }) => {
-  const [formData, setFormData] = useState<FormDataState>({});
-  const [isSaving, setIsSaving] = useState(false);
+  const isViewMode = mode === 'view';
+  const isAddMode = mode === 'add';
 
-  // 日本語ロール名を英語キーに変換するマップ
-  const roleJpToEn: Record<string, 'admin' | 'teacher' | 'student'> = {
-    "管理者": 'admin',
-    "教員": 'teacher',
-    "生徒": 'student',
-  };
-  // 英語キーを日本語ロール名に変換するマップ (APIへ送信する際に使用)
-  const roleEnToJp: Record<'admin' | 'teacher' | 'student', string> = {
-    admin: '管理者',
-    teacher: '教員',
-    student: '生徒',
-  };
+  // Correctly destructure errors from formState
+  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<UserFormValues>({
+    resolver: zodResolver(userFormSchema),
+    defaultValues: {
+      name: '', email: '', role: '', status: 'pending', password: '', confirmPassword: '',
+    }
+  });
 
+  // Reset form effect (no changes needed here)
   useEffect(() => {
-    if (mode === 'add') {
-      setFormData({
-        role: 'student', // デフォルトは英語キー
-        status: 'pending',
-      });
-    } else if (user) {
-      // user.role (日本語) を英語キーに変換して設定
-      const roleKey = roleJpToEn[user.role] || 'student'; // 見つからない場合は student にフォールバック
-      setFormData({
-        email: user.email,
-        name: user.name,
-        role: roleKey, // 英語キーを設定
-        status: user.status,
-      });
+    if (isOpen) {
+      if (mode === 'edit' && user) {
+        reset({
+          name: user.name, email: user.email, role: user.role, status: user.status,
+          password: '', confirmPassword: '',
+        });
+      } else if (mode === 'add') {
+        reset({
+          name: '', email: '', role: '', status: 'pending',
+          password: '', confirmPassword: '',
+        });
+      } else {
+         reset({}); // Reset for view mode or unexpected cases
+      }
     }
-  }, [isOpen, mode, user]);
+  }, [isOpen, user, mode, reset]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+  // onSubmit handler - Explicitly check mode is not 'view'
+  const onSubmit = (data: UserFormValues) => {
+    console.log("Form Data:", data);
+    // Prevent submission in view mode
+    if (mode === 'view') {
+        console.error("onSubmit called in view mode, aborting.");
+        toast.error("不正な操作です。"); // Inform user
+        return;
+    }
+    // Check password requirement for add mode
+    if (isAddMode && !data.password) {
+      toast.error('新規作成時はパスワードが必須です。');
+      return;
+    }
+    // Now mode is confirmed 'add' or 'edit'
+    const payload = createSavePayload(data); // Pass only data
+
+    // --- ★デバッグ用ログ追加: 送信するペイロードの内容を確認 ---
+    console.log("Payload being sent:", JSON.stringify(payload, null, 2));
+    console.log("Role value being sent:", payload.role); // role の値を具体的に確認
+    // ----------------------------------------------------
+
+    onSave(payload);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
-    try {
-      if (!formData.email || !formData.name) {
-         alert('メールアドレスと名前は必須です。');
-         setIsSaving(false);
-         return;
-      }
-      if (mode === 'add' && !formData.password) {
-          alert('新規作成時はパスワードが必須です。');
-          setIsSaving(false);
-          return;
-      }
-      // formDataをAPIのスキーマに合わせてマッピング
-      const payload: any = {
-        email: formData.email!,
-        full_name: formData.name!,
-        role: roleEnToJp[formData.role as 'admin' | 'teacher' | 'student'] || formData.role,
-        status: formData.status!,
-      };
-      // パスワードは新規作成時または編集時に入力がある場合のみ追加
-      if (mode === 'add') {
-        payload.password = formData.password!;
-      } else if (mode === 'edit' && formData.password) {
-        payload.password = formData.password;
-      }
-      await onSave(payload);
-    } catch (error) {
-      console.error('保存エラー (Modal):', error);
-    } finally {
-      setIsSaving(false);
-    }
+  // Role Display Map (no changes needed here)
+  const roleDisplayMap: Record<string, string> = {
+    "管理者": '管理者', "教員": '先生', "生徒": '生徒',
   };
-
-  if (!isOpen) return null;
-
-  const isReadonly = mode === 'view';
-  const title = mode === 'add' ? '新規ユーザー追加' : mode === 'edit' ? 'ユーザー編集' : 'ユーザー詳細';
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-      <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
-        <h2 className="text-xl font-semibold mb-4">{title}</h2>
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700">名前</label>
-            <input
-              type="text"
-              id="name"
-              name="name"
-              value={formData.name || ''}
-              onChange={handleChange}
-              readOnly={isReadonly}
-              required
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:bg-gray-100"
-              disabled={isReadonly}
-            />
-          </div>
-          <div className="mb-4">
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700">メールアドレス</label>
-            <input
-              type="email"
-              id="email"
-              name="email"
-              value={formData.email || ''}
-              onChange={handleChange}
-              readOnly={isReadonly}
-              required
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:bg-gray-100"
-              disabled={isReadonly}
-            />
-          </div>
-          {(mode === 'add' || mode === 'edit') && (
-            <div className="mb-4">
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                パスワード {mode === 'edit' ? '(変更する場合のみ入力)' : ''}
-              </label>
-              <input
-                type="password"
-                id="password"
-                name="password"
-                onChange={handleChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                required={mode === 'add'}
-              />
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>
+            {mode === 'add' ? '新規ユーザー追加' : mode === 'edit' ? 'ユーザー情報編集' : 'ユーザー詳細'}
+          </DialogTitle>
+          {mode !== 'view' && (
+            <DialogDescription>
+              {mode === 'add' ? '新しいユーザーの情報を入力してください。' : `ユーザー '${user?.name || ''}' の情報を編集します。`}
+            </DialogDescription>
+          )}
+        </DialogHeader>
+
+        {isViewMode && user ? (
+          // --- View Mode ---
+          <div className="grid gap-4 py-4">
+             {/* Display fields - using corrected date format */}
+             <div className="grid grid-cols-4 items-center gap-4">
+               <Label className="text-right text-sm font-medium">ID</Label>
+               <div className="col-span-3 text-sm text-gray-700">{user.id}</div>
+             </div>
+             <div className="grid grid-cols-4 items-center gap-4">
+               <Label className="text-right text-sm font-medium">名前</Label>
+               <div className="col-span-3 text-sm text-gray-700">{user.name}</div>
+             </div>
+             <div className="grid grid-cols-4 items-center gap-4">
+               <Label className="text-right text-sm font-medium">メール</Label>
+               <div className="col-span-3 text-sm text-gray-700">{user.email}</div>
+             </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right text-sm font-medium">ロール</Label>
+              <div className="col-span-3 text-sm text-gray-700">{roleDisplayMap[user.role] || user.role}</div>
             </div>
-          )}
-          <div className="mb-4">
-            <label htmlFor="role" className="block text-sm font-medium text-gray-700">ロール</label>
-            <select
-              id="role"
-              name="role"
-              value={formData.role || ''}
-              onChange={handleChange}
-              required
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:bg-gray-100"
-              disabled={isReadonly}
-            >
-              <option value="student">生徒</option>
-              <option value="teacher">先生</option>
-              <option value="admin">管理者</option>
-            </select>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right text-sm font-medium">ステータス</Label>
+              <div className="col-span-3 text-sm text-gray-700">{user.status}</div>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right text-sm font-medium">登録日時</Label>
+              <div className="col-span-3 text-sm text-gray-700">{formatModalDate(user.createdAt)}</div>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right text-sm font-medium">最終ログイン</Label>
+              <div className="col-span-3 text-sm text-gray-700">{formatModalDate(user.lastLogin)}</div>
+            </div>
           </div>
-           <div className="mb-4">
-            <label htmlFor="status" className="block text-sm font-medium text-gray-700">ステータス</label>
-            <select
-              id="status"
-              name="status"
-              value={formData.status || ''}
-              onChange={handleChange}
-              required
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:bg-gray-100"
-              disabled={isReadonly}
-            >
-              <option value="active">アクティブ</option>
-              <option value="inactive">非アクティブ</option>
-              <option value="pending">保留中</option>
-              <option value="unpaid">未決済</option>
-            </select>
-          </div>
-          {mode === 'view' && user && (
-            <>
-             <div className="mb-2">
-                <span className="text-sm font-medium text-gray-500">作成日時: </span>
-                <span className="text-sm text-gray-900">{new Date(user.createdAt).toLocaleString()}</span>
+        ) : (
+          // --- Edit/Add Mode ---
+          <form onSubmit={handleSubmit(onSubmit)}>
+            <div className="grid gap-4 py-4">
+             {/* Name */}
+             <div className="grid grid-cols-4 items-center gap-4">
+               <Label htmlFor="name" className="text-right">名前 <span className="text-red-500">*</span></Label>
+               <div className="col-span-3">
+                 <Input id="name" {...register("name")} className={errors.name ? 'border-red-500' : ''} />
+                 {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name.message}</p>}
+               </div>
+             </div>
+             {/* Email */}
+             <div className="grid grid-cols-4 items-center gap-4">
+               <Label htmlFor="email" className="text-right">メール <span className="text-red-500">*</span></Label>
+               <div className="col-span-3">
+                 <Input id="email" type="email" {...register("email")} className={errors.email ? 'border-red-500' : ''} />
+                 {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email.message}</p>}
+               </div>
+             </div>
+
+              {/* Role Select (Standard HTML) */}
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="role" className="text-right">ロール <span className="text-red-500">*</span></Label>
+                <div className="col-span-3">
+                  <select
+                    id="role"
+                    {...register("role")}
+                    className={`w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.role ? 'border-red-500' : 'border-gray-300'} ${isLoadingRoles ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                    disabled={isLoadingRoles}
+                  >
+                    <option value="" disabled={mode === 'add'}>-- ロールを選択 --</option>
+                    {availableRoles.map(r => (
+                      <option key={r.id} value={r.name}>
+                         {roleDisplayMap[r.name] || r.name}
+                      </option>
+                    ))}
+                  </select>
+                   {errors.role && <p className="text-xs text-red-500 mt-1">{errors.role.message}</p>}
+                   {isLoadingRoles && <p className="text-xs text-gray-500 mt-1">ロールを読み込み中...</p>}
+                </div>
               </div>
-              <div className="mb-4">
-                <span className="text-sm font-medium text-gray-500">最終ログイン: </span>
-                <span className="text-sm text-gray-900">{user.lastLogin ? new Date(user.lastLogin).toLocaleString() : '-'}</span>
+
+              {/* Status Select */}
+             <div className="grid grid-cols-4 items-center gap-4">
+               <Label htmlFor="status" className="text-right">ステータス <span className="text-red-500">*</span></Label>
+                 <div className="col-span-3">
+                   <select
+                     id="status"
+                     {...register("status")}
+                     className={`w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.status ? 'border-red-500' : 'border-gray-300'}`}
+                   >
+                     <option value="active">アクティブ</option>
+                     <option value="inactive">非アクティブ</option>
+                     <option value="pending">保留中</option>
+                     <option value="unpaid">未決済</option>
+                   </select>
+                   {errors.status && <p className="text-xs text-red-500 mt-1">{errors.status.message}</p>}
+                 </div>
               </div>
-            </>
-          )}
-          <div className="flex justify-end space-x-2 mt-6">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSaving}
-              className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50"
-            >
-              閉じる
-            </button>
-            {!isReadonly && (
-              <button
-                type="submit"
-                disabled={isSaving}
-                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-              >
-                {isSaving ? '保存中...' : (mode === 'add' ? '作成' : '更新')}
-              </button>
-            )}
-          </div>
-        </form>
-      </div>
-    </div>
+
+              {/* Password */}
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="password" className="text-right">パスワード {isAddMode && <span className="text-red-500">*</span>}</Label>
+                 <div className="col-span-3">
+                    <Input id="password" type="password" {...register("password")} placeholder={mode === 'edit' ? '変更する場合のみ入力' : ''} className={errors.password ? 'border-red-500' : ''} />
+                    {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password.message}</p>}
+                 </div>
+              </div>
+
+               {/* Confirm Password */}
+               {watch("password") && (
+                 <div className="grid grid-cols-4 items-center gap-4">
+                   <Label htmlFor="confirmPassword" className="text-right">パスワード確認 {isAddMode && <span className="text-red-500">*</span>}</Label>
+                   <div className="col-span-3">
+                     <Input id="confirmPassword" type="password" {...register("confirmPassword")} className={errors.confirmPassword ? 'border-red-500' : ''} />
+                     {errors.confirmPassword && <p className="text-xs text-red-500 mt-1">{errors.confirmPassword.message}</p>}
+                   </div>
+                 </div>
+               )}
+
+
+            </div>
+
+            {/* Footer for Edit/Add Mode */}
+            <DialogFooter className="pt-4">
+              <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
+                キャンセル
+              </Button>
+              <Button type="submit" disabled={isSubmitting || isLoadingRoles}>
+                {isSubmitting ? '保存中...' : '保存'}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
+        {/* Footer for View Mode */}
+         {isViewMode && (
+             <DialogFooter className="pt-4">
+                 <Button type="button" variant="outline" onClick={onClose}>閉じる</Button>
+             </DialogFooter>
+         )}
+      </DialogContent>
+    </Dialog>
   );
 };
 

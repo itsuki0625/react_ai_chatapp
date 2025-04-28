@@ -2,24 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from app.core.config import settings
-from app.api.v1.endpoints import (
-    auth,
-    chat,
-    university,
-    admission,
-    application,
-    statement,
-    content,
-    subscription,
-    admin,
-    quiz,
-    roles,
-    study_plans,
-    communication
-)
+from app.api.v1 import api_router as v1_api_router
 from app.middleware.auth import AuthMiddleware
 import logging
-from fastapi import APIRouter
 from app.database.database import Base, engine
 from fastapi.background import BackgroundTasks
 from app.crud.token import remove_expired_tokens
@@ -27,6 +12,7 @@ from sqlalchemy.orm import Session
 from contextlib import contextmanager
 import asyncio
 import time
+
 
 # ロギング設定
 logging.basicConfig(level=logging.INFO)
@@ -104,23 +90,8 @@ app.add_middleware(
     expose_headers=["Set-Cookie", "X-Auth-Status"],  # 公開するヘッダー
 )
 
-# APIルーターの設定
-api_router = APIRouter()
-api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
-api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
-api_router.include_router(university.router, prefix="/universities", tags=["universities"])
-api_router.include_router(admission.router, prefix="/admission", tags=["admission"])
-api_router.include_router(application.router, prefix="/applications", tags=["applications"])
-api_router.include_router(statement.router, prefix="/statements", tags=["statements"])
-api_router.include_router(content.router, prefix="/contents", tags=["contents"])
-api_router.include_router(subscription.router, prefix="/subscriptions", tags=["subscriptions"])
-api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
-api_router.include_router(quiz.router, prefix="/quizzes", tags=["quizzes"])
-api_router.include_router(roles.router, prefix="/roles", tags=["roles"])
-api_router.include_router(study_plans.router, prefix="/study-plans", tags=["study-plans"])
-api_router.include_router(communication.router, prefix="/communication", tags=["communication"])
-
-app.include_router(api_router, prefix="/api/v1")
+# 修正: v1 の集約ルーターを /api/v1 プレフィックスで追加
+app.include_router(v1_api_router, prefix="/api/v1")
 
 # APIルーターの設定後に追加
 for route in app.routes:

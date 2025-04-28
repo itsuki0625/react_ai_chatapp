@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database.database import get_async_db
 from typing import Any
 from app.core.config import settings
 from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_token
-from app.crud.user import get_user_by_email, create_user, get_user, record_login_attempt
+from app.crud import crud_user
 from app.crud.token import add_token_to_blacklist, is_token_blacklisted, remove_expired_tokens
-from app.api.deps import get_db
 from app.schemas.auth import (
     LoginResponse, SignUpRequest, EmailVerificationRequest, 
     ForgotPasswordRequest, ResetPasswordRequest,
@@ -24,6 +24,11 @@ import base64
 from fastapi.responses import JSONResponse
 import logging
 from datetime import datetime, timedelta
+from app.schemas.user import UserResponse, UserSettingsResponse
+from app.crud import subscription as crud_subscription
+from app.models.subscription import Subscription
+from app.schemas.subscription import SubscriptionResponse
+from sqlalchemy import select
 
 router = APIRouter()
 
@@ -36,7 +41,7 @@ async def login(
     request: Request,
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ) -> Any:
     """
     OAuth2 compatible token login, get an access token for future requests
@@ -44,12 +49,12 @@ async def login(
     try:
         logger.debug(f"ログイン試行: {form_data.username}")
         
-        # ユーザー認証
-        user = get_user_by_email(db, email=form_data.username)
-        if not user or not verify_password(form_data.password, user.hashed_password):
+        # ユーザー認証 (get_user_by_email はリレーションをロードしない)
+        authenticated_user = await crud_user.get_user_by_email(db, email=form_data.username)
+        if not authenticated_user or not verify_password(form_data.password, authenticated_user.hashed_password):
             logger.warning(f"認証失敗: {form_data.username}")
-            if user: # ユーザーが存在する場合のみ失敗を記録
-                 record_login_attempt(db=db, user_id=user.id, success=False)
+            if authenticated_user: # ユーザーが存在する場合のみ失敗を記録
+                 await crud_user.record_login_attempt(db=db, user_id=authenticated_user.id, success=False)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="メールアドレスまたはパスワードが正しくありません",
@@ -57,13 +62,22 @@ async def login(
             
         logger.debug(f"認証成功: {form_data.username}")
         
+        # ★ 認証成功後、リレーションを含むユーザー情報を再取得
+        user = await crud_user.get_user(db, user_id=authenticated_user.id)
+        if not user: # 再取得に失敗した場合 (通常は起こらないはず)
+            logger.error(f"認証成功ユーザー {authenticated_user.id} の情報再取得に失敗しました。")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="ユーザー情報の取得に失敗しました。",
+            )
+
         # 成功記録
-        record_login_attempt(db=db, user_id=user.id, success=True)
+        await crud_user.record_login_attempt(db=db, user_id=user.id, success=True)
         
         # リクエストヘッダーの確認
         logger.debug(f"リクエストヘッダー: {{request.headers}}")
 
-        # プライマリロールを取得
+        # プライマリロールを取得 (Eager Loadingされた user オブジェクトを使用)
         primary_user_role = next((ur for ur in user.user_roles if ur.is_primary), None)
         
         if not primary_user_role:
@@ -73,10 +87,7 @@ async def login(
                 detail="ユーザーロールの設定に問題があります",
             )
         
-        # ロール権限を取得
-        # RolePermission をロードしておく必要がある場合がある
-        # 例: db.options(joinedload(User.user_roles).joinedload(UserRole.role).joinedload(Role.role_permissions))
-        #    .filter(User.email == form_data.username).first()
+        # ロール権限を取得 (Eager Loadingされているはず)
         role_permissions = [rp.permission.name for rp in primary_user_role.role.role_permissions if rp.is_granted]
         
         # セッション情報をクリア
@@ -103,11 +114,24 @@ async def login(
         refresh_token_expires = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
         
         # トークンに含めるデータ (ユーザーIDとロール/権限情報)
+        # primary_user_role と role_permissions はこのスコープで利用可能と仮定
+        if not primary_user_role or not hasattr(primary_user_role, 'role') or not primary_user_role.role:
+             logger.error(f"User {user.email} primary role object is missing or invalid.")
+             # 適切なエラー処理 (例: HTTPException) をここで行うか、デフォルトロールを設定
+             primary_role_name = "不明" # フォールバック
+        else:
+             primary_role_name = primary_user_role.role.name
+
         token_data = {
             "sub": str(user.id),
             "email": user.email,
-            "roles": role_permissions,  # ロール名ではなく権限名のリスト
-            "name": user.full_name # ユーザー名をトークンに追加
+            # ★ 修正: rolesにはプライマリロール名（文字列）を設定
+            "roles": [primary_role_name], # next-auth側が配列を期待している場合、配列に入れる
+            # "role": primary_role_name, # 単一文字列の場合
+            # ★ 修正: permissions クレームを追加して権限リストを設定
+            "permissions": role_permissions,
+            "name": user.full_name, # ユーザー名をトークンに追加
+            "status": user.status.value if user.status else None # ステータスも追加
         }
         
         access_token = create_access_token(
@@ -122,7 +146,7 @@ async def login(
             "id": str(user.id),
             "email": user.email,
             "full_name": user.full_name,
-            "role": role_permissions, # 権限名のリストを返す
+            "role": primary_user_role.role.name, # ロール名を返す
             "status": user.status.value if user.status else None # status を追加 (Enum の場合は .value)
         }
 
@@ -137,6 +161,7 @@ async def login(
         )
     except Exception as e:
         logger.error(f"ログインエラー: {str(e)}")
+        logger.exception("Login error details:")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -145,7 +170,7 @@ async def login(
 @router.post("/logout")
 async def logout(
     request: Request,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     ログアウト処理。セッションをクリアし、現在のアクセストークンをブラックリストに追加します。
@@ -166,7 +191,7 @@ async def logout(
                     user_uuid = uuid.UUID(payload["sub"])
 
                     # user_uuid が None でない場合のみブラックリストに追加 (UUID変換成功時)
-                    add_token_to_blacklist(
+                    await add_token_to_blacklist(
                         db=db,
                         token_jti=payload["jti"],
                         user_id=user_uuid, # トークンから取得したUUID型を渡す
@@ -189,7 +214,7 @@ async def logout(
         # 定期的に期限切れのトークンをクリーンアップ
         # 本番環境では、スケジュールタスクで実行することを推奨
         try:
-            deleted_count = remove_expired_tokens(db)
+            deleted_count = await remove_expired_tokens(db)
             logger.info(f"{deleted_count} 件の期限切れトークンを削除しました")
         except Exception as e:
             logger.error(f"期限切れトークンの削除に失敗しました: {str(e)}")
@@ -205,51 +230,49 @@ async def logout(
             detail=str(e)
         )
 
-@router.get("/me", response_model=dict)
+@router.get("/me", response_model=UserResponse)
 async def read_users_me(
-    request: Request,
-    # db: Session = Depends(get_db) # DBアクセスは不要になる可能性
+    current_user: User = Depends(get_current_user)
 ) -> Any:
     """
-    現在のユーザー情報を取得 (セッション情報から)
+    現在の認証済みユーザー情報を取得
     """
-    logger.debug(f"/me エンドポイント セッション情報確認: {dict(request.session)}")
-    logger.debug(f"/me エンドポイント クッキー情報確認: {request.cookies}")
+    logger.debug(f"/me エンドポイント: ユーザー {current_user.email} の情報を取得します。")
 
-    # セッションにユーザー情報があるか確認
-    user_id = request.session.get("user_id")
-    email = request.session.get("email")
-    # セッションからロール情報（権限リスト）を取得
-    role_permissions = request.session.get("role")
+    # current_user オブジェクトから直接情報を取得
+    # get_current_user が User オブジェクトを返すため、チェックは不要
 
-    if not user_id or not email or not role_permissions:
-        # 認証ミドルウェアを通過しているはずなので、基本的にはここには来ない想定
-        logger.error("認証されているはずのユーザーのセッション情報が不完全です")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="セッション情報が無効です。再ログインしてください。"
-        )
+    # プライマリロールと権限を取得 (認証ミドルウェアと同様のロジック)
+    primary_user_role = next((ur for ur in current_user.user_roles if ur.is_primary), None)
+    role_permissions = []
+    role_name = "不明" # デフォルト値
+    if primary_user_role and primary_user_role.role:
+        role_name = primary_user_role.role.name
+        if primary_user_role.role.role_permissions:
+             role_permissions = [
+                 rp.permission.name for rp in primary_user_role.role.role_permissions if rp.is_granted
+             ]
+    else:
+        logger.warning(f"ユーザー {current_user.email} のプライマリロールが見つからないか、ロール情報が不完全です。")
+        # ロールが見つからない場合のエラーハンドリングが必要であれば追加
 
-    # role_permissions がリストであることを確認（念のため）
-    if not isinstance(role_permissions, list):
-        logger.warning(f"セッション内のロール情報がリスト形式ではありません: {role_permissions}")
-        # リスト形式でなければエラーとするか、デフォルト値を設定するか検討
-        # ここではエラーとする例
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="セッション内のユーザーロール形式が無効です。"
-        )
+    logger.debug(f"/me エンドポイント 成功: user_id={current_user.id}, email={current_user.email}, role={role_name}, permissions={role_permissions}")
 
-    logger.debug(f"/me エンドポイント 成功: user_id={user_id}, email={email}, roles={role_permissions}")
-
-    # セッション情報をレスポンスとして返す
-    return {
-        "id": user_id, # フロントエンドの期待に合わせてキー名を 'id' に変更
-        "email": email,
-        "role": role_permissions # 権限名のリストを返す
-        # "full_name" はセッションにないので、必要なら別途取得するか、
-        # ログイン時やミドルウェアでセッションに追加する
-    }
+    # UserResponse スキーマに合わせてレスポンスを構築
+    # UserResponse スキーマが role 名や permissions を持つように調整が必要な場合がある
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        full_name=current_user.full_name,
+        status=current_user.status,
+        created_at=current_user.created_at,
+        updated_at=current_user.updated_at,
+        # UserResponse スキーマに合わせて role や permissions を追加・調整
+        role=role_name, # 例: プライマリロール名
+        # permissions=role_permissions # 例: 権限リスト (スキーマにあれば)
+        # 必要に応じて他のフィールドも追加
+        is_verified=current_user.is_verified
+    )
 
 @router.get("/test-auth", response_model=dict)
 async def test_auth(current_user: User = Depends(get_current_user)):
@@ -270,7 +293,7 @@ async def test_auth(current_user: User = Depends(get_current_user)):
 async def signup(
     request: Request,
     user_data: SignUpRequest,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ) -> Any:
     """
     新規ユーザー登録
@@ -278,7 +301,7 @@ async def signup(
     try:
         print("user_data : ", user_data)
         # メールアドレスの重複チェック
-        existing_user = get_user_by_email(db, email=user_data.email)
+        existing_user = await crud_user.get_user_by_email(db, email=user_data.email)
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -289,7 +312,7 @@ async def signup(
         hashed_password = get_password_hash(user_data.password)
         
         # ユーザーの作成
-        user = create_user(
+        user = await crud_user.create_user(
             db=db,
             email=user_data.email,
             password=hashed_password,
@@ -318,51 +341,80 @@ async def signup(
             detail=str(e)
         )
 
-@router.get("/user-settings", response_model=dict)
+@router.get("/user-settings", response_model=UserSettingsResponse)
 async def get_user_settings(
-    request: Request,
-    db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
 ) -> Any:
     """
-    現在のユーザーの設定情報を取得
+    現在のユーザーの設定情報とサブスクリプション情報を取得
     """
+    logger.info(f"ユーザー設定取得リクエスト 開始: {current_user.email}") # Log start
     try:
-        if "user_id" not in request.session:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="認証が必要です"
-            )
-        
-        user_id = request.session["user_id"]
-        user = db.query(User).filter(User.id == user_id).first()
-        
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="ユーザーが見つかりません"
-            )
-        
-        # ユーザー設定情報を取得
-        # Note: 実際のプロジェクトでは、別のテーブルに設定情報を持たせることも検討
-        return {
-            "email": user.email,
-            "full_name": user.full_name,
-            "email_notifications": True,  # デフォルト値
-            "browser_notifications": False,  # デフォルト値
-            "theme": "light"  # デフォルト値
+        # Fetch subscription
+        logger.info("Subscription 取得開始")
+        stmt = select(Subscription).filter(Subscription.user_id == current_user.id, Subscription.is_active == True)
+        result = await db.execute(stmt)
+        subscription = result.scalars().first()
+        logger.info(f"Subscription 取得完了: {subscription.id if subscription else 'None'}")
+
+        # Prepare response data (without from_orm first to isolate)
+        logger.info("レスポンスデータ準備開始")
+        sub_data = None
+        if subscription:
+             try:
+                 # Attempt from_orm conversion and dict creation
+                 sub_response_obj = SubscriptionResponse.from_orm(subscription)
+                 logger.info(f"SubscriptionResponse.from_orm 成功")
+                 sub_data = sub_response_obj.dict()
+                 logger.info(f"Subscription データ変換 (.dict()) 完了")
+             except Exception as conversion_error:
+                 logger.error(f"SubscriptionResponse 変換エラー: {str(conversion_error)}", exc_info=True)
+                 raise HTTPException(status_code=500, detail="Subscription data conversion failed.")
+
+        settings_response_data = {
+            "email": current_user.email,
+            "full_name": current_user.full_name,
+            "email_notifications": True, # Placeholder
+            "browser_notifications": False, # Placeholder
+            "theme": "light", # Placeholder
+            "subscription": sub_data
         }
-    except Exception as e:
-        logger.error(f"ユーザー設定取得エラー: {str(e)}")
+        logger.info("レスポンス基本データ準備完了")
+
+        # Create final response model instance
+        settings_response = UserSettingsResponse(**settings_response_data)
+        logger.info("UserSettingsResponse インスタンス作成完了")
+
+        return settings_response
+    except AttributeError as ae:
+        logger.error(f"属性エラー発生: {str(ae)}", exc_info=True)
+        if "'AsyncSession' object has no attribute 'query'" in str(ae):
+             logger.error("--> 同期クエリが呼び出された可能性が高いです。コードを確認してください。")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="ユーザー設定の取得中に属性エラーが発生しました。"
+        )
+    except Exception as e:
+        logger.error(f"その他のユーザー設定取得エラー: {str(e)}", exc_info=True)
+        # Check if rollback is needed (only if db interaction happened before error)
+        # This check might be overly cautious depending on where the error occurred.
+        # if db.in_transaction():
+        #     try:
+        #         await db.rollback()
+        #         logger.info("トランザクションをロールバックしました。")
+        #     except Exception as rb_exc:
+        #         logger.error(f"ロールバック中にエラー: {rb_exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="ユーザー設定の取得中に予期せぬエラーが発生しました。"
         )
 
 @router.put("/user-settings", response_model=dict)
 async def update_user_settings(
     request: Request,
     settings_data: dict,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ) -> Any:
     """
     ユーザー設定を更新
@@ -375,7 +427,7 @@ async def update_user_settings(
             )
         
         user_id = request.session["user_id"]
-        user = db.query(User).filter(User.id == user_id).first()
+        user = await crud_user.get_user(db, user_id)
         
         if not user:
             raise HTTPException(
@@ -389,7 +441,7 @@ async def update_user_settings(
         
         # TODO: 他の設定（通知設定など）は別テーブルで管理することを検討
         
-        db.commit()
+        await db.commit()
         
         return {
             "message": "設定を更新しました",
@@ -407,7 +459,7 @@ async def update_user_settings(
 @router.delete("/delete-account", response_model=dict)
 async def delete_account(
     request: Request,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ) -> Any:
     """
     現在のユーザーアカウントを削除
@@ -419,8 +471,14 @@ async def delete_account(
                 detail="認証が必要です"
             )
         
-        user_id = request.session["user_id"]
-        user = db.query(User).filter(User.id == user_id).first()
+        user_uuid_str = request.session["user_id"]
+        try:
+             user_uuid = uuid.UUID(user_uuid_str)
+        except ValueError:
+             logger.error(f"セッション内のユーザーIDが無効な形式です: {user_uuid_str}")
+             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="無効なセッション情報です")
+
+        user = await crud_user.get_user(db, user_uuid)
         
         if not user:
             raise HTTPException(
@@ -428,32 +486,31 @@ async def delete_account(
                 detail="ユーザーが見つかりません"
             )
         
-        # 関連するデータの削除（カスケード削除が設定されていない場合は手動で行う）
-        # 例: db.query(関連テーブル).filter(関連テーブル.user_id == user_id).delete()
-        
-        # ユーザーの削除
-        db.delete(user)
-        db.commit()
-        
-        # セッションをクリア
+        removed_user = await crud_user.remove_user(db, user_id=user_uuid)
+        if not removed_user:
+             logger.error(f"ユーザー削除処理に失敗しました: User ID {user_uuid}")
+             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="アカウント削除処理中にエラーが発生しました")
+
         request.session.clear()
-        
+
         return {
             "message": "アカウントが正常に削除されました"
         }
+    except HTTPException as http_exc:
+        raise http_exc
     except Exception as e:
-        db.rollback()
         logger.error(f"アカウント削除エラー: {str(e)}")
+        logger.exception("Account deletion error details:")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="アカウント削除中にエラーが発生しました。"
         )
 
 @router.post("/change-password", response_model=dict)
 async def change_password(
     request: Request,
     password_data: dict,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ) -> Any:
     """
     ユーザーのパスワードを変更
@@ -481,7 +538,7 @@ async def change_password(
         
         # ユーザーの取得
         user_id = request.session["user_id"]
-        user = db.query(User).filter(User.id == user_id).first()
+        user = await crud_user.get_user(db, user_id)
         
         if not user:
             raise HTTPException(
@@ -509,7 +566,7 @@ async def change_password(
             if payload and "jti" in payload:
                 # 現在のトークンをブラックリストに追加
                 try:
-                    add_token_to_blacklist(
+                    await add_token_to_blacklist(
                         db=db,
                         token_jti=payload["jti"],
                         user_id=str(user.id),
@@ -519,7 +576,7 @@ async def change_password(
                 except Exception as e:
                     logger.error(f"トークンブラックリスト登録エラー: {str(e)}")
         
-        db.commit()
+        await db.commit()
         
         return {
             "message": "パスワードが正常に変更されました"
@@ -528,7 +585,7 @@ async def change_password(
         # 既知のHTTPExceptionはそのまま再発生
         raise
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"パスワード変更エラー: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -538,7 +595,7 @@ async def change_password(
 @router.post("/refresh-token", response_model=dict)
 async def refresh_token(
     refresh_data: RefreshTokenRequest,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ) -> Any:
     """
     リフレッシュトークンを使用して新しいアクセストークンを取得
@@ -563,14 +620,14 @@ async def refresh_token(
             )
         
         # ブラックリストのチェック
-        if is_token_blacklisted(db, jti):
+        if await is_token_blacklisted(db, jti):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="このトークンは無効化されています"
             )
         
         # ユーザーの存在確認
-        user = get_user(db, user_id)
+        user = await crud_user.get_user(db, user_id)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -583,7 +640,7 @@ async def refresh_token(
         
         # 古いリフレッシュトークンをブラックリストに追加
         try:
-            add_token_to_blacklist(
+            await add_token_to_blacklist(
                 db=db,
                 token_jti=jti,
                 user_id=user_id,
@@ -609,7 +666,7 @@ async def refresh_token(
 @router.post("/verify-email", response_model=dict)
 async def verify_email(
     verification_data: EmailVerificationRequest,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ) -> Any:
     """
     メールアドレス検証トークンを検証
@@ -638,7 +695,7 @@ async def verify_email(
             )
         
         # ユーザーを取得
-        user = get_user_by_email(db, email=email)
+        user = await crud_user.get_user_by_email(db, email=email)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -647,7 +704,7 @@ async def verify_email(
         
         # ユーザーのメール検証ステータスを更新
         user.is_verified = True
-        db.commit()
+        await db.commit()
         
         return {"message": "メールアドレスが検証されました"}
     except Exception as e:
@@ -661,7 +718,7 @@ async def verify_email(
 async def resend_verification(
     request: Request,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ) -> Any:
     """
     メール検証リンクを再送信
@@ -675,7 +732,7 @@ async def resend_verification(
             )
         
         user_id = request.session["user_id"]
-        user = get_user(db, user_id)
+        user = await crud_user.get_user(db, user_id)
         
         if not user:
             raise HTTPException(
@@ -706,14 +763,14 @@ async def resend_verification(
 async def forgot_password(
     forgot_data: ForgotPasswordRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ) -> Any:
     """
     パスワードリセットリンクを送信
     """
     try:
         # メールアドレスからユーザーを検索
-        user = get_user_by_email(db, email=forgot_data.email)
+        user = await crud_user.get_user_by_email(db, email=forgot_data.email)
         
         # セキュリティ上、ユーザーが存在しない場合でも同じメッセージを返す
         if not user:
@@ -748,7 +805,7 @@ async def forgot_password(
 @router.post("/reset-password", response_model=dict)
 async def reset_password(
     reset_data: ResetPasswordRequest,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ) -> Any:
     """
     パスワードをリセット
@@ -777,7 +834,7 @@ async def reset_password(
             )
         
         # ユーザーを取得
-        user = get_user_by_email(db, email=email)
+        user = await crud_user.get_user_by_email(db, email=email)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -787,7 +844,7 @@ async def reset_password(
         # パスワードをハッシュ化して更新
         hashed_password = get_password_hash(reset_data.new_password)
         user.hashed_password = hashed_password
-        db.commit()
+        await db.commit()
         
         return {"message": "パスワードがリセットされました"}
     except Exception as e:
@@ -800,7 +857,7 @@ async def reset_password(
 @router.post("/setup-2fa", response_model=TwoFactorSetupResponse)
 async def setup_2fa(
     request: Request,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ) -> Any:
     """
     二要素認証のセットアップ
@@ -814,7 +871,7 @@ async def setup_2fa(
             )
         
         user_id = request.session["user_id"]
-        user = get_user(db, user_id)
+        user = await crud_user.get_user(db, user_id)
         
         if not user:
             raise HTTPException(
@@ -856,7 +913,7 @@ async def setup_2fa(
 async def verify_2fa(
     request: Request,
     verify_data: TwoFactorVerifyRequest,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ) -> Any:
     """
     二要素認証の検証・有効化
@@ -877,7 +934,7 @@ async def verify_2fa(
             )
         
         user_id = request.session["user_id"]
-        user = get_user(db, user_id)
+        user = await crud_user.get_user(db, user_id)
         totp_secret = request.session["temp_2fa_secret"]
         
         if not user:
@@ -897,7 +954,7 @@ async def verify_2fa(
         # 検証成功したらユーザーに2FAを有効化
         user.is_2fa_enabled = True
         user.totp_secret = totp_secret
-        db.commit()
+        await db.commit()
         
         # 一時保存したシークレットをセッションから削除
         del request.session["temp_2fa_secret"]
@@ -914,7 +971,7 @@ async def verify_2fa(
 async def disable_2fa(
     request: Request,
     verify_data: TwoFactorVerifyRequest,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ) -> Any:
     """
     二要素認証の無効化
@@ -928,7 +985,7 @@ async def disable_2fa(
             )
         
         user_id = request.session["user_id"]
-        user = get_user(db, user_id)
+        user = await crud_user.get_user(db, user_id)
         
         if not user:
             raise HTTPException(
@@ -954,7 +1011,7 @@ async def disable_2fa(
         # 二要素認証を無効化
         user.is_2fa_enabled = False
         user.totp_secret = None
-        db.commit()
+        await db.commit()
         
         return {"message": "二要素認証が無効化されました"}
     except Exception as e:

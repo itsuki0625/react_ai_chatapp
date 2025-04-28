@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_async_db, require_permission
 from app.models.user import User
 from app.models.document import Document
 from app.models.schedule import ScheduleEvent
@@ -41,11 +41,11 @@ router = APIRouter()
 @router.post("/", response_model=ApplicationResponse)
 async def create_new_application(
     application: ApplicationCreate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('application_write')),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """新しい志望校を登録"""
-    school = create_application(db=db, application=application, user_id=current_user.id)
+    school = await create_application(db=db, application=application, user_id=current_user.id)
     
     # レスポンスデータの作成
     return ApplicationResponse(
@@ -65,11 +65,11 @@ async def create_new_application(
 
 @router.get("/", response_model=List[ApplicationDetailResponse])
 async def get_user_applications(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('application_read')),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """ユーザーの志望校一覧を取得"""
-    schools = get_applications(db=db, user_id=current_user.id)
+    schools = await get_applications(db=db, user_id=current_user.id)
     result = []
     
     for school in schools:
@@ -77,8 +77,8 @@ async def get_user_applications(
             continue
             
         department_info = school.desired_departments[0] 
-        documents = get_application_documents(db, department_info.id)
-        schedules = get_application_schedules(db, department_info.id)
+        documents = await get_application_documents(db, department_info.id)
+        schedules = await get_application_schedules(db, department_info.id)
         
         app_response = ApplicationDetailResponse(
             id=school.id,
@@ -132,15 +132,15 @@ async def get_user_applications(
 @router.put("/reorder")
 async def reorder_user_applications(
     reorder_data: ReorderApplications,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('application_write')),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     志望校の優先順位を更新する
     """
     try:
         # reorder_applicationsのCRUD関数を使用して一括更新
-        updated_schools = reorder_applications(
+        updated_schools = await reorder_applications(
             db=db, 
             user_id=current_user.id, 
             reorder_data=reorder_data
@@ -174,7 +174,6 @@ async def reorder_user_applications(
     except HTTPException as he:
         raise he
     except Exception as e:
-        db.rollback()
         raise HTTPException(
             status_code=500,
             detail=f"優先順位の更新中にエラーが発生しました: {str(e)}"
@@ -182,15 +181,15 @@ async def reorder_user_applications(
 
 @router.get("/statistics")
 async def get_application_statistics(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('application_read')),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     志望校関連の統計情報を取得
     """
     try:
         # ユーザーの志望校を取得
-        schools = get_applications(db=db, user_id=current_user.id)
+        schools = await get_applications(db=db, user_id=current_user.id)
         
         if not schools:
             return {
@@ -251,11 +250,11 @@ async def get_application_statistics(
                 departments_by_field[field] = 1
             
             # 書類と締め切り
-            documents = get_application_documents(db, department.id)
-            schedules = get_application_schedules(db, department.id)
+            school_documents = await get_application_documents(db, department.id)
+            schedules = await get_application_schedules(db, department.id)
             
             # 書類の完成度
-            for doc in documents:
+            for doc in school_documents:
                 total_documents += 1
                 if doc.status == "完了":
                     completed_documents += 1
@@ -309,8 +308,8 @@ async def get_application_statistics(
 @router.get("/deadlines")
 async def get_upcoming_deadlines(
     days: int = 30,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('application_read')),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     近づく提出期限の一覧を取得
@@ -318,7 +317,7 @@ async def get_upcoming_deadlines(
     """
     try:
         # ユーザーの志望校を取得
-        schools = get_applications(db=db, user_id=current_user.id)
+        schools = await get_applications(db=db, user_id=current_user.id)
         
         deadlines = []
         now = datetime.now()
@@ -331,7 +330,7 @@ async def get_upcoming_deadlines(
                 
             for department in school.desired_departments:
                 # 書類の締め切り
-                documents = get_application_documents(db, department.id)
+                documents = await get_application_documents(db, department.id)
                 for doc in documents:
                     if hasattr(doc, 'due_date') and doc.due_date:
                         if now <= doc.due_date <= max_date:
@@ -348,7 +347,7 @@ async def get_upcoming_deadlines(
                             })
                 
                 # スケジュールの締め切り
-                schedules = get_application_schedules(db, department.id)
+                schedules = await get_application_schedules(db, department.id)
                 for schedule in schedules:
                     if hasattr(schedule, 'due_date') and schedule.due_date:
                         if now <= schedule.due_date <= max_date:
@@ -378,11 +377,11 @@ async def get_upcoming_deadlines(
 @router.get("/{application_id}", response_model=ApplicationDetailResponse)
 async def get_single_application(
     application_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('application_read')),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """特定の志望校情報を取得"""
-    school = get_application(db=db, school_id=application_id)
+    school = await get_application(db=db, school_id=application_id)
     if not school or school.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="志望校が見つかりません")
     
@@ -390,8 +389,8 @@ async def get_single_application(
         raise HTTPException(status_code=404, detail="学部情報が見つかりません")
         
     department_info = school.desired_departments[0]
-    documents = get_application_documents(db, department_info.id)
-    schedules = get_application_schedules(db, department_info.id)
+    documents = await get_application_documents(db, department_info.id)
+    schedules = await get_application_schedules(db, department_info.id)
     
     return ApplicationDetailResponse(
         id=school.id,
@@ -443,15 +442,15 @@ async def get_single_application(
 async def update_existing_application(
     application_id: str,
     application_update: ApplicationUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('application_write')),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """志望校情報を更新"""
-    existing_school = get_application(db=db, school_id=application_id)
+    existing_school = await get_application(db=db, school_id=application_id)
     if not existing_school or existing_school.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="志望校が見つかりません")
     
-    updated_school = update_application(
+    updated_school = await update_application(
         db=db, 
         school=existing_school, 
         application_update=application_update
@@ -476,25 +475,25 @@ async def update_existing_application(
 @router.delete("/{application_id}")
 async def delete_existing_application(
     application_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('application_write')),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """志望校を削除"""
-    existing_school = get_application(db=db, school_id=application_id)
+    existing_school = await get_application(db=db, school_id=application_id)
     if not existing_school or existing_school.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="志望校が見つかりません")
-    delete_application(db=db, school_id=application_id)
+    await delete_application(db=db, school_id=application_id)
     return {"message": "志望校が削除されました"}
 
 @router.post("/{application_id}/documents", response_model=DocumentResponse)
 async def add_document(
     application_id: str,
     document: DocumentCreate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('application_write')),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """書類を追加"""
-    school = get_application(db=db, school_id=application_id)
+    school = await get_application(db=db, school_id=application_id)
     if not school or school.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="志望校が見つかりません")
     
@@ -504,7 +503,7 @@ async def add_document(
     # documentオブジェクトのdesired_department_idに設定
     document.desired_department_id = school.desired_departments[0].id
     
-    return create_document(
+    return await create_document(
         db=db, 
         document=document, 
         department_id=school.desired_departments[0].id
@@ -514,11 +513,11 @@ async def add_document(
 async def add_schedule(
     application_id: str,
     schedule: ScheduleCreate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('application_write')),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """スケジュールを追加"""
-    school = get_application(db=db, school_id=application_id)
+    school = await get_application(db=db, school_id=application_id)
     if not school or school.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="志望校が見つかりません")
     
@@ -528,7 +527,7 @@ async def add_schedule(
     # scheduleオブジェクトのdesired_department_idに設定
     schedule.desired_department_id = school.desired_departments[0].id
     
-    return create_schedule(
+    return await create_schedule(
         db=db, 
         schedule=schedule, 
         department_id=school.desired_departments[0].id
@@ -539,12 +538,12 @@ async def update_document(
     application_id: str,
     document_id: str,
     document: DocumentUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('application_write')),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """書類を更新"""
     # 志望校の存在確認と権限チェック
-    school = get_application(db=db, school_id=application_id)
+    school = await get_application(db=db, school_id=application_id)
     if not school or school.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="志望校が見つかりません")
 
@@ -558,7 +557,7 @@ async def update_document(
         raise HTTPException(status_code=404, detail="書類が見つかりません")
 
     # 書類の更新
-    return update_document_by_id(
+    return await update_document_by_id(
         db=db,
         document_id=document_id,
         document_update=document
@@ -569,12 +568,12 @@ async def update_schedule(
     application_id: str,
     schedule_id: str,
     schedule: ScheduleUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('application_write')),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """スケジュールを更新"""
     # 志望校の存在確認と権限チェック
-    school = get_application(db=db, school_id=application_id)
+    school = await get_application(db=db, school_id=application_id)
     if not school or school.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="志望校が見つかりません")
 
@@ -588,7 +587,7 @@ async def update_schedule(
         raise HTTPException(status_code=404, detail="スケジュールが見つかりません")
 
     # スケジュールの更新
-    return update_schedule_by_id(
+    return await update_schedule_by_id(
         db=db,
         schedule_id=schedule_id,
         schedule_update=schedule
@@ -598,12 +597,12 @@ async def update_schedule(
 async def delete_document(
     application_id: str,
     document_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('application_write')),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """書類を削除"""
     # 志望校の存在確認と権限チェック
-    school = get_application(db=db, school_id=application_id)
+    school = await get_application(db=db, school_id=application_id)
     if not school or school.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="志望校が見つかりません")
 
@@ -617,19 +616,19 @@ async def delete_document(
         raise HTTPException(status_code=404, detail="書類が見つかりません")
 
     # 書類の削除
-    delete_document_by_id(db=db, document_id=document_id)
+    await delete_document_by_id(db=db, document_id=document_id)
     return {"message": "書類が削除されました"}
 
 @router.delete("/{application_id}/schedules/{schedule_id}")
 async def delete_schedule(
     application_id: str,
     schedule_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_permission('application_write')),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """スケジュールを削除"""
     # 志望校の存在確認と権限チェック
-    school = get_application(db=db, school_id=application_id)
+    school = await get_application(db=db, school_id=application_id)
     if not school or school.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="志望校が見つかりません")
 
@@ -643,5 +642,5 @@ async def delete_schedule(
         raise HTTPException(status_code=404, detail="スケジュールが見つかりません")
 
     # スケジュールの削除
-    delete_schedule_by_id(db=db, schedule_id=schedule_id)
+    await delete_schedule_by_id(db=db, schedule_id=schedule_id)
     return {"message": "スケジュールが削除されました"}

@@ -4,76 +4,106 @@ import type { NextRequest } from 'next/server';
 
 // NextAuthのミドルウェアをエクスポート
 export default auth((req) => {
-  // auth コールバックが認証をチェックした後に実行されるミドルウェア
   const { nextUrl, auth: authObj } = req;
   const { pathname } = nextUrl;
   const isLoggedIn = !!authObj?.user;
   const userStatus = authObj?.user?.status;
   const isAdmin = authObj?.user?.isAdmin;
 
-  console.log(`[Middleware] Path: ${pathname}, Auth Status: ${isLoggedIn}, Status: ${userStatus}, IsAdmin: ${isAdmin}, User: ${JSON.stringify(authObj?.user)}, Error: ${authObj?.error}`); // DEBUG LOG
+  // ログを強化
+  console.log(`[Middleware Start] Path: ${pathname}, Auth Status: ${isLoggedIn}, Status: ${userStatus}, IsAdmin: ${isAdmin}`);
 
-  // 保護されたルートの定義
-  const protectedRoutes = ['/dashboard', '/settings', '/admin'];
+  // --- アクセス制御対象ルートの定義 ---
+  const protectedRoutes = [
+    '/dashboard',
+    '/settings',
+    '/admin',
+    '/contents',
+    '/chat',
+    '/faq',
+    '/statement',
+    '/application' // 志望校管理機能のパス (必要に応じて修正)
+  ];
+  const subscriptionRequiredRoutes = ['/contents', '/chat', '/faq', '/statement'];
+
+  const isAdminRoute = pathname.startsWith('/admin');
   const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route));
-  const isStatusPageRoute = pathname === '/pending-activation' || pathname === '/payment-required' || pathname === '/inactive-account';
+  const isSubscriptionRequiredRoute = subscriptionRequiredRoutes.some(route => pathname.startsWith(route));
+  // console.log(`[Middleware Check] isProtectedRoute: ${isProtectedRoute}, isSubscriptionRequiredRoute: ${isSubscriptionRequiredRoute}`); // isSubscriptionRequiredRoute の値を確認
 
-  // 未認証で保護されたルートにアクセスしようとした場合
+  const isStatusPageRoute = pathname === '/pending-activation' || pathname === '/payment-required' || pathname === '/inactive-account';
+  const isAuthPage = pathname === '/login' || pathname === '/signup';
+
+  // --- 1. 未認証ユーザーの処理 ---
   if (!isLoggedIn && isProtectedRoute) {
-    console.log(`[Middleware] Not authenticated for protected route ${pathname}. Redirecting to login.`);
+    console.log(`[Middleware Redirect 1] Not authenticated for protected route ${pathname}. Redirecting to login.`);
     const redirectUrl = new URL('/login', nextUrl.origin);
     redirectUrl.searchParams.set('callbackUrl', pathname);
     return NextResponse.redirect(redirectUrl);
   }
 
-  // 認証済みユーザーのステータスチェック
-  if (isLoggedIn && !isStatusPageRoute) { // ステータスページ自体へのアクセスはチェック対象外
+  // --- 2. 認証済みユーザーの処理 ---
+  if (isLoggedIn) {
+    // console.log(`[Middleware DEBUG] Logged in user. Allowing access to ${pathname} (temporarily bypassing checks).`); // デバッグ用ログ削除
+    // /* // ★★★ 一時的に以下のチェックをすべてコメントアウト ★★★ // コメントアウト解除
+    // 2a. ステータスページへのアクセスは常に許可
+    if (isStatusPageRoute) {
+      console.log(`[Middleware Allow 2a] Allowing access to status page: ${pathname}`);
+      return NextResponse.next();
+    }
+
+    // 2b. アカウントステータスに基づく基本的なリダイレクト (Pending / Inactive のみ)
+    //    ステータスページ以外へのアクセス時にリダイレクト
     if (userStatus === 'pending') {
-      console.log(`[Middleware] Pending user accessing ${pathname}. Redirecting to /pending-activation.`);
+      console.log(`[Middleware Redirect 2b] Pending user accessing non-status page ${pathname}. Redirecting to /pending-activation.`);
       return NextResponse.redirect(new URL('/pending-activation', nextUrl.origin));
     }
-    if (userStatus === 'unpaid') {
-      console.log(`[Middleware] Unpaid user accessing ${pathname}. Redirecting to /payment-required.`);
-      return NextResponse.redirect(new URL('/payment-required', nextUrl.origin));
-    }
     if (userStatus === 'inactive') {
-      console.log(`[Middleware] Inactive user accessing ${pathname}. Redirecting to /inactive-account.`);
+      console.log(`[Middleware Redirect 2b] Inactive user accessing non-status page ${pathname}. Redirecting to /inactive-account.`);
       return NextResponse.redirect(new URL('/inactive-account', nextUrl.origin));
     }
-  }
+    // 【重要】'unpaid' ステータスに対するリダイレクトはここには含めない
 
-  // --- 以降のチェックは、アクティブユーザー (またはステータスページへのアクセス) のみが対象 ---
+    // 2c. サブスクリプション必須ルートへのアクセスチェック
+    // アクセス先がサブスクリプション必須ルートであり、かつ、ユーザーステータスが 'active' でない場合のみリダイレクト
+    if (isSubscriptionRequiredRoute && userStatus !== 'active') {
+      console.log(`[Middleware Redirect 2c] Non-active user (status: ${userStatus}) accessing subscription required route ${pathname}. Redirecting to /subscription/plans.`);
+      return NextResponse.redirect(new URL('/subscription/plans', nextUrl.origin));
+    }
 
-  // JWT認証エラー
-  if (authObj?.error === "RefreshAccessTokenError") {
-    console.log(`[Middleware] RefreshAccessTokenError detected. Redirecting to login.`);
-    const redirectUrl = new URL('/login', nextUrl.origin);
-    redirectUrl.searchParams.set('error', 'session_expired');
-    return NextResponse.redirect(redirectUrl);
-  }
+    // 2d. JWTエラーチェック
+    if (authObj?.error === "RefreshAccessTokenError") {
+      console.log(`[Middleware Redirect 2d] RefreshAccessTokenError detected. Redirecting to login.`);
+      const redirectUrl = new URL('/login', nextUrl.origin);
+      redirectUrl.searchParams.set('error', 'session_expired');
+      return NextResponse.redirect(redirectUrl);
+    }
 
-  // 管理者パスへのアクセスチェック (アクティブユーザーのみ)
-  if (isLoggedIn && userStatus === 'active' && pathname.startsWith('/admin')) {
-    if (!isAdmin) {
-      console.log(`[Middleware] Non-admin access to /admin. Redirecting to dashboard.`);
+    // 2e. 管理者関連のチェック
+    if (isAdminRoute && !isAdmin) {
+      console.log(`[Middleware Redirect 2e] Non-admin access to /admin. Redirecting to dashboard.`);
       return NextResponse.redirect(new URL('/dashboard', nextUrl.origin));
     }
+    if (isAdmin && !isAdminRoute && !isAuthPage && !isStatusPageRoute) {
+        console.log(`[Middleware Redirect 2e] Admin user accessing non-admin path ${pathname}. Redirecting to /admin/dashboard.`);
+        return NextResponse.redirect(new URL('/admin/dashboard', nextUrl.origin));
+    }
+
+    // 2f. 認証済みユーザーがログイン/サインアップページにアクセスした場合
+    if (isAuthPage) {
+      const redirectUrl = isAdmin ? '/admin/dashboard' : '/dashboard';
+      console.log(`[Middleware Redirect 2f] Authenticated user accessing auth page ${pathname}. Redirecting to ${redirectUrl}.`);
+      return NextResponse.redirect(new URL(redirectUrl, nextUrl.origin));
+    }
+    // */ // ★★★ ここまでコメントアウト ★★★ // コメントアウト解除
+
+    // 上記のどのリダイレクト条件にも当てはまらない場合はアクセスを許可
+    console.log(`[Middleware Allow 2g] Allowing request for logged-in user to ${pathname}`);
+    return NextResponse.next();
   }
 
-  // ログイン済みアクティブユーザーが認証ページへアクセス
-  if (isLoggedIn && userStatus === 'active' && (pathname === '/login' || pathname === '/signup')) {
-    const redirectUrl = isAdmin ? '/admin/dashboard' : '/dashboard';
-    console.log(`[Middleware] Authenticated active user accessing auth page ${pathname}. Redirecting to ${redirectUrl}.`);
-    return NextResponse.redirect(new URL(redirectUrl, nextUrl.origin));
-  }
-
-  // ログイン済みアクティブ管理者が /admin 以外のページへアクセス
-  if (isLoggedIn && userStatus === 'active' && isAdmin && !pathname.startsWith('/admin') && !isStatusPageRoute && pathname !== '/login' && pathname !== '/signup') {
-      console.log(`[Middleware] Admin user accessing non-admin path ${pathname}. Redirecting to /admin/dashboard.`);
-      return NextResponse.redirect(new URL('/admin/dashboard', nextUrl.origin));
-  }
-
-  console.log(`[Middleware] Allowing request to ${pathname}`);
+  // --- 3. 未認証ユーザーが保護されていないルートにアクセス ---
+  console.log(`[Middleware Allow 3] Allowing request for unauthenticated user to non-protected route ${pathname}`);
   return NextResponse.next();
 });
 

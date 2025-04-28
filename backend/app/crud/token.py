@@ -1,12 +1,13 @@
-from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, delete as sql_delete, insert
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from app.models.user import TokenBlacklist
 from app.models.enums import TokenBlacklistReason
 import uuid
 
-def add_token_to_blacklist(
-    db: Session,
+async def add_token_to_blacklist(
+    db: AsyncSession,
     token_jti: str,
     user_id: str,
     expires_at: datetime,
@@ -34,11 +35,11 @@ def add_token_to_blacklist(
         created_at=datetime.utcnow()
     )
     db.add(db_token)
-    db.commit()
-    db.refresh(db_token)
+    await db.commit()
+    await db.refresh(db_token)
     return db_token
 
-def is_token_blacklisted(db: Session, token_jti: str) -> bool:
+async def is_token_blacklisted(db: AsyncSession, token_jti: str) -> bool:
     """
     トークンがブラックリストに登録されているかチェックする
 
@@ -49,9 +50,11 @@ def is_token_blacklisted(db: Session, token_jti: str) -> bool:
     Returns:
         ブラックリストに登録されている場合はTrue、そうでない場合はFalse
     """
-    return db.query(TokenBlacklist).filter(TokenBlacklist.token_jti == token_jti).first() is not None
+    stmt = select(TokenBlacklist).where(TokenBlacklist.token_jti == token_jti)
+    result = await db.execute(stmt)
+    return result.scalars().first() is not None
 
-def get_blacklisted_tokens_by_user(db: Session, user_id: str, skip: int = 0, limit: int = 100) -> List[TokenBlacklist]:
+async def get_blacklisted_tokens_by_user(db: AsyncSession, user_id: str, skip: int = 0, limit: int = 100) -> List[TokenBlacklist]:
     """
     特定ユーザーのブラックリストに登録されたトークンを取得
 
@@ -62,11 +65,13 @@ def get_blacklisted_tokens_by_user(db: Session, user_id: str, skip: int = 0, lim
         limit: 取得する最大レコード数
 
     Returns:
-        ブラックリストに登録されたトークンのリスト
+        取得されたトークンブラックリストのリスト
     """
-    return db.query(TokenBlacklist).filter(TokenBlacklist.user_id == user_id).offset(skip).limit(limit).all()
+    stmt = select(TokenBlacklist).where(TokenBlacklist.user_id == user_id).offset(skip).limit(limit)
+    result = await db.execute(stmt)
+    return result.scalars().all()
 
-def remove_expired_tokens(db: Session) -> int:
+async def remove_expired_tokens(db: AsyncSession) -> int:
     """
     期限切れのブラックリストトークンを削除する
 
@@ -77,12 +82,13 @@ def remove_expired_tokens(db: Session) -> int:
         削除されたレコード数
     """
     now = datetime.utcnow()
-    result = db.query(TokenBlacklist).filter(TokenBlacklist.expires_at < now).delete()
-    db.commit()
-    return result
+    stmt = sql_delete(TokenBlacklist).where(TokenBlacklist.expires_at < now)
+    result = await db.execute(stmt)
+    await db.commit()
+    return result.rowcount
 
-def blacklist_tokens_by_user(
-    db: Session,
+async def blacklist_tokens_by_user(
+    db: AsyncSession,
     user_id: str,
     reason: TokenBlacklistReason = TokenBlacklistReason.SECURITY_BREACH
 ) -> int:
@@ -121,14 +127,23 @@ def blacklist_tokens_by_user(
     )
     
     db.add(security_record)
-    db.commit()
+    await db.commit()
     
     # JWT検証時に、トークン発行日とユーザーの最終セキュリティイベント日時を比較する
     # 実装を追加することで、特定のJTIを知らなくても、発行日時に基づいてトークンを無効化できる
     
+    stmt = insert(TokenBlacklist).values({
+        'user_id': user_id,
+        'reason': TokenBlacklistReason.PASSWORD_CHANGE, # 例：パスワード変更など
+        'jti': 'placeholder_jti', # プレースホルダーまたは適切な値を設定
+        'exp': datetime.now(timezone.utc) + timedelta(days=1) # 例：1日後
+    })
+    await db.execute(stmt)
+    await db.commit()
+    
     return 1  # 影響を受けたレコード数（ここでは常に1）
 
-def get_latest_security_event(db: Session, user_id: str) -> Optional[datetime]:
+async def get_latest_security_event(db: AsyncSession, user_id: str) -> Optional[datetime]:
     """
     特定ユーザーの最新のセキュリティイベント（パスワード変更など）のタイムスタンプを取得
 
@@ -137,12 +152,16 @@ def get_latest_security_event(db: Session, user_id: str) -> Optional[datetime]:
         user_id: ユーザーID
 
     Returns:
-        最新のセキュリティイベントのタイムスタンプ。イベントがない場合はNone
+        最新のセキュリティイベントのタイムスタンプ、存在しない場合はNone
     """
-    # セキュリティイベントはtokenがsecurity-event-で始まるレコード
-    record = db.query(TokenBlacklist).filter(
+    stmt = select(TokenBlacklist.created_at).where(
         TokenBlacklist.user_id == user_id,
-        TokenBlacklist.token_jti.like("security-event-%")
-    ).order_by(TokenBlacklist.created_at.desc()).first()
-    
-    return record.created_at if record else None 
+        TokenBlacklist.reason.in_([
+            TokenBlacklistReason.PASSWORD_CHANGE,
+            TokenBlacklistReason.SECURITY_BREACH,
+            TokenBlacklistReason.ADMIN_ACTION
+        ])
+    ).order_by(TokenBlacklist.created_at.desc()).limit(1)
+    result = await db.execute(stmt)
+    latest_event_time = result.scalar_one_or_none()
+    return latest_event_time 

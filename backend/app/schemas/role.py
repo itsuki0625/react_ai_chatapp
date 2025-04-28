@@ -2,11 +2,18 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
 from uuid import UUID
+import uuid
+
+# 循環インポートを避けるため、PermissionRead のインポートを工夫するか、
+# 完全なスキーマ定義をここに含めるか、型ヒントとして文字列を使う。
+# ここでは PermissionRead をインポートする前提で進める。
+from .permission import PermissionRead
 
 class RoleBase(BaseModel):
     """ロールの基本情報"""
-    name: str = Field(..., description="ロール名")
-    description: Optional[str] = Field(None, description="ロールの説明")
+    name: str = Field(..., description="ロール名", examples=["admin", "premium_user"])
+    description: Optional[str] = Field(None, description="ロールの説明", examples=["Administrator role with full access"])
+    is_active: bool = True
     permissions: List[str] = Field([], description="付与される権限のリスト")
 
 class RoleCreate(RoleBase):
@@ -15,15 +22,16 @@ class RoleCreate(RoleBase):
 
 class RoleUpdate(BaseModel):
     """ロール更新リクエスト"""
-    name: Optional[str] = Field(None, description="ロール名")
-    description: Optional[str] = Field(None, description="ロールの説明")
-    permissions: Optional[List[str]] = Field(None, description="付与される権限のリスト")
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+    permissions: Optional[List[str]] = None
 
-class RoleResponse(RoleBase):
-    """ロールレスポンス"""
-    id: UUID = Field(..., description="ロールID")
-    created_at: datetime = Field(..., description="作成日時")
-    updated_at: Optional[datetime] = Field(None, description="更新日時")
+class RoleRead(RoleBase):
+    id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+    permissions: List[PermissionRead] = []
 
     class Config:
         orm_mode = True

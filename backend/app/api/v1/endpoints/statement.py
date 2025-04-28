@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, require_permission
 from app.models.user import User
 from app.models.personal_statement import PersonalStatement, Feedback
 from app.schemas.personal_statement import (
@@ -26,7 +26,7 @@ router = APIRouter()
 @router.post("/", response_model=PersonalStatementResponse)
 async def create_new_statement(
     statement: PersonalStatementCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('statement_manage_own')),
     db: Session = Depends(get_db)
 ):
     """新しい志望理由書を作成"""
@@ -34,7 +34,7 @@ async def create_new_statement(
 
 @router.get("/", response_model=List[PersonalStatementResponse])
 async def get_user_statements(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('statement_manage_own')),
     db: Session = Depends(get_db)
 ):
     """ユーザーの志望理由書一覧を取得"""
@@ -74,7 +74,7 @@ async def get_user_statements(
 @router.get("/{statement_id}", response_model=PersonalStatementResponse)
 async def get_single_statement(
     statement_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('statement_manage_own')),
     db: Session = Depends(get_db)
 ):
     """特定の志望理由書を取得"""
@@ -87,7 +87,7 @@ async def get_single_statement(
 async def update_statement(
     statement_id: str,
     statement_update: PersonalStatementUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('statement_manage_own')),
     db: Session = Depends(get_db)
 ):
     """志望理由書を更新"""
@@ -120,7 +120,7 @@ async def update_statement(
 @router.delete("/{statement_id}")
 async def delete_existing_statement(
     statement_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('statement_manage_own')),
     db: Session = Depends(get_db)
 ):
     """志望理由書を削除"""
@@ -134,7 +134,7 @@ async def delete_existing_statement(
 async def create_statement_feedback(
     statement_id: str,
     feedback: FeedbackCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('statement_review_respond')),
     db: Session = Depends(get_db)
 ):
     """志望理由書にフィードバックを追加"""
@@ -146,7 +146,7 @@ async def create_statement_feedback(
 @router.get("/{statement_id}/feedback", response_model=List[FeedbackResponse])
 async def get_statement_feedbacks(
     statement_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission('statement_manage_own')),
     db: Session = Depends(get_db)
 ):
     """志望理由書のフィードバック一覧を取得"""

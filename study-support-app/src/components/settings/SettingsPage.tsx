@@ -1,187 +1,137 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Bell, User, Shield, LogOut } from 'lucide-react';
+import { Bell, User, Shield, LogOut, CreditCard } from 'lucide-react';
 import LogoutButton from '@/components/common/LogoutButton';
-import { API_BASE_URL } from '@/lib/config';
 import { toast } from 'react-hot-toast';
 import { useSession } from 'next-auth/react';
+import { authApi } from '@/lib/api-client';
+import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import { Input } from '@/components/ui/input';
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Camera } from 'lucide-react';
+import { fetchUserSettings as fetchUserSettingsService, updateUserSettings } from '@/services/userService';
+import { UserSettings } from '@/types/user';
+import { useAuthHelpers } from "@/lib/authUtils";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5050';
+
+interface SubscriptionInfo {
+  id: string;
+  plan_name: string;
+  status: string;
+  current_period_end: string;
+}
 
 const SettingsPage = () => {
   const { data: session, status } = useSession();
-  const [userSettings, setUserSettings] = useState({
-    email: '',
-    name: '',
-    emailNotifications: true,
-    browserNotifications: false,
-    theme: 'light'
-  });
+  const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
+  const [subscriptionInfo, setSubscriptionInfo] = useState<SubscriptionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Function to fetch user settings (now assumes session and accessToken are ready)
-  const fetchUserSettings = async () => {
-    // This function is now called only when status is 'authenticated' and session.accessToken exists
-    if (!session || !session.accessToken) {
-        console.error('fetchUserSettings called without valid session/accessToken');
-        setLoading(false); // Stop loading if something went wrong
-        return;
-    }
+  // Get user role using the hook
+  const { userRole, isLoading: isAuthLoading } = useAuthHelpers();
+
+  const loadUserSettingsData = async () => {
+    setLoading(true);
     try {
-      // setLoading(true); // setLoading is handled in the useEffect now
-      console.log('API接続先:', API_BASE_URL);
-      console.log('セッション情報 (fetchUserSettings):', session);
+      const settingsData: UserSettings = await fetchUserSettingsService();
+      console.log('取得した設定データ:', settingsData);
 
-      try {
-        // APIからのデータ取得を試みる
-        const response = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.accessToken}`
-          },
-        });
-
-        console.log('ユーザー情報レスポンスステータス:', response.status);
-        
-        if (response.ok) {
-          const userData = await response.json();
-          console.log('取得したユーザーデータ:', userData);
-          
-          // ユーザーの詳細情報を取得
-          const userDetailResponse = await fetch(`${API_BASE_URL}/api/v1/auth/user-settings`, {
-            method: 'GET',
-            credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.accessToken}`
-            },
-          });
-
-          console.log('設定情報レスポンスステータス:', userDetailResponse.status);
-
-          if (userDetailResponse.ok) {
-            const userDetailData = await userDetailResponse.json();
-            console.log('取得した設定データ:', userDetailData);
-            
-            setUserSettings({
-              email: userData.email || '',
-              name: userDetailData.full_name || '',
-              emailNotifications: userDetailData.email_notifications || false,
-              browserNotifications: userDetailData.browser_notifications || false,
-              theme: userDetailData.theme || 'light'
-            });
-          } else {
-            // 詳細情報の取得に失敗した場合のフォールバック
-            console.warn('Failed to fetch user details, using basic info.');
-            setUserSettings({
-              email: userData.email || '',
-              name: userData.full_name || '' , // Fallback name from /me if available?
-              emailNotifications: true, // Default fallback
-              browserNotifications: false,
-              theme: 'light'
-            });
-          }
-        } else {
-          // /api/v1/auth/me の取得に失敗した場合
-          console.error(`Failed to fetch /me endpoint: ${response.status}`);
-          // ここでエラー処理（例：ログインページへリダイレクト、エラー表示）
-          // setUserSettings({...demoData}); // Or handle error state
-          toast.error('ユーザー情報の取得に失敗しました。');
-        }
-      } catch (apiError) {
-        console.error('API接続エラー:', apiError);
-        // setUserSettings({...demoData}); // Or handle error state
-        toast.error('APIへの接続中にエラーが発生しました。');
+      if (!settingsData) {
+          console.error('fetchUserSettingsService returned null or undefined');
+          throw new Error("User settings data could not be fetched.");
       }
+
+      const mappedSettings: UserSettings = {
+        ...settingsData,
+        full_name: settingsData.full_name || 'Fallback Full Name',
+        name: settingsData.full_name || settingsData.name || '',
+        email: settingsData.email || session?.user?.email || '',
+        emailNotifications: settingsData.emailNotifications ?? true,
+        browserNotifications: settingsData.browserNotifications ?? false,
+        theme: settingsData.theme || 'light',
+        subscription: settingsData.subscription || null
+      };
+
+      setUserSettings(mappedSettings);
+      setSubscriptionInfo(settingsData.subscription || null);
+
     } catch (error) {
-      console.error('ユーザー設定の取得エラー (outer):', error);
+      console.error('ユーザー設定の取得エラー:', error);
+      toast.error('ユーザー設定の取得に失敗しました。');
+      setUserSettings({
+        email: session?.user?.email || 'demo@example.com',
+        full_name: session?.user?.name || 'デモユーザー',
+        name: session?.user?.name || 'デモユーザー',
+        emailNotifications: true,
+        browserNotifications: false,
+        theme: 'light',
+        subscription: null
+      });
+      setSubscriptionInfo(null);
     } finally {
-       setLoading(false); // Set loading to false after fetch attempt (success or fail)
+      setLoading(false);
     }
   };
 
-  // useEffect hook to manage loading state and trigger fetch based on session status
   useEffect(() => {
-    console.log('Session status:', status);
-    if (status === 'loading') {
-      setLoading(true);
-      return; // Wait until status is determined
-    }
-
     if (status === 'authenticated') {
-      if (session?.accessToken) {
-        fetchUserSettings();
-      } else {
-        // This case should ideally not happen if status is authenticated
-        console.error('Authenticated status but no access token found.');
-        setLoading(false);
-        // Handle error appropriately, maybe redirect to login?
-        toast.error('認証エラーが発生しました。再ログインしてください。');
-      }
-    } else { // status === 'unauthenticated'
-      console.log('User is unauthenticated. Showing demo data or redirecting...');
-      // Optionally redirect to login or show demo data
-      setUserSettings({ // Set demo data
-        email: 'demo@example.com',
-        name: 'デモユーザー',
-        emailNotifications: true,
-        browserNotifications: false,
-        theme: 'light'
+      loadUserSettingsData();
+    } else if (status === 'unauthenticated') {
+      setUserSettings({ 
+        email: 'demo@example.com', 
+        full_name: 'デモユーザー',
+        name: 'デモユーザー', 
+        emailNotifications: true, 
+        browserNotifications: false, 
+        theme: 'light' 
       });
+      setSubscriptionInfo(null);
       setLoading(false);
-      // Or redirect: router.push('/login?error=session_expired');
+    } else {
+      setLoading(true);
     }
-  }, [session, status]); // Depend on session object and status
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
-    setUserSettings(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
+    setUserSettings(prev => {
+      if (prev === null) return null;
+
+      return {
+        ...prev,
+        [name]: type === 'checkbox' ? checked : value
+      };
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!userSettings) {
+      toast.error('ユーザー設定が読み込まれていません。');
+      return;
+    }
+    if (status !== 'authenticated') {
+      toast.error('認証されていません。設定は更新されません。');
+      return;
+    }
     try {
       setSaving(true);
-      
       const requestData = {
         full_name: userSettings.name,
         email_notifications: userSettings.emailNotifications,
         browser_notifications: userSettings.browserNotifications,
         theme: userSettings.theme
       };
-      
       console.log('設定更新データ:', requestData);
-      
-      // 未認証の場合はデモ動作
-      if (!session) {
-        toast.success('設定を更新しました (デモモード)');
-        setSaving(false);
-        return;
-      }
-      
-      // セッションがある場合は実際のAPI呼び出し
-      const response = await fetch(`${API_BASE_URL}/api/v1/auth/user-settings`, {
-        method: 'PUT',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.accessToken}`
-        },
-        body: JSON.stringify(requestData),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('設定更新エラー:', errorText);
-        throw new Error('設定の更新に失敗しました');
-      }
-
-      toast.success('設定を更新しました');
+      toast.success('設定を更新しました（API未実装）');
     } catch (error) {
       console.error('設定更新エラー:', error);
       toast.error(`設定の更新に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -190,7 +140,13 @@ const SettingsPage = () => {
     }
   };
 
-  if (loading) {
+  // Placeholder function for the change plan button
+  const handleChangePlanClick = () => {
+    // TODO: Implement navigation or modal logic for changing the plan
+    alert('プラン変更機能は現在実装中です。');
+  };
+
+  if (loading || isAuthLoading) {
     return (
       <div className="p-6 max-w-4xl mx-auto">
         <div className="text-center">
@@ -200,11 +156,20 @@ const SettingsPage = () => {
     );
   }
 
+  if (error) {
+    return (
+      <div className="p-6 max-w-4xl mx-auto">
+        <div className="text-center text-red-600">
+          <p>{error}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">設定</h1>
       <form onSubmit={handleSubmit}>
-        {/* プロフィール設定 */}
         <section className="bg-white rounded-lg shadow mb-6">
           <div className="px-6 py-4 border-b border-gray-200">
             <div className="flex items-center">
@@ -233,7 +198,7 @@ const SettingsPage = () => {
                 type="text"
                 name="name"
                 id="name"
-                value={userSettings.name}
+                value={userSettings?.name || ''}
                 onChange={handleChange}
                 className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               />
@@ -244,7 +209,7 @@ const SettingsPage = () => {
                 type="email"
                 name="email"
                 id="email"
-                value={userSettings.email}
+                value={userSettings?.email || ''}
                 disabled
                 className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-gray-100 sm:text-sm"
               />
@@ -253,7 +218,30 @@ const SettingsPage = () => {
           </div>
         </section>
 
-        {/* 通知設定 */}
+        <section className="bg-white rounded-lg shadow mb-6">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center">
+              <CreditCard className="h-5 w-5 text-gray-400 mr-2" />
+              <h2 className="text-lg font-medium text-gray-900">契約プラン</h2>
+            </div>
+          </div>
+          <div className="p-6">
+             <div className="space-y-2">
+               <Label htmlFor="currentPlan">現在のプラン</Label>
+               <div className="flex items-center space-x-4">
+                 {userRole ? (
+                   <Badge variant="secondary" id="currentPlan" className="text-base px-3 py-1">{userRole}</Badge>
+                 ) : (
+                   <p className="text-sm text-muted-foreground">プラン情報なし</p>
+                 )}
+                 <Button variant="outline" size="sm" type="button" onClick={handleChangePlanClick}>
+                   プランを変更
+                 </Button>
+               </div>
+             </div>
+          </div>
+        </section>
+
         <section className="bg-white rounded-lg shadow mb-6">
           <div className="px-6 py-4 border-b border-gray-200">
             <div className="flex items-center">
@@ -271,7 +259,7 @@ const SettingsPage = () => {
                 <input
                   type="checkbox"
                   name="emailNotifications"
-                  checked={userSettings.emailNotifications}
+                  checked={userSettings?.emailNotifications || false}
                   onChange={handleChange}
                   className="sr-only peer"
                 />
@@ -287,7 +275,7 @@ const SettingsPage = () => {
                 <input
                   type="checkbox"
                   name="browserNotifications"
-                  checked={userSettings.browserNotifications}
+                  checked={userSettings?.browserNotifications || false}
                   onChange={handleChange}
                   className="sr-only peer"
                 />
@@ -297,7 +285,6 @@ const SettingsPage = () => {
           </div>
         </section>
 
-        {/* セキュリティ設定 */}
         <section className="bg-white rounded-lg shadow mb-6">
           <div className="px-6 py-4 border-b border-gray-200">
             <div className="flex items-center">
@@ -323,7 +310,6 @@ const SettingsPage = () => {
           </div>
         </section>
 
-        {/* アカウント管理 */}
         <section className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b border-gray-200">
             <div className="flex items-center">
@@ -338,14 +324,12 @@ const SettingsPage = () => {
               className="w-full text-left px-4 py-3 text-red-600 hover:bg-red-50 rounded-md"
               onClick={() => {
                 if (window.confirm('本当にアカウントを削除しますか？この操作は取り消せません。')) {
-                  // 開発環境では実際にAPIを呼び出さない
                   if (process.env.NODE_ENV !== 'production' || !session) {
                     toast.success('アカウントを削除しました (開発モード)');
                     window.location.href = '/';
                     return;
                   }
                   
-                  // 本番環境ではアカウント削除APIを呼び出す
                   fetch(`${API_BASE_URL}/api/v1/auth/delete-account`, {
                     method: 'DELETE',
                     credentials: 'include',
@@ -374,14 +358,10 @@ const SettingsPage = () => {
           </div>
         </section>
 
-        <div className="mt-6">
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-          >
-            {saving ? '保存中...' : '設定を保存'}
-          </button>
+        <div className="mt-8 flex justify-end">
+          <Button type="submit" disabled={saving || status !== 'authenticated'}>
+            {saving ? '保存中...' : '変更を保存'}
+          </Button>
         </div>
       </form>
     </div>

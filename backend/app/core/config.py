@@ -38,6 +38,18 @@ class Settings(BaseSettings):
         "postgresql://postgres:postgres@db:5432/app_db"
     )
     
+    # 追加: 非同期データベースURL
+    ASYNC_DATABASE_URL: Optional[str] = None
+
+    def __init__(self, **values):
+        super().__init__(**values)
+        # DATABASE_URL から ASYNC_DATABASE_URL を生成
+        if self.DATABASE_URL and self.DATABASE_URL.startswith("postgresql://"):
+            self.ASYNC_DATABASE_URL = self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif self.DATABASE_URL:
+            # 他のDBタイプの場合、適切な非同期URLに変換するロジックをここに追加
+            print(f"Warning: Could not automatically generate ASYNC_DATABASE_URL for {self.DATABASE_URL}")
+
     # OpenAI設定
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")  # 小文字のプロパティも追加

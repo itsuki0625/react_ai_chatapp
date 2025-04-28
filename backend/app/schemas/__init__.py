@@ -7,7 +7,7 @@ from .auth import (
 )
 from .chat import (
     Message, ChatRequest, ChatResponse, ChatMessageResponse,
-    ChatMessageCreate, ChatSessionCreate, ChatSessionResponse,
+    ChatMessageCreate, ChatSessionCreate, ChatSession, ChatSessionResponse,
     ChatSessionDetailResponse, ChatSessionArchiveRequest,
     SelfAnalysisRequest, SelfAnalysisReportResponse,
     AdmissionChatRequest, ChatAnalysisResponse, MessageSender,
@@ -85,7 +85,7 @@ __all__ = [
     "TwoFactorVerifyRequest", "RefreshTokenRequest",
     # Chat
     "Message", "ChatRequest", "ChatResponse", "ChatMessageResponse",
-    "ChatMessageCreate", "ChatSessionCreate", "ChatSessionResponse",
+    "ChatMessageCreate", "ChatSessionCreate", "ChatSession", "ChatSessionResponse",
     "ChatSessionDetailResponse", "ChatSessionArchiveRequest",
     "SelfAnalysisRequest", "SelfAnalysisReportResponse",
     "AdmissionChatRequest", "ChatAnalysisResponse", "MessageSender",

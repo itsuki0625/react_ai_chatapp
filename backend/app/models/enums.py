@@ -1,15 +1,29 @@
 import enum
 from sqlalchemy import Enum as SQLAlchemyEnum
 
+class MessageSender(str, enum.Enum):
+    USER = "user"
+    AI = "ai"
+    # SYSTEM = "system" # Keep commented out if not used
+
+class ChatType(str, enum.Enum):
+    SELF_ANALYSIS = "self_analysis"
+    ADMISSION = "admission" # 総合型選抜
+    STUDY_SUPPORT = "study_support" # 汎用学習支援
+    GENERAL = "general" # スキーマにあったもの (元々ここにあった)
+    # CONSULTATION = "consultation" # Keep commented out if not used
+    # FAQ = "faq" # Keep commented out if not used
+    # 必要に応じて他のタイプを追加
+
 class SessionType(enum.Enum):
     NORMAL = "normal"
     CONSULTATION = "consultation"
     FAQ = "faq"
 
 class SessionStatus(enum.Enum):
-    ACTIVE = "active"
-    CLOSED = "closed"
-    ARCHIVED = "archived"
+    ACTIVE = "ACTIVE"
+    CLOSED = "CLOSED"
+    ARCHIVED = "ARCHIVED"
 
 class SenderType(enum.Enum):
     USER = "user"

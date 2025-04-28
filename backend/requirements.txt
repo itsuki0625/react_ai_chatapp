@@ -14,11 +14,16 @@ pydantic[email]
 python-multipart>=0.0.9
 pandas
 openai
-passlib[bcrypt]>=1.7.4
+passlib>=1.7.4
+bcrypt==4.0.1
 stripe>=9.7.0
 pyotp
 qrcode
 pillow
+openai-agents
 
 # tests
 pytest>=8.2.2
+
+# 追加: 非同期 PostgreSQL ドライバ
+asyncpg

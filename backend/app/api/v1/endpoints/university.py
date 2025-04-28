@@ -1,7 +1,9 @@
+import asyncio
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
 from typing import List
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_async_db, require_permission
 from app.models.user import User
 from app.models.university import University, Department
 from app.schemas.university import UniversityResponse, DepartmentResponse
@@ -10,13 +12,14 @@ router = APIRouter()
 
 @router.get("/", response_model=List[UniversityResponse])
 async def get_universities(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
 ):
     """大学一覧を取得"""
-    universities = db.query(University).filter(
-        University.is_active == True
-    ).all()
+    result = await db.execute(
+        select(University).where(University.is_active == True)
+    )
+    universities = result.scalars().all()
     
     return [
         UniversityResponse(

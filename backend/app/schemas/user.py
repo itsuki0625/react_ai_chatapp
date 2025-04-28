@@ -1,20 +1,15 @@
 import logging
 from pydantic import BaseModel, EmailStr, validator, Field, computed_field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Set
 from uuid import UUID
 from datetime import datetime
 from enum import Enum
 from .base import TimestampMixin
-from app.models.user import User as UserModel, UserRole as UserRoleModel
+from app.models.user import User as UserModel, UserRole as UserRoleModel, Role, Permission
+from .subscription import SubscriptionResponse # SubscriptionResponse をインポート
 
 # Logger をモジュールレベルで定義
 logger = logging.getLogger(__name__)
-
-# --- Enums ---
-class UserRole(str, Enum):
-    ADMIN = "管理者"
-    TEACHER = "教員"
-    STUDENT = "生徒"
 
 class UserStatus(str, Enum):
     ACTIVE = "active"
@@ -38,7 +33,8 @@ class UserCreate(UserBase):
     full_name: str # Userモデルに合わせて full_name を追加
     password: str
     status: UserStatus = UserStatus.PENDING # 作成時のデフォルトステータス
-    role: UserRole = UserRole.STUDENT # 作成時にロールを指定できるようにする (デフォルトはSTUDENT)
+    # role: UserRole = UserRole.STUDENT # 作成時にロールを指定できるようにする (デフォルトはSTUDENT)
+    role: str = "生徒" # 型を str に変更し、デフォルト値を文字列で設定
 
     @validator('password')
     def password_strength(cls, v):
@@ -56,8 +52,8 @@ class UserUpdate(BaseModel):
     class_number: Optional[str] = None
     student_number: Optional[str] = None
     profile_image_url: Optional[str] = None
-    role: Optional[UserRole] = None # ロール変更用 (実際には UserRole テーブル経由での操作が必要かも)
-    status: Optional[UserStatus] = None # ステータス変更用 (is_active を更新)
+    role: Optional[str] = None # 文字列として受け入れるように変更
+    status: Optional[UserStatus] = None # ステータス変更用
 
 # Revert inheritance order for UserInDBBase and ensure fields match model
 class UserInDBBase(UserBase, TimestampMixin): # Inherit from UserBase and TimestampMixin again
@@ -100,26 +96,30 @@ class UserResponse(TimestampMixin):
 
     @computed_field
     @property
-    def role(self) -> UserRole:
+    def role(self) -> str: # 戻り値の型を str に変更
         user_roles_rel = getattr(self, 'user_roles', [])
         logger.info(f"SCHEMA: Computing field 'role'. Accessing self.user_roles: {user_roles_rel}")
         if user_roles_rel and isinstance(user_roles_rel, list):
-            if len(user_roles_rel) > 0:
-                first_user_role_obj = user_roles_rel[0]
-                if hasattr(first_user_role_obj, 'role') and hasattr(first_user_role_obj.role, 'name'):
-                    role_name = getattr(first_user_role_obj.role, 'name', UserRole.STUDENT.value)
-                    try:
-                        return UserRole(role_name)
-                    except ValueError:
-                         logger.warning(f"SCHEMA: Role name '{role_name}' not in UserRole enum.")
-                         return UserRole.STUDENT
+            # is_primary=True のロールを探す
+            primary_user_role_obj = next((ur for ur in user_roles_rel if getattr(ur, 'is_primary', False)), None)
+            
+            # プライマリが見つからない場合は最初のロールを試す (フォールバック)
+            if not primary_user_role_obj and len(user_roles_rel) > 0:
+                 primary_user_role_obj = user_roles_rel[0]
+                 logger.warning(f"SCHEMA: Primary role not found for user. Falling back to first role: {primary_user_role_obj}")
+            
+            if primary_user_role_obj:
+                if hasattr(primary_user_role_obj, 'role') and hasattr(primary_user_role_obj.role, 'name'):
+                    role_name = getattr(primary_user_role_obj.role, 'name', '不明')
+                    logger.info(f"SCHEMA: Computed role name: '{role_name}'")
+                    return role_name
                 else:
-                    logger.warning(f"SCHEMA: First UserRole object lacks expected 'role' attribute or role.name: {first_user_role_obj}")
+                    logger.warning(f"SCHEMA: UserRole object lacks expected 'role' attribute or role.name: {primary_user_role_obj}")
             else:
-                 logger.warning(f"SCHEMA: user_roles list is empty.")
+                 logger.warning(f"SCHEMA: user_roles list is empty or contains no valid role objects.")
         else:
              logger.warning(f"SCHEMA: user_roles attribute is missing or not a list: {user_roles_rel}")
-        return UserRole.STUDENT
+        return '不明' # デフォルト値 / エラー時の値
 
     @computed_field
     @property
@@ -137,6 +137,34 @@ class UserResponse(TimestampMixin):
             return last_login
         logger.info("SCHEMA: Computing field 'last_login_at'. login_info not found or None.")
         return None
+
+    @computed_field
+    @property
+    def permissions(self) -> Set[str]:
+        """ユーザーが持つロールに紐づく全ての権限名のセットを返す"""
+        user_perms: Set[str] = set()
+        user_roles_rel = getattr(self, 'user_roles', [])
+        logger.debug(f"SCHEMA: Computing permissions for user. Roles: {user_roles_rel}")
+        if user_roles_rel and isinstance(user_roles_rel, list):
+            for user_role_assoc in user_roles_rel:
+                # UserRoleModel の role 属性にアクセス
+                if hasattr(user_role_assoc, 'role') and isinstance(user_role_assoc.role, Role):
+                    role_obj: Role = user_role_assoc.role
+                    # Role の permissions 属性 (Association Proxy) にアクセス
+                    if hasattr(role_obj, 'permissions') and isinstance(role_obj.permissions, list):
+                        for perm in role_obj.permissions:
+                             # Permission オブジェクトの name 属性を確認
+                            if isinstance(perm, Permission) and hasattr(perm, 'name'):
+                                user_perms.add(perm.name)
+                            else:
+                                logger.warning(f"SCHEMA: Unexpected permission object type or missing name: {perm} in role {role_obj.name}")
+                    else:
+                        logger.warning(f"SCHEMA: Role object {role_obj.name} lacks 'permissions' list or is not a list.")
+                else:
+                     logger.warning(f"SCHEMA: UserRole association lacks 'role' object or it's not a Role instance: {user_role_assoc}")
+        logger.info(f"SCHEMA: Computed permissions: {user_perms}")
+        return user_perms
+
     # --- End computed fields ---
 
     model_config = {
@@ -191,4 +219,17 @@ class UserSettings(BaseModel):
 
 class UserRoleAssignment(BaseModel):
     user_id: UUID
-    role_id: UUID 
+    role_id: UUID
+
+# --- User Settings Schema ---
+class UserSettingsResponse(BaseModel):
+    email: EmailStr
+    full_name: str
+    email_notifications: bool = True
+    browser_notifications: bool = False
+    theme: str = "light"
+    subscription: Optional[SubscriptionResponse] = None # ★ サブスクリプション情報を追加
+
+    model_config = {
+        "from_attributes": True,
+    } 

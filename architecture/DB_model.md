@@ -17,6 +17,13 @@
 すべてのモデルは共通の`Base`クラスを継承しており、多くのモデルは`TimestampMixin`も継承して作成日時と更新日時を自動的に記録しています。
 
 ```python
+# backend/app/models/base.py
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, DateTime
+from datetime import datetime
+
+Base = declarative_base()
+
 class TimestampMixin:
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -24,7 +31,7 @@ class TimestampMixin:
 
 ほとんどのテーブルは、主キーとしてUUIDを使用しています。
 
-## ユーザー関連テーブル
+## ユーザー関連テーブル (`user.py`)
 
 ### Role（ロール）
 - `id`: UUID、主キー
@@ -33,6 +40,9 @@ class TimestampMixin:
 - `is_active`: アクティブ状態（ブール値、デフォルト: true）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `user_roles`: `UserRole`モデルへのリレーション (1対多)
+  - `role_permissions`: `RolePermission`モデルへのリレーション (1対多)
 
 ### Permission（権限）
 - `id`: UUID、主キー
@@ -40,43 +50,79 @@ class TimestampMixin:
 - `description`: 説明
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `role_permissions`: `RolePermission`モデルへのリレーション (1対多)
 
 ### RolePermission（ロール権限）
 - `id`: UUID、主キー
-- `role_id`: ロールID（外部キー、必須）
-- `permission_id`: 権限ID（外部キー、必須）
+- `role_id`: ロールID（外部キー、必須、`roles.id`を参照）
+- `permission_id`: 権限ID（外部キー、必須、`permissions.id`を参照）
 - `is_granted`: 付与状態（ブール値、デフォルト: true）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `role`: `Role`モデルへのリレーション (多対1)
+  - `permission`: `Permission`モデルへのリレーション (多対1)
 
 ### User（ユーザー）
 - `id`: UUID、主キー
 - `email`: メールアドレス（必須、一意）
 - `hashed_password`: ハッシュ化されたパスワード（必須）
 - `full_name`: 氏名（必須）
-- `school_id`: 所属学校ID（外部キー）
-- `is_active`: アクティブ状態（ブール値、デフォルト: true）
+- `school_id`: 所属学校ID（外部キー、`schools.id`を参照）
+- `status`: ユーザーステータス（enum: `UserStatus`、必須、デフォルト: `PENDING`）
+- `is_verified`: メール検証済みフラグ（ブール値、デフォルト: false） - `UserEmailVerification`から同期
+- `is_2fa_enabled`: 2要素認証有効フラグ（ブール値、デフォルト: false） - `UserTwoFactorAuth`から同期
+- `totp_secret`: TOTPシークレット（文字列、Nullable） - `UserTwoFactorAuth`から同期
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `profile`: `UserProfile`モデルへのリレーション (1対1)
+  - `login_info`: `UserLoginInfo`モデルへのリレーション (1対1)
+  - `email_verification`: `UserEmailVerification`モデルへのリレーション (1対1)
+  - `two_factor_auth`: `UserTwoFactorAuth`モデルへのリレーション (1対1)
+  - `user_roles`: `UserRole`モデルへのリレーション (1対多)
+  - `contact_info`: `UserContactInfo`モデルへのリレーション (1対多)
+  - `school`: `School`モデルへのリレーション (多対1)
+  - `chat_sessions`: `ChatSession`モデルへのリレーション (1対多)
+  - `chat_messages`: `ChatMessage`モデルへのリレーション (1対多, cascade delete)
+  - `desired_schools`: `DesiredSchool`モデルへのリレーション (1対多)
+  - `subscriptions`: `Subscription`モデルへのリレーション (1対多)
+  - `payment_history`: `PaymentHistory`モデルへのリレーション (1対多)
+  - `token_blacklist`: `TokenBlacklist`モデルへのリレーション (1対多)
+  - `study_plans`: `StudyPlan`モデルへのリレーション (1対多)
+  - `created_quizzes`: `Quiz`モデルへのリレーション (1対多, 作成者として)
+  - `quiz_attempts`: `UserQuizAttempt`モデルへのリレーション (1対多)
+  - `created_learning_paths`: `LearningPath`モデルへのリレーション (1対多, 作成者として)
+  - `learning_paths`: `UserLearningPath`モデルへのリレーション (1対多)
+  - `forum_categories`: `ForumCategory`モデルへのリレーション (1対多, 作成者として) - ForumCategory側で定義
+  - `forum_topics`: `ForumTopic`モデルへのリレーション (1対多, 作成者として)
+  - `forum_posts`: `ForumPost`モデルへのリレーション (1対多, 作成者として)
+  - `forum_topic_views`: `ForumTopicView`モデルへのリレーション (1対多)
+  - `conversations_as_user1`: `Conversation`モデルへのリレーション (1対多, user1として)
+  - `conversations_as_user2`: `Conversation`モデルへのリレーション (1対多, user2として)
+  - `sent_messages`: `Message`モデルへのリレーション (1対多, 送信者として)
 
 ### UserProfile（ユーザープロフィール）
 - `id`: UUID、主キー
-- `user_id`: ユーザーID（外部キー、必須、一意）
-- `grade`: 学年
-- `class_number`: クラス
-- `student_number`: 出席番号
-- `profile_image_url`: プロフィール画像URL
+- `user_id`: ユーザーID（外部キー、必須、一意、`users.id`を参照）
+- `grade`: 学年 (整数)
+- `class_number`: クラス (文字列)
+- `student_number`: 出席番号 (文字列)
+- `profile_image_url`: プロフィール画像URL (文字列)
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `user`: `User`モデルへのリレーション (1対1)
 
 ### UserLoginInfo（ユーザーログイン情報）
 - `id`: UUID、主キー
-- `user_id`: ユーザーID（外部キー、必須、一意）
+- `user_id`: ユーザーID（外部キー、必須、一意、`users.id`を参照）
 - `last_login_at`: 最終ログイン日時
 - `failed_login_attempts`: ログイン失敗回数（整数、デフォルト: 0）
 - `last_failed_login_at`: 最終ログイン失敗日時
 - `locked_until`: アカウントロック解除日時
-- `account_lock_reason`: アカウントロック理由（enum: AccountLockReason）
+- `account_lock_reason`: アカウントロック理由（enum: `AccountLockReason`）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
 
@@ -367,424 +413,564 @@ class TimestampMixin:
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
 
-## サブスクリプション関連テーブル
+## サブスクリプション関連テーブル (`subscription.py`)
 
 ### Subscription（サブスクリプション）
 - `id`: UUID、主キー
-- `user_id`: ユーザーID（外部キー、必須）
-- `stripe_customer_id`: Stripe顧客ID
-- `stripe_subscription_id`: Stripeサブスクリプション
-- `status`: ステータス（'active', 'past_due', 'canceled', 'unpaid', 'trialing'、必須）
-- `plan_id`: プランID（外部キー、必須）
-- `current_period_start`: 現在の期間開始日
-- `current_period_end`: 現在の期間終了日
-- `cancel_at`: キャンセル予定日
-- `canceled_at`: キャンセル日
+- `user_id`: ユーザーID（外部キー、必須、`users.id`を参照）
+- `stripe_customer_id`: Stripe顧客ID (文字列)
+- `stripe_subscription_id`: StripeサブスクリプションID (文字列)
+- `status`: ステータス（文字列、'active', 'past_due', 'canceled', 'unpaid', 'trialing'、必須）
+- `plan_id`: プランID（外部キー、必須、`subscription_plans.id`を参照）
+- `current_period_start`: 現在の期間開始日 (DateTime)
+- `current_period_end`: 現在の期間終了日 (DateTime)
+- `cancel_at`: キャンセル予定日 (DateTime)
+- `canceled_at`: キャンセル日 (DateTime)
 - `is_active`: アクティブ状態（ブール値、デフォルト: true）
-- `campaign_code_id`: キャンペーンコードID（外部キー）
+- `campaign_code_id`: キャンペーンコードID（外部キー、`campaign_codes.id`を参照）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `user`: `User`モデルへのリレーション (多対1)
+  - `plan`: `SubscriptionPlan`モデルへのリレーション (多対1)
+  - `campaign_code`: `CampaignCode`モデルへのリレーション (多対1)
+  - `payment_history`: `PaymentHistory`モデルへのリレーション (1対多)
+  - `invoices`: `Invoice`モデルへのリレーション (1対多)
 
 ### SubscriptionPlan（サブスクリプションプラン）
 - `id`: UUID、主キー
 - `name`: プラン名（必須、一意）
-- `description`: プラン説明
+- `description`: プラン説明 (Text)
 - `price_id`: Stripe価格ID（必須）
-- `amount`: 金額（必須）
+- `amount`: 金額（整数、必須）
 - `currency`: 通貨（デフォルト: 'jpy'、必須）
 - `interval`: 請求間隔（'month', 'year'、必須）
-- `interval_count`: 間隔数（必須、デフォルト: 1）
-- `trial_days`: 無料トライアル日数
+- `interval_count`: 間隔数（整数、必須、デフォルト: 1）
+- `trial_days`: 無料トライアル日数 (Integer)
 - `is_active`: アクティブ状態（ブール値、デフォルト: true）
 - `features`: 機能説明（JSONBフィールド）
-- `metadata`: メタデータ（JSONBフィールド）
+- `metadata`: メタデータ（JSONBフィールド） ※ コードでは`plan_metadata`
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `subscriptions`: `Subscription`モデルへのリレーション (1対多)
+  - `invoice_items`: `InvoiceItem`モデルへのリレーション (1対多)
 
 ### PaymentHistory（支払い履歴）
 - `id`: UUID、主キー
-- `user_id`: ユーザーID（外部キー、必須）
-- `subscription_id`: サブスクリプションID（外部キー）
-- `stripe_payment_intent_id`: Stripe支払いインテントID
-- `stripe_invoice_id`: Stripe請求書ID
-- `amount`: 金額（必須）
+- `user_id`: ユーザーID（外部キー、必須、`users.id`を参照）
+- `subscription_id`: サブスクリプションID（外部キー、`subscriptions.id`を参照）
+- `stripe_payment_intent_id`: Stripe支払いインテントID (文字列)
+- `stripe_invoice_id`: Stripe請求書ID (文字列)
+- `amount`: 金額（整数、必須）
 - `currency`: 通貨（デフォルト: 'jpy'、必須）
-- `status`: ステータス（'succeeded', 'pending', 'failed'、必須）
-- `payment_method_id`: 支払い方法ID（外部キー）
+- `status`: ステータス（文字列、'succeeded', 'pending', 'failed'、必須）
+- `payment_method_id`: 支払い方法ID（外部キー、`payment_methods.id`を参照）
 - `payment_date`: 支払い日（デフォルト: 現在日時）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `user`: `User`モデルへのリレーション (多対1)
+  - `subscription`: `Subscription`モデルへのリレーション (多対1)
+  - `payment_method`: `PaymentMethod`モデルへのリレーション (多対1)
 
 ### PaymentMethod（支払い方法）
 - `id`: UUID、主キー
-- `user_id`: ユーザーID（外部キー、必須）
+- `user_id`: ユーザーID（外部キー、必須、`users.id`を参照）
 - `stripe_payment_method_id`: Stripe支払い方法ID（必須）
 - `method_type`: 支払い方法タイプ（'card', 'bank_transfer', 'convenience_store'等、必須）
 - `is_default`: デフォルト支払い方法かどうか（ブール値、デフォルト: false）
 - `last_four`: カード下4桁または識別子
-- `expiry_month`: 有効期限月
-- `expiry_year`: 有効期限年
+- `expiry_month`: 有効期限月 (Integer)
+- `expiry_year`: 有効期限年 (Integer)
 - `brand`: カードブランド
 - `is_active`: アクティブ状態（ブール値、デフォルト: true）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `user`: `User`モデルへのリレーション (多対1)
+  - `payment_history`: `PaymentHistory`モデルへのリレーション (1対多)
 
 ### CampaignCode（キャンペーンコード）
 - `id`: UUID、主キー
 - `code`: コード（必須、一意）
-- `description`: 説明
-- `discount_type_id`: 割引タイプID（外部キー、必須）
-- `discount_value`: 割引額または割引率（必須）
-- `max_uses`: 最大使用回数
+- `description`: 説明 (Text)
+- `discount_type_id`: 割引タイプID（外部キー、必須、`discount_types.id`を参照）
+- `discount_value`: 割引額または割引率（必須、Float）
+- `max_uses`: 最大使用回数 (Integer)
 - `used_count`: 使用回数（整数、デフォルト: 0）
-- `valid_from`: 有効期間開始
-- `valid_until`: 有効期間終了
+- `valid_from`: 有効期間開始 (DateTime)
+- `valid_until`: 有効期間終了 (DateTime)
 - `is_active`: アクティブ状態（ブール値、デフォルト: true）
-- `created_by`: 作成者ID（外部キー）
+- `created_by`: 作成者ID（外部キー、`users.id`を参照）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **プロパティ:**
+  - `is_valid`: コードが現在有効かチェックするプロパティ
+- **リレーションシップ:**
+  - `discount_type`: `DiscountType`モデルへのリレーション (多対1)
+  - `creator`: `User`モデルへのリレーション (多対1, 作成者)
+  - `redemptions`: `CampaignCodeRedemption`モデルへのリレーション (1対多)
+  - `subscriptions`: `Subscription`モデルへのリレーション (1対多)
 
 ### DiscountType（割引タイプ）
 - `id`: UUID、主キー
 - `name`: 割引タイプ名（'percentage', 'fixed'等、必須、一意）
-- `description`: 説明
+- `description`: 説明 (Text)
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `campaign_codes`: `CampaignCode`モデルへのリレーション (1対多)
 
 ### CampaignCodeRedemption（キャンペーンコード使用履歴）
 - `id`: UUID、主キー
-- `campaign_code_id`: キャンペーンコードID（外部キー、必須）
-- `user_id`: 使用ユーザーID（外部キー、必須）
-- `subscription_id`: 適用サブスクリプションID（外部キー、必須）
-- `redeemed_at`: 使用日時（必須、デフォルト: 現在日時）
-- `discount_applied`: 適用された割引額（必須）
+- `campaign_code_id`: キャンペーンコードID（外部キー、必須、`campaign_codes.id`を参照）
+- `user_id`: 使用ユーザーID（外部キー、必須、`users.id`を参照）
+- `subscription_id`: 適用サブスクリプションID（外部キー、必須、`subscriptions.id`を参照）
+- `redeemed_at`: 使用日時（DateTime、必須、デフォルト: 現在日時）
+- `discount_applied`: 適用された割引額（Float、必須）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `campaign_code`: `CampaignCode`モデルへのリレーション (多対1)
+  - `user`: `User`モデルへのリレーション (多対1)
+  - `subscription`: `Subscription`モデルへのリレーション (多対1)
 
 ### Invoice（請求書）
 - `id`: UUID、主キー
-- `user_id`: ユーザーID（外部キー、必須）
-- `subscription_id`: サブスクリプションID（外部キー）
-- `stripe_invoice_id`: Stripe請求書ID
-- `amount`: 金額（必須）
+- `user_id`: ユーザーID（外部キー、必須、`users.id`を参照）
+- `subscription_id`: サブスクリプションID（外部キー、`subscriptions.id`を参照）
+- `stripe_invoice_id`: Stripe請求書ID (文字列)
+- `amount`: 金額（整数、必須）
 - `currency`: 通貨（デフォルト: 'jpy'、必須）
-- `status`: ステータス（'draft', 'open', 'paid', 'uncollectible', 'void'、必須）
-- `invoice_date`: 請求日（必須）
-- `due_date`: 支払期限日
-- `paid_at`: 支払完了日
+- `status`: ステータス（文字列、'draft', 'open', 'paid', 'uncollectible', 'void'、必須）
+- `invoice_date`: 請求日（DateTime、必須）
+- `due_date`: 支払期限日 (DateTime)
+- `paid_at`: 支払完了日 (DateTime)
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `user`: `User`モデルへのリレーション (多対1)
+  - `subscription`: `Subscription`モデルへのリレーション (多対1)
+  - `items`: `InvoiceItem`モデルへのリレーション (1対多)
 
 ### InvoiceItem（請求書項目）
 - `id`: UUID、主キー
-- `invoice_id`: 請求書ID（外部キー、必須）
-- `description`: 項目説明（必須）
-- `amount`: 金額（必須）
-- `quantity`: 数量（必須、デフォルト: 1）
-- `subscription_plan_id`: サブスクリプションプランID（外部キー）
+- `invoice_id`: 請求書ID（外部キー、必須、`invoices.id`を参照）
+- `description`: 項目説明（Text、必須）
+- `amount`: 金額（整数、必須）
+- `quantity`: 数量（整数、必須、デフォルト: 1）
+- `subscription_plan_id`: サブスクリプションプランID（外部キー、`subscription_plans.id`を参照）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `invoice`: `Invoice`モデルへのリレーション (多対1)
+  - `subscription_plan`: `SubscriptionPlan`モデルへのリレーション (多対1)
 
-## コンテンツ関連テーブル
+## コンテンツ関連テーブル (`content.py`)
 
 ### Content（コンテンツ）
 - `id`: UUID、主キー
 - `title`: タイトル（必須）
-- `description`: 説明
+- `description`: 説明 (Text)
 - `url`: URL（必須）
-- `content_type`: コンテンツタイプ（enum: ContentType、必須）
+- `content_type`: コンテンツタイプ（enum: `ContentType` (video, article, quiz等)、必須）
 - `thumbnail_url`: サムネイルURL
-- `duration`: 再生時間（秒）
+- `duration`: 再生時間（秒、Integer）
 - `is_premium`: プレミアムコンテンツかどうか（ブール値、デフォルト: false）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `tags`: `ContentTag`モデルへのリレーション (1対多)
+  - `category_relations`: `ContentCategoryRelation`モデルへのリレーション (1対多)
+  - `view_history`: `ContentViewHistory`モデルへのリレーション (1対多)
+  - `ratings`: `ContentRating`モデルへのリレーション (1対多)
 
 ### ContentTag（コンテンツタグ）
 - `id`: UUID、主キー
-- `content_id`: コンテンツID（外部キー、必須）
+- `content_id`: コンテンツID（外部キー、必須、`contents.id`を参照）
 - `tag_name`: タグ名（必須）
 - `created_at`: 作成日時（デフォルト: 現在日時）
+- **リレーションシップ:**
+  - `content`: `Content`モデルへのリレーション (多対1)
 
 ### ContentCategory（コンテンツカテゴリ）
 - `id`: UUID、主キー
 - `name`: カテゴリ名（必須）
-- `description`: 説明
-- `parent_id`: 親カテゴリID（外部キー、自己参照、オプション）
-- `display_order`: 表示順序
+- `description`: 説明 (Text)
+- `parent_id`: 親カテゴリID（外部キー、自己参照、オプション、`content_categories.id`を参照）
+- `display_order`: 表示順序 (Integer, Nullable)
 - `icon_url`: アイコンURL
 - `is_active`: アクティブ状態（ブール値、デフォルト: true）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `parent`: `ContentCategory`モデルへのリレーション (多対1, 自己参照, remote_side=[id])
+  - `children`: `ContentCategory`モデルへのリレーション (1対多, 自己参照, `parent` の backref)
+  - `content_relations`: `ContentCategoryRelation`モデルへのリレーション (1対多)
 
 ### ContentCategoryRelation（コンテンツカテゴリ関連付け）
 - `id`: UUID、主キー
-- `content_id`: コンテンツID（外部キー、必須）
-- `category_id`: カテゴリID（外部キー、必須）
+- `content_id`: コンテンツID（外部キー、必須、`contents.id`を参照）
+- `category_id`: カテゴリID（外部キー、必須、`content_categories.id`を参照）
 - `created_at`: 作成日時（デフォルト: 現在日時）
+- **リレーションシップ:**
+  - `content`: `Content`モデルへのリレーション (多対1)
+  - `category`: `ContentCategory`モデルへのリレーション (多対1)
 
 ### ContentViewHistory（コンテンツ視聴履歴）
 - `id`: UUID、主キー
-- `user_id`: ユーザーID（外部キー、必須）
-- `content_id`: コンテンツID（外部キー、必須）
+- `user_id`: ユーザーID（外部キー、必須、`users.id`を参照）
+- `content_id`: コンテンツID（外部キー、必須、`contents.id`を参照）
 - `viewed_at`: 視聴日時（デフォルト: 現在日時）
-- `progress`: 視聴進捗（秒数または位置、0～100%）
+- `progress`: 視聴進捗（Float, Nullable）
 - `completed`: 視聴完了フラグ（ブール値、デフォルト: false）
-- `completed_at`: 完了日時
-- `duration`: セッション継続時間（秒）
-- `device_type`: 視聴デバイスタイプ（enum: DeviceType）
+- `completed_at`: 完了日時 (DateTime)
+- `duration`: セッション継続時間（秒、Integer）
+- `device_type`: 視聴デバイスタイプ（enum: `DeviceType` (pc, mobile, tablet等), Nullable）
 - `ip_address`: IPアドレス
 - `user_agent`: ユーザーエージェント
 - `created_at`: 作成日時（デフォルト: 現在日時）
+- **リレーションシップ:**
+  - `user`: `User`モデルへのリレーション (多対1)
+  - `content`: `Content`モデルへのリレーション (多対1)
+  - `view_metadata`: `ContentViewHistoryMetaData`モデルへのリレーション (1対多)
 
 ### ContentViewHistoryMetaData（コンテンツ視聴履歴メタデータ）
 - `id`: UUID、主キー
-- `view_history_id`: 視聴履歴ID（外部キー、必須）
+- `view_history_id`: 視聴履歴ID（外部キー、必須、`content_view_history.id`を参照）
 - `key`: メタデータキー（必須）
 - `value`: メタデータ値（必須）
 - `created_at`: 作成日時（デフォルト: 現在日時）
+- **リレーションシップ:**
+  - `view_history`: `ContentViewHistory`モデルへのリレーション (多対1)
 
 ### ContentRating（コンテンツ評価）
 - `id`: UUID、主キー
-- `user_id`: ユーザーID（外部キー、必須）
-- `content_id`: コンテンツID（外部キー、必須）
-- `rating`: 評価（1～5、必須）
-- `comment`: コメント
+- `user_id`: ユーザーID（外部キー、必須、`users.id`を参照）
+- `content_id`: コンテンツID（外部キー、必須、`contents.id`を参照）
+- `rating`: 評価（1～5、整数、必須）
+- `comment`: コメント (Text)
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `user`: `User`モデルへのリレーション (多対1)
+  - `content`: `Content`モデルへのリレーション (多対1)
 
 ## 学習進捗関連テーブル
 
-### StudyPlan（学習計画）
+### StudyPlan（学習計画） (`study_plan.py`)
 - `id`: UUID、主キー
-- `user_id`: ユーザーID（外部キー、必須）
+- `user_id`: ユーザーID（外部キー、必須、`users.id`を参照）
 - `title`: タイトル（必須）
-- `description`: 説明
-- `start_date`: 開始日時
-- `end_date`: 終了日時
-- `goal`: 目標
-- `status`: ステータス（enum: StudyPlanStatus、必須）
-- `created_at`: 作成日時（デフォルト: 現在日時）
-- `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- `description`: 説明 (Text)
+- `start_date`: 開始日時 (Date, 必須)
+- `end_date`: 終了日時 (Date, 必須)
+- `subject`: 科目 (String, nullable)
+- `level`: レベル (String, nullable)
+- `is_active`: アクティブフラグ (Boolean, デフォルト: true)
+- `completion_rate`: 完了率 (Float, デフォルト: 0.0)
+- `created_at`: 作成日時 (Date, デフォルト: 現在日時)
+- `updated_at`: 更新日時 (Date, Nullable)
+- **リレーションシップ:**
+  - `user`: `User`モデルへのリレーション (多対1)
+  - `items`: `StudyPlanItem`モデルへのリレーション (1対多, cascade)
+  - `goals`: `StudyGoal` モデルへのリレーション (1対多, cascade)
 
-### StudyPlanItem（学習計画項目）
+### StudyPlanItem（学習計画項目） (`study_plan.py`)
 - `id`: UUID、主キー
-- `study_plan_id`: 学習計画ID（外部キー、必須）
-- `content_id`: コンテンツID（外部キー、オプション）
+- `study_plan_id`: 学習計画ID（外部キー、必須、`study_plans.id`を参照）
+- `content_id`: コンテンツID（外部キー、オプション、`contents.id`を参照）
 - `title`: タイトル（必須）
-- `description`: 説明
-- `scheduled_date`: 予定日時
-- `duration_minutes`: 予定時間（分）
+- `description`: 説明 (Text)
+- `scheduled_date`: 予定日時 (Date, Nullable)
+- `duration_minutes`: 予定時間（分、Integer, デフォルト: 0）
 - `completed`: 完了フラグ（ブール値、デフォルト: false）
-- `completed_at`: 完了日時
-- `display_order`: 表示順序
-- `created_at`: 作成日時（デフォルト: 現在日時）
-- `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- `completed_at`: 完了日時 (Date, Nullable)
+- `display_order`: 表示順序 (Integer)
+- `created_at`: 作成日時 (Date, デフォルト: 現在日時)
+- `updated_at`: 更新日時 (Date, Nullable)
+- **リレーションシップ:**
+  - `study_plan`: `StudyPlan`モデルへのリレーション (多対1)
+  - `content`: `Content`モデルへのリレーション (多対1)
 
-### LearningPath（学習パス）
+### StudyGoal（学習目標） (`study_plan.py`)
+- `id`: UUID、主キー
+- `study_plan_id`: 学習計画ID（外部キー、必須、`study_plans.id`を参照）
+- `title`: タイトル（必須）
+- `description`: 説明 (Text)
+- `target_date`: 目標期日 (Date, Nullable)
+- `priority`: 優先度 (Integer, デフォルト: 1)
+- `completed`: 完了フラグ (Boolean, デフォルト: false)
+- `completion_date`: 完了日 (Date, Nullable)
+- `notes`: ノート (Text)
+- `created_at`: 作成日時 (Date, デフォルト: 現在日時)
+- `updated_at`: 更新日時 (Date, Nullable)
+- **リレーションシップ:**
+  - `study_plan`: `StudyPlan` モデルへのリレーション (多対1)
+
+### StudyPlanTemplate（学習計画テンプレート） (`study_plan.py`)
 - `id`: UUID、主キー
 - `title`: タイトル（必須）
-- `description`: 説明
-- `difficulty_level`: 難易度（enum: DifficultyLevel、必須）
-- `estimated_hours`: 想定学習時間
-- `created_by`: 作成者ID（外部キー、必須）
+- `description`: 説明（必須, Text）
+- `subject`: 科目（必須, String）
+- `level`: レベル（必須, String）
+- `duration_days`: 期間（日数, Integer, 必須）
+- `goals`: 目標（JSON, 必須）
+- `created_at`: 作成日時 (Date, デフォルト: 現在日時)
+- `updated_at`: 更新日時 (Date, Nullable)
+- **リレーションシップ:** なし
+
+### LearningPath（学習パス） (`learning_path.py`)
+- `id`: UUID、主キー
+- `title`: タイトル（必須）
+- `description`: 説明 (Text)
+- `difficulty_level`: 難易度（String, 必須） # enum: DifficultyLevel
+- `estimated_hours`: 想定学習時間 (Float, Nullable)
+- `created_by`: 作成者ID（外部キー、必須、`users.id`を参照）
 - `is_public`: 公開フラグ（ブール値、デフォルト: true）
 - `is_featured`: おすすめフラグ（ブール値、デフォルト: false）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `creator`: `User`モデルへのリレーション (多対1, foreign_keys=[created_by])
+  - `prerequisites`: `LearningPathPrerequisite`モデルへのリレーション (1対多, cascade)
+  - `target_audiences`: `LearningPathAudience`モデルへのリレーション (1対多, cascade)
+  - `items`: `LearningPathItem`モデルへのリレーション (1対多, cascade)
+  - `user_enrollments`: `UserLearningPath`モデルへのリレーション (1対多)
 
-### LearningPathPrerequisite（学習パス前提条件）
+### LearningPathPrerequisite（学習パス前提条件） (`learning_path.py`)
 - `id`: UUID、主キー
-- `learning_path_id`: 学習パスID（外部キー、必須）
-- `prerequisite`: 前提条件（必須）
+- `learning_path_id`: 学習パスID（外部キー、必須、`learning_paths.id`を参照）
+- `prerequisite`: 前提条件（String, 必須）
 - `created_at`: 作成日時（デフォルト: 現在日時）
+- **リレーションシップ:**
+  - `learning_path`: `LearningPath`モデルへのリレーション (多対1)
 
-### LearningPathAudience（学習パス対象者）
+### LearningPathAudience（学習パス対象者） (`learning_path.py`)
 - `id`: UUID、主キー
-- `learning_path_id`: 学習パスID（外部キー、必須）
-- `target_audience`: 対象ユーザー層（必須）
+- `learning_path_id`: 学習パスID（外部キー、必須、`learning_paths.id`を参照）
+- `target_audience`: 対象ユーザー層（String, 必須）
 - `created_at`: 作成日時（デフォルト: 現在日時）
+- **リレーションシップ:**
+  - `learning_path`: `LearningPath`モデルへのリレーション (多対1)
 
-### LearningPathItem（学習パス項目）
+### LearningPathItem（学習パス項目） (`learning_path.py`)
 - `id`: UUID、主キー
-- `learning_path_id`: 学習パスID（外部キー、必須）
-- `content_id`: コンテンツID（外部キー、オプション）
-- `quiz_id`: クイズID（外部キー、オプション）
+- `learning_path_id`: 学習パスID（外部キー、必須、`learning_paths.id`を参照）
+- `content_id`: コンテンツID（外部キー、オプション、`contents.id`を参照）
+- `quiz_id`: クイズID（外部キー、オプション、`quizzes.id`を参照）
 - `title`: タイトル（必須）
-- `description`: 説明
-- `sequence_number`: 順序番号（必須）
+- `description`: 説明 (Text)
+- `sequence_number`: 順序番号（整数、必須）
 - `is_required`: 必須フラグ（ブール値、デフォルト: true）
-- `estimated_minutes`: 想定所要時間（分）
+- `estimated_minutes`: 想定所要時間（分、Integer）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `learning_path`: `LearningPath`モデルへのリレーション (多対1)
+  - `content`: `Content`モデルへのリレーション (多対1)
+  - `quiz`: `Quiz`モデルへのリレーション (多対1)
+  - `user_progress`: `UserLearningPathItem`モデルへのリレーション (1対多)
 
-### UserLearningPath（ユーザー学習パス）
+### UserLearningPath（ユーザー学習パス） (`learning_path.py`)
 - `id`: UUID、主キー
-- `user_id`: ユーザーID（外部キー、必須）
-- `learning_path_id`: 学習パスID（外部キー、必須）
-- `start_date`: 開始日時
+- `user_id`: ユーザーID（外部キー、必須、`users.id`を参照）
+- `learning_path_id`: 学習パスID（外部キー、必須、`learning_paths.id`を参照）
+- `start_date`: 開始日時 (DateTime)
 - `completed`: 完了フラグ（ブール値、デフォルト: false）
-- `completed_at`: 完了日時
-- `progress_percentage`: 進捗率（0-100）
+- `completed_at`: 完了日時 (DateTime)
+- `progress_percentage`: 進捗率（0-100、Float）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `user`: `User`モデルへのリレーション (多対1)
+  - `learning_path`: `LearningPath`モデルへのリレーション (多対1)
+  - `items`: `UserLearningPathItem`モデルへのリレーション (1対多)
 
-### UserLearningPathItem（ユーザー学習パス項目）
+### UserLearningPathItem（ユーザー学習パス項目） (`learning_path.py`)
 - `id`: UUID、主キー
-- `user_learning_path_id`: ユーザー学習パスID（外部キー、必須）
-- `learning_path_item_id`: 学習パス項目ID（外部キー、必須）
-- `status`: ステータス（enum: LearningItemStatus、必須）
-- `started_at`: 開始日時
-- `completed_at`: 完了日時
+- `user_learning_path_id`: ユーザー学習パスID（外部キー、必須、`user_learning_paths.id`を参照）
+- `learning_path_item_id`: 学習パス項目ID（外部キー、必須、`learning_path_items.id`を参照）
+- `status`: ステータス（enum: `LearningItemStatus`、必須） ※ コードではString
+- `started_at`: 開始日時 (DateTime)
+- `completed_at`: 完了日時 (DateTime)
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `user_learning_path`: `UserLearningPath`モデルへのリレーション (多対1)
+  - `learning_path_item`: `LearningPathItem`モデルへのリレーション (多対1)
+  - `notes`: `UserLearningPathNote`モデルへのリレーション (1対多)
 
-### UserLearningPathNote（ユーザー学習パス項目ノート）
+### UserLearningPathNote（ユーザー学習パス項目ノート） (`learning_path.py`)
 - `id`: UUID、主キー
-- `user_learning_path_item_id`: ユーザー学習パス項目ID（外部キー、必須）
-- `note`: ノート内容（必須）
+- `user_learning_path_item_id`: ユーザー学習パス項目ID（外部キー、必須、`user_learning_path_items.id`を参照）
+- `note`: ノート内容（Text、必須）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `user_learning_path_item`: `UserLearningPathItem`モデルへのリレーション (多対1)
 
-## クイズ・テスト関連テーブル
+## クイズ・テスト関連テーブル (`quiz.py`)
 
 ### Quiz（クイズ）
 - `id`: UUID、主キー
-- `title`: タイトル（必須）
-- `description`: 説明
-- `difficulty_level`: 難易度（enum: DifficultyLevel、必須）
-- `time_limit_minutes`: 制限時間（分）
-- `passing_percentage`: 合格点（0-100）
-- `is_randomized`: ランダム出題フラグ（ブール値、デフォルト: false）
-- `max_attempts`: 最大挑戦回数
-- `created_by`: 作成者ID（外部キー、必須）
+- `title`: タイトル（必須、インデックス付き）
+- `description`: 説明 (Text)
+- `difficulty`: 難易度（文字列、デフォルト: "medium"）
+- `time_limit`: 制限時間（秒、Integer）
+- `pass_percentage`: 合格点（0-100、Float、デフォルト: 70.0）
+- `max_attempts`: 最大挑戦回数 (Integer、Nullは無制限)
+- `created_by`: 作成者ID（外部キー、必須、`users.id`を参照, ON DELETE CASCADE）
 - `is_active`: アクティブ状態（ブール値、デフォルト: true）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `questions`: `QuizQuestion`モデルへのリレーション (1対多, cascade)
+  - `user_attempts`: `UserQuizAttempt`モデルへのリレーション (1対多, cascade)
+  - `creator`: `User`モデルへのリレーション (多対1)
 
 ### QuizQuestion（クイズ問題）
 - `id`: UUID、主キー
-- `quiz_id`: クイズID（外部キー、必須）
-- `question_text`: 問題テキスト（必須）
-- `question_type`: 問題タイプ（enum: QuestionType、必須）
-- `explanation`: 解説
-- `points`: 配点（必須、デフォルト: 1）
-- `sequence_number`: 順序番号（必須）
-- `media_url`: メディアURL
+- `quiz_id`: クイズID（外部キー、必須、`quizzes.id`を参照, ON DELETE CASCADE）
+- `text`: 問題テキスト（必須）
+- `question_type`: 問題タイプ（文字列、必須、例: 'single_choice', 'multiple_choice', 'true_false'）
+- `points`: 配点（Integer、必須、デフォルト: 1）
+- `order`: 順序番号（Integer、デフォルト: 0）
+- `image_url`: 画像URL (String)
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `quiz`: `Quiz`モデルへのリレーション (多対1)
+  - `answers`: `QuizAnswer`モデルへのリレーション (1対多, cascade)
+  - `user_answers`: `UserQuizAnswer`モデルへのリレーション (1対多)
 
 ### QuizAnswer（クイズ回答選択肢）
 - `id`: UUID、主キー
-- `question_id`: 問題ID（外部キー、必須）
-- `answer_text`: 回答テキスト（必須）
-- `is_correct`: 正解フラグ（ブール値、必須）
-- `explanation`: 解説
-- `sequence_number`: 順序番号（必須）
+- `question_id`: 問題ID（外部キー、必須、`quiz_questions.id`を参照, ON DELETE CASCADE）
+- `text`: 回答テキスト（必須）
+- `is_correct`: 正解フラグ（ブール値、必須、デフォルト: false）
+- `explanation`: 解説 (Text)
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `question`: `QuizQuestion`モデルへのリレーション (多対1)
+  - `user_selections`: `UserQuizAnswer`モデルへのリレーション (1対多)
 
 ### UserQuizAttempt（ユーザークイズ挑戦）
 - `id`: UUID、主キー
-- `user_id`: ユーザーID（外部キー、必須）
-- `quiz_id`: クイズID（外部キー、必須）
-- `start_time`: 開始時間（必須）
-- `end_time`: 終了時間
-- `score`: スコア
-- `percentage`: 正答率（0-100）
-- `passed`: 合格フラグ（ブール値）
-- `attempt_number`: 挑戦回数（必須）
+- `user_id`: ユーザーID（外部キー、必須、`users.id`を参照, ON DELETE CASCADE）
+- `quiz_id`: クイズID（外部キー、必須、`quizzes.id`を参照, ON DELETE CASCADE）
+- `start_time`: 開始時間（DateTime、必須、デフォルト: 現在日時）
+- `end_time`: 終了時間 (DateTime)
+- `score`: スコア (Float、デフォルト: 0.0)
+- `passed`: 合格フラグ（ブール値、デフォルト: false）
+- `is_completed`: 完了フラグ (Boolean, デフォルト: false)
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `user`: `User`モデルへのリレーション (多対1)
+  - `quiz`: `Quiz`モデルへのリレーション (多対1)
+  - `answers`: `UserQuizAnswer`モデルへのリレーション (1対多, cascade)
 
 ### UserQuizAnswer（ユーザークイズ回答）
 - `id`: UUID、主キー
-- `attempt_id`: 挑戦ID（外部キー、必須）
-- `question_id`: 問題ID（外部キー、必須）
-- `answer_id`: 回答ID（外部キー、オプション）
-- `user_text_answer`: ユーザーテキスト回答
-- `is_correct`: 正解判定（ブール値、必須）
-- `points_earned`: 獲得ポイント（必須、デフォルト: 0）
-- `time_spent_seconds`: 回答時間（秒）
+- `attempt_id`: 挑戦ID（外部キー、必須、`user_quiz_attempts.id`を参照, ON DELETE CASCADE）
+- `question_id`: 問題ID（外部キー、必須、`quiz_questions.id`を参照, ON DELETE CASCADE）
+- `selected_answer_id`: 選択回答ID（外部キー、必須、`quiz_answers.id`を参照, ON DELETE CASCADE）
 - `created_at`: 作成日時（デフォルト: 現在日時）
-- `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `attempt`: `UserQuizAttempt`モデルへのリレーション (多対1)
+  - `question`: `QuizQuestion`モデルへのリレーション (多対1)
+  - `selected_answer`: `QuizAnswer`モデルへのリレーション (多対1)
 
-## フォーラム関連テーブル
+## フォーラム関連テーブル (`forum.py`)
 
 ### ForumCategory（フォーラムカテゴリ）
 - `id`: UUID、主キー
-- `name`: カテゴリ名（必須）
-- `description`: カテゴリ説明
-- `parent_id`: 親カテゴリID（外部キー、オプション）
-- `display_order`: 表示順（整数、デフォルト: 0）
-- `icon`: アイコン参照パス
+- `name`: 名前（必須）
+- `description`: 説明 (Text, Nullable)
+- `parent_id`: 親カテゴリID（外部キー、`forum_categories.id` を参照, Nullable）
+- `display_order`: 表示順 (Integer, デフォルト: 0)
+- `created_by`: 作成者ID（外部キー、必須、`users.id`を参照）
 - `is_active`: アクティブ状態（ブール値、デフォルト: true）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `parent`: `ForumCategory`モデルへのリレーション (自己参照、多対1)
+  - `subcategories`: `ForumCategory`モデルへのリレーション (自己参照、1対多、`parent`のbackref)
+  - `topics`: `ForumTopic`モデルへのリレーション (1対多)
+  - `creator`: `User`モデルへのリレーション (多対1)
 
 ### ForumTopic（フォーラムトピック）
 - `id`: UUID、主キー
-- `title`: トピックタイトル（必須）
-- `content`: トピック内容（必須）
-- `category_id`: カテゴリID（外部キー、必須）
-- `user_id`: 作成者ユーザーID（外部キー、必須）
+- `category_id`: カテゴリID（外部キー、必須、`forum_categories.id`を参照）
+- `title`: タイトル（必須）
+- `content`: 内容（Text、必須）
+- `created_by`: 作成者ID（外部キー、必須、`users.id`を参照）
+- `views_count`: 閲覧数 (Integer, デフォルト: 0)
 - `is_pinned`: ピン留めフラグ（ブール値、デフォルト: false）
 - `is_locked`: ロックフラグ（ブール値、デフォルト: false）
-- `view_count`: 閲覧数（整数、デフォルト: 0）
-- `last_activity_at`: 最終アクティビティ日時（デフォルト: 現在日時）
+- `last_post_at`: 最終投稿日時 (DateTime, Nullable)
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `category`: `ForumCategory`モデルへのリレーション (多対1)
+  - `posts`: `ForumPost`モデルへのリレーション (1対多, cascade)
+  - `creator`: `User`モデルへのリレーション (多対1)
+  - `views`: `ForumTopicView`モデルへのリレーション (1対多, cascade)
+- **インデックス:**
+  - `category_id`
+  - `created_by`
 
 ### ForumPost（フォーラム投稿）
 - `id`: UUID、主キー
-- `topic_id`: トピックID（外部キー、必須）
-- `user_id`: 投稿者ID（外部キー、必須）
-- `content`: 投稿内容（必須）
-- `is_solution`: 解決策としてマークされているか（ブール値、デフォルト: false）
-- `is_edited`: 編集済みか（ブール値、デフォルト: false）
-- `edited_at`: 編集日時
-- `is_hidden`: 非表示状態（ブール値、デフォルト: false）
-- `parent_post_id`: 親投稿ID（外部キー、自己参照、オプション）
+- `topic_id`: トピックID（外部キー、必須、`forum_topics.id`を参照）
+- `content`: 内容（Text、必須）
+- `created_by`: 作成者ID（外部キー、必須、`users.id`を参照）
+- `parent_id`: 親投稿ID（外部キー、`forum_posts.id` を参照, Nullable）
+- `is_solution`: 解決策フラグ（ブール値、デフォルト: false）
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `topic`: `ForumTopic`モデルへのリレーション (多対1)
+  - `parent`: `ForumPost`モデルへのリレーション (自己参照、多対1)
+  - `replies`: `ForumPost`モデルへのリレーション (自己参照、1対多、`parent`のbackref)
+  - `creator`: `User`モデルへのリレーション (多対1)
+  - `reactions`: `ForumPostReaction`モデルへのリレーション (1対多, cascade)
+- **インデックス:**
+  - `topic_id`
+  - `created_by`
+  - `parent_id`
 
 ### ForumPostReaction（フォーラム投稿リアクション）
 - `id`: UUID、主キー
-- `post_id`: 投稿ID（外部キー、必須）
-- `user_id`: ユーザーID（外部キー、必須）
-- `reaction_type`: リアクションタイプ（enum: ReactionType、必須）
+- `post_id`: 投稿ID（外部キー、必須、`forum_posts.id`を参照）
+- `user_id`: ユーザーID（外部キー、必須、`users.id`を参照）
+- `reaction_type`: リアクション種別（文字列、必須） # 例: 'like', 'heart'
 - `created_at`: 作成日時（デフォルト: 現在日時）
 - `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
+- **リレーションシップ:**
+  - `post`: `ForumPost`モデルへのリレーション (多対1)
+  - `user`: `User`モデルへのリレーション (多対1)
+- **インデックス:**
+  - `post_id`
+  - `user_id`
 
-### ForumPostAttachment（フォーラム投稿添付ファイル）
+### ForumTopicView（フォーラムトピック閲覧履歴）
 - `id`: UUID、主キー
-- `post_id`: 投稿ID（外部キー、必須）
-- `file_name`: ファイル名（必須）
-- `file_path`: ファイルパス（必須）
-- `file_size`: ファイルサイズ（バイト単位）
-- `file_type`: ファイルタイプ（MIME）
-- `created_at`: 作成日時（デフォルト: 現在日時）
-
-### ForumTopicView（フォーラムトピック閲覧）
-- `id`: UUID、主キー
-- `topic_id`: トピックID（外部キー、必須）
-- `user_id`: ユーザーID（外部キー、必須）
-- `viewed_at`: 閲覧日時（デフォルト: 現在日時）
-- `ip_address`: IPアドレス
-- `user_agent`: ユーザーエージェント
-
-### ForumTopicSubscription（フォーラムトピック購読）
-- `id`: UUID、主キー
-- `topic_id`: トピックID（外部キー、必須）
-- `user_id`: ユーザーID（外部キー、必須）
-- `notification_level`: 通知レベル（enum: NotificationLevel、必須）
-- `created_at`: 作成日時（デフォルト: 現在日時）
-- `updated_at`: 更新日時（デフォルト: 現在日時、更新時自動更新）
-
-### ForumTopicTag（フォーラムトピックタグ）
-- `id`: UUID、主キー
-- `topic_id`: トピックID（外部キー、必須）
-- `tag_name`: タグ名（必須）
-- `created_at`: 作成日時（デフォルト: 現在日時）
+- `topic_id`: トピックID（外部キー、必須、`forum_topics.id`を参照）
+- `user_id`: ユーザーID（外部キー、必須、`users.id`を参照）
+- `viewed_at`: 閲覧日時 (DateTime, デフォルト: 現在日時(UTC))
+- `ip_address`: IPアドレス (String, Nullable)
+- `user_agent`: ユーザーエージェント (String, Nullable)
+- `created_at`: 作成日時 (DateTime, デフォルト: 現在日時(UTC))
+- **リレーションシップ:**
+  - `topic`: `ForumTopic`モデルへのリレーション (多対1)
+  - `user`: `User`モデルへのリレーション (多対1)
+- **インデックス:**
+  - `topic_id`
+  - `user_id`
 
 ## リレーションシップ（主要な関連）
 
