@@ -13,7 +13,7 @@ provider "aws" {
 # VPC
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 4.0"
+  version = "~> 5.0"
 
   name                 = "${var.environment}-vpc"
   cidr                 = var.vpc_cidr
@@ -189,9 +189,11 @@ resource "aws_ssm_parameter" "api_base_url" {
 
 # Secrets Manager (backend.env)
 resource "aws_secretsmanager_secret" "backend_env" {
-  name = "${var.environment}/backend/env"
+  name = "${var.environment}/api/env"
 }
 resource "aws_secretsmanager_secret_version" "backend_env_version" {
   secret_id     = aws_secretsmanager_secret.backend_env.id
-  secret_string = file("../../backend/.env.stg")
+  secret_string = join("\n", [
+    for key, value in local.backend_env : "${key}=${value}"
+  ])
 } 

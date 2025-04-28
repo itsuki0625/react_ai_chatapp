@@ -1,5 +1,4 @@
-name: STG Terraform Infra Setup
-
+name: STG Terraform Infra Teardown
 on:
   workflow_dispatch:
 
@@ -7,7 +6,7 @@ env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
 
 jobs:
-  terraform:
+  terraform-destroy:
     runs-on: ubuntu-latest
     environment: Preview
     steps:
@@ -30,16 +29,9 @@ jobs:
         working-directory: infrastructure/terraform
         run: terraform init -input=false
 
-      - name: Terraform Plan
+      - name: Terraform Destroy
         working-directory: infrastructure/terraform
         env:
           TF_VAR_db_password:   ${{ secrets.DB_PASSWORD }}
           TF_VAR_api_base_url:  ${{ secrets.API_BASE_URL }}
-        run: terraform plan -input=false -out=tfplan
-
-      - name: Terraform Apply
-        working-directory: infrastructure/terraform
-        env:
-          TF_VAR_db_password:   ${{ secrets.DB_PASSWORD }}
-          TF_VAR_api_base_url:  ${{ secrets.API_BASE_URL }}
-        run: terraform apply -input=false -auto-approve tfplan 
+        run: terraform destroy -input=false -auto-approve 
