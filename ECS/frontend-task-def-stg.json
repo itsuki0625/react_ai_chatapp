@@ -1,0 +1,37 @@
+{
+  "family": "frontend-stg",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::123456789012:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "frontend",
+      "image": "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/front:stg",
+      "portMappings": [
+        { "containerPort": 3000, "protocol": "tcp" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/frontend-stg",
+          "awslogs-region": "ap-northeast-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "environment": [
+        { "name": "NEXT_PUBLIC_API_BASE_URL", "value": "https://stg-api.smartao.com" },
+        { "name": "NEXT_PUBLIC_BROWSER_API_URL", "value": "https://stg-api.smartao.com" },
+        { "name": "NEXTAUTH_URL", "value": "https://stg.smartao.com" },
+        { "name": "NEXTAUTH_COOKIE_DOMAIN", "value": "stg.smartao.com" }
+      ],
+      "secrets": [
+        {
+          "name": "AUTH_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:stg/frontend/env:AUTH_SECRET::"
+        }
+      ]
+    }
+  ]
+} 

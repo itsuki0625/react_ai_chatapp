@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - stg
+  workflow_dispatch:
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -12,7 +13,8 @@ env:
 jobs:
   # AWS 認証 & ECR ログイン
   ecr-login:
-    environment: Production
+    needs: infra-setup
+    environment: Preview
     runs-on: ubuntu-latest
     outputs:
       login: ${{ steps.login-ecr.outcome }}
@@ -34,7 +36,7 @@ jobs:
   # Backend STG イメージのビルド & プッシュ
   build-push-backend-stg:
     needs: ecr-login
-    environment: Production
+    environment: Preview
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -55,7 +57,7 @@ jobs:
   # Frontend STG イメージのビルド & プッシュ
   build-push-frontend-stg:
     needs: ecr-login
-    environment: Production
+    environment: Preview
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -71,4 +73,73 @@ jobs:
 
       - name: Push STG frontend to ECR
         run: |
-          docker push ${{ env.ECR_REGISTRY }}/front:stg 
+          docker push ${{ env.ECR_REGISTRY }}/front:stg
+
+  # DB migration on ECS
+  run-db-migrations:
+    needs: build-push-backend-stg
+    environment: Preview
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Run DB migrations on ECS
+        run: |
+          aws ecs run-task \
+            --cluster smartao-api-stg \
+            --launch-type FARGATE \
+            --task-definition backend-stg \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ secrets.STG_SUBNETS }}],securityGroups=[${{ secrets.STG_SECURITY_GROUPS }}],assignPublicIp=DISABLED}" \
+            --overrides '{"containerOverrides":[{"name":"backend","command":["alembic","upgrade","head"]}]}'
+
+  deploy-backend-stg:
+    needs: run-db-migrations
+    environment: Preview
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+      - name: Deploy Backend to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          cluster: smartao-api-stg
+          service: smartao-api-stg-service
+          task-definition: ECS/backend-task-def-stg.json
+          wait-for-service-stability: true
+
+  deploy-frontend-stg:
+    needs: build-push-frontend-stg
+    environment: Preview
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+      - name: Deploy Frontend to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          cluster: smartao-front-stg
+          service: smartao-front-stg-service
+          task-definition: ECS/frontend-task-def-stg.json
+          wait-for-service-stability: true 

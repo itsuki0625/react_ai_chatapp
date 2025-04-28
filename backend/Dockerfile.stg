@@ -16,8 +16,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # アプリケーションコード・環境変数をコピー
 COPY . ./
-# STG環境用envファイルを読み込み
-COPY .env.stg .env
 
 # アプリケーションパスを設定
 ENV PYTHONPATH=/app
