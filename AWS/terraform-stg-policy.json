@@ -48,7 +48,8 @@
               "ec2:CreateRoute",
               "ec2:DeleteRoute",
               "ec2:AssociateRouteTable",
-              "ec2:DisassociateRouteTable"
+              "ec2:DisassociateRouteTable",
+              "ec2:DescribeNetworkInterfaces"
             ],
             "Resource": "*"
         },
@@ -168,7 +169,8 @@
               "iam:UpdateAssumeRolePolicy",
               "iam:AttachRolePolicy",
               "iam:DetachRolePolicy",
-              "iam:PassRole"
+              "iam:PassRole",
+              "iam:ListInstanceProfilesForRole"
             ],
             "Resource": [
               "arn:aws:iam::354918390375:role/stg-*",
