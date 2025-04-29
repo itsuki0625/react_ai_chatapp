@@ -13,7 +13,6 @@ env:
 jobs:
   # AWS 認証 & ECR ログイン
   ecr-login:
-    needs: infra-setup
     environment: Preview
     runs-on: ubuntu-latest
     outputs:
