@@ -1,4 +1,7 @@
 # STG用Dockerfile
+# ★ 追加: ビルド引数で環境名を受け取る (デフォルトは stg)
+ARG ENV_NAME=stg
+
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -14,8 +17,8 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# ★ 追加: 証明書ファイルをコピー
-COPY certs/ap-northeast-1-bundle.pem /app/certs/ap-northeast-1-bundle.pem
+# ★ 変更: 環境名に応じた証明書ファイルを固定パスにコピー
+COPY certs/rds-ca-${ENV_NAME}-bundle.pem /app/certs/rds-ca-bundle.pem
 
 # アプリケーションコード・環境変数をコピー
 COPY . ./

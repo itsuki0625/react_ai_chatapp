@@ -9,8 +9,8 @@ import ssl # ★ 追加: sslモジュールをインポート
 # SQLAlchemyエンジンの作成
 engine = create_engine(settings.DATABASE_URL)
 
-# ★ 追加: CA証明書のパス (Dockerfileでコピーしたパス)
-CA_CERT_PATH = "/app/certs/ap-northeast-1-bundle.pem"
+# ★ 変更: CA証明書のパスを固定パスに変更
+CA_CERT_PATH = "/app/certs/rds-ca-bundle.pem"
 
 # ★ 追加: SSLコンテキストを作成し、CA証明書をロード
 ssl_context = ssl.create_default_context(cafile=CA_CERT_PATH)

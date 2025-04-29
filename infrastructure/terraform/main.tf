@@ -148,9 +148,11 @@ resource "aws_lb_listener" "backend_http" {
 # ECR リポジトリ
 resource "aws_ecr_repository" "backend" {
   name = "${var.environment}-backend"
+  force_delete = true
 }
 resource "aws_ecr_repository" "frontend" {
   name = "${var.environment}-frontend"
+  force_delete = true
 }
 
 # ECS クラスター
@@ -196,4 +198,18 @@ resource "random_id" "secret_suffix" {
 resource "aws_secretsmanager_secret" "backend_env" {
   name                         = "${var.environment}/api/env-${random_id.secret_suffix.hex}"
   recovery_window_in_days      = 0
+}
+
+# RDS CA 証明書バンドルのダウンロード URL を取得
+data "http" "rds_ca_bundle" {
+  url = "https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem" # 結合バンドルのURL (最新か要確認)
+}
+
+# ダウンロードした証明書バンドルをローカルファイルとして保存
+resource "local_file" "rds_ca_bundle_pem" {
+  content  = data.http.rds_ca_bundle.response_body
+  filename = "${path.root}/../../backend/certs/rds-ca-${var.environment}-bundle.pem" # ★ 環境名を含むファイル名に変更
+
+  # RDSインスタンスの作成後に実行されるようにする (より明確な依存関係)
+  depends_on = [aws_db_instance.rds]
 } 

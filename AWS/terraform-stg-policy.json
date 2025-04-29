@@ -182,6 +182,7 @@
               "iam:ListPolicyVersions",
               "iam:GetPolicyVersion",
               "iam:DeletePolicy",
+              "iam:DeletePolicyVersion",
               "iam:TagRole"
             ],
             "Resource": [
