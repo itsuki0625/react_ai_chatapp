@@ -3,19 +3,19 @@ import ChatWindow from '@/components/chat/ChatWindow';
 import { ChatType } from '@/types/chat';
 import { Metadata } from 'next';
 
-interface ChatSessionPageProps {
-  params: {
-    sessionId: string;
-  };
-}
+// Next.js App Routerの標準的な型を使用
+type PageProps = {
+  params: { sessionId: string };
+  searchParams: { [key: string]: string | string[] | undefined };
+};
 
-export async function generateMetadata({ params }: ChatSessionPageProps): Promise<Metadata> {
+export async function generateMetadata({ params }: { params: { sessionId: string } }): Promise<Metadata> {
     return {
         title: `総合型選抜チャット - ${params.sessionId.substring(0, 8)}...`,
     };
 }
 
-export default function ChatSessionPage({ params }: ChatSessionPageProps) {
+export default function ChatSessionPage({ params }: PageProps) {
   const chatType = ChatType.ADMISSION;
   const { sessionId } = params;
 
