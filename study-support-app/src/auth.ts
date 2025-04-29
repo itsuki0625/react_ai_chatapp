@@ -27,6 +27,9 @@ interface Credentials {
 }
 
 const authConfig: NextAuthConfig = {
+  // 追加: シークレットとホストチェック無効化（ステージング用）
+  secret: process.env.NEXTAUTH_SECRET,
+  trustHost: true,
   providers: [
     CredentialsProvider({
       name: "Credentials",
