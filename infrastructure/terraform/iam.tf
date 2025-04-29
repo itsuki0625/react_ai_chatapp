@@ -38,12 +38,12 @@ data "aws_iam_policy_document" "ecs_task_secrets_access" {
     actions = [
       "secretsmanager:GetSecretValue"
     ]
-    # 一時的に全てのシークレットへのアクセスを許可（デバッグ目的）
-    resources = ["*"] 
-    # resources = [
-    #   "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:stg/backend/env-*",
-    #   "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:stg/api/env-*" 
-    # ] # 元の指定をコメントアウト
+    # resources = ["*"] # デバッグ用指定をコメントアウト
+    # タスク定義で使用されている Secret の ARN パターンに戻す
+    resources = [
+      "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:stg/backend/env-*",
+      "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:stg/api/env-*" 
+    ]
   }
 }
 
