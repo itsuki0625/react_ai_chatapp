@@ -1,7 +1,8 @@
 name: Lint
 
 on:
-  push: # 全てのブランチへのプッシュで実行
+  workflow_dispatch:
+  # push: # 全てのブランチへのプッシュで実行
 
 jobs:
   lint-frontend:
