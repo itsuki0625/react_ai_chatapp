@@ -31,18 +31,30 @@ resource "aws_iam_role_policy_attachment" "ecs_ecr_pull_policy" {
 data "aws_region" "current" {}
 data "aws_caller_identity" "current" {}
 
-# Secrets Manager から特定のシークレットを読み取る権限を定義
+# Secrets Manager と S3 CA Cert へのアクセス権限を定義
 data "aws_iam_policy_document" "ecs_task_secrets_access" {
   statement {
+    sid    = "SecretsManagerAccess"
     effect = "Allow"
     actions = [
       "secretsmanager:GetSecretValue"
     ]
-    # resources = ["*"] # デバッグ用指定をコメントアウト
-    # タスク定義で使用されている Secret の ARN パターンに戻す
     resources = [
-      "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:stg/backend/env-*",
-      "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:stg/api/env-*" 
+      "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:${var.environment}/api/env-*" # パターンを修正
+      # frontend用のシークレットも必要であれば追加
+      # "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:${var.environment}/frontend/env-*" 
+    ]
+  }
+
+  # ★ 追加: S3のCA証明書への読み取りアクセス権限
+  statement {
+    sid    = "S3CACertAccess"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject"
+    ]
+    resources = [
+      "arn:aws:s3:::${var.environment}-rds-ca-certs-${data.aws_caller_identity.current.account_id}/certs/rds-ca-${var.environment}-bundle.pem"
     ]
   }
 }

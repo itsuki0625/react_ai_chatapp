@@ -17,9 +17,6 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# ★ 変更: 環境名に応じた証明書ファイルを固定パスにコピー
-COPY certs/rds-ca-${ENV_NAME}-bundle.pem /app/certs/rds-ca-bundle.pem
-
 # アプリケーションコード・環境変数をコピー
 COPY . ./
 
