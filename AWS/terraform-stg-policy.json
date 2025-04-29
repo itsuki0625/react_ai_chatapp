@@ -92,7 +92,9 @@
               "elasticloadbalancing:DeleteListener",
               "elasticloadbalancing:DescribeListeners",
               "elasticloadbalancing:ModifyLoadBalancerAttributes",
-              "elasticloadbalancing:DescribeLoadBalancerAttributes"
+              "elasticloadbalancing:DescribeLoadBalancerAttributes",
+              "elasticloadbalancing:ModifyListenerAttributes",
+              "elasticloadbalancing:DescribeListenerAttributes"
             ],
             "Resource": "*"
         },
@@ -184,6 +186,8 @@
             "Sid": "AdditionalActions",
             "Effect": "Allow",
             "Action": [
+              "elasticloadbalancing:ModifyListenerAttributes",
+              "elasticloadbalancing:DescribeListenerAttributes",
               "iam:TagRole",
               "elasticloadbalancing:DescribeTags",
               "iam:ListRolePolicies",
