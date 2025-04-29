@@ -17,7 +17,6 @@ interface DecodedToken {
   status?: string;
   permissions?: string[];
   exp?: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any; // Allow other claims
 }
 

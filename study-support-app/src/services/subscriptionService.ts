@@ -56,10 +56,10 @@ const getAxiosConfig = async (requireAuth = true) => {
       } else if (session) {
         // 以前のカスタムヘッダーロジック（警告付き）
         config.headers['X-Session-Token'] = 'true';
-        if (session.user?.email) {
+        if (typeof session.user?.email === 'string') {
           config.headers['X-User-Email'] = session.user.email;
         }
-        if (session.user?.name) {
+        if (typeof session.user?.name === 'string') {
           // ユーザー名をURLエンコード
           config.headers['X-User-Name'] = encodeURIComponent(session.user.name);
         }
