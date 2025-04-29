@@ -4,20 +4,40 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 from sqlalchemy.engine import make_url
+import ssl # ★ 追加: sslモジュールをインポート
 
 # SQLAlchemyエンジンの作成
 engine = create_engine(settings.DATABASE_URL)
+
+# ★ 追加: CA証明書のパス (Dockerfileでコピーしたパス)
+CA_CERT_PATH = "/app/certs/ap-northeast-1-bundle.pem"
+
+# ★ 追加: SSLコンテキストを作成し、CA証明書をロード
+ssl_context = ssl.create_default_context(cafile=CA_CERT_PATH)
+# 必要に応じてホスト名検証を設定 (より厳格にする場合)
+# ssl_context.check_hostname = True
+# ssl_context.verify_mode = ssl.CERT_REQUIRED
+
 # 非同期エンジン用のURLを組み立て
 url_obj = make_url(settings.ASYNC_DATABASE_URL)
-# ドライバ名を設定し、sslmode=requireを追加
+# ドライバ名を設定 (sslmodeはここでは設定しない)
 url_obj = url_obj.set(drivername="postgresql+asyncpg")
-query = dict(url_obj.query)
-query["sslmode"] = "require"
-url_obj = url_obj.set(query=query)
+# ★ 削除: DSNへのsslmode=requireの追加を削除
+# query = dict(url_obj.query)
+# query["sslmode"] = "require"
+# url_obj = url_obj.set(query=query)
 
+# 非同期エンジンを作成 (connect_argsでSSLContextを指定)
 async_engine = create_async_engine(
     url_obj,
     echo=True,
+    # ★ 変更: connect_argsでsslコンテキストを指定
+    connect_args={
+        "ssl": ssl_context,
+        # "sslmode": "verify-ca" # または "verify-full"
+        # DSNにsslmode=verify-ca/verify-fullが含まれていない場合はここで指定
+        # settings.ASYNC_DATABASE_URL の生成時に含まれているか確認が必要
+    }
 )
 
 # セッションファクトリの作成
