@@ -17,7 +17,7 @@ interface DocumentResponse {
   updated_at: string;
 }
 
-interface ScheduleResponse {
+export interface ScheduleResponse {
   id: string;
   desired_department_id: string;
   event_name: string;
@@ -36,7 +36,7 @@ interface ApplicationDepartmentInfo {
     faculty_name: string;
 }
 
-interface ApplicationDetailResponse {
+export interface ApplicationDetailResponse {
   id: string;
   user_id: string;
   university_id: string;
@@ -187,7 +187,7 @@ export const ApplicationList = () => {
   const formatDate = (dateString: string) => {
     try {
       return new Date(dateString).toLocaleDateString('ja-JP');
-    } catch (_) {
+    } catch {
       return '日付不明';
     }
   };

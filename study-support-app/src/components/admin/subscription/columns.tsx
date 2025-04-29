@@ -16,7 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 // Popover は不要になったので削除
 // import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"; 
-import { StripeProductWithPricesResponse, StripePriceResponse } from "@/types/stripe";
+import { StripeProductWithPricesResponse } from "@/types/stripe";
 
 // オプション型から onEditPrice を削除
 interface ProductColumnsOptions {

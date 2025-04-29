@@ -6,34 +6,40 @@ import { Button } from '@/components/common/Button';
 interface CampaignCodeFormProps {
   onSubmit: (code: string) => Promise<VerifyCampaignCodeResponse | CampaignCodeVerificationResult>;
   onApply?: (response: VerifyCampaignCodeResponse | CampaignCodeVerificationResult) => void;
-  originalAmount?: number;
   currency?: string;
   initialCode?: string;
   onCodeChange?: (code: string) => void;
+  isLoading?: boolean;
 }
 
 export const CampaignCodeForm: React.FC<CampaignCodeFormProps> = ({
   onSubmit,
   onApply,
-  originalAmount = 0,
   currency = 'jpy',
   initialCode = '',
-  onCodeChange
+  onCodeChange,
+  isLoading: propIsLoading
 }) => {
-  const [code, setCode] = useState(initialCode);
-  const [isLoading, setIsLoading] = useState(false);
+  const [campaignCode, setCampaignCode] = useState<string>(initialCode);
+  const [internalIsLoading, setInternalIsLoading] = useState(false);
+  const isLoading = propIsLoading ?? internalIsLoading;
   const [error, setError] = useState<string | null>(null);
   const [verificationResult, setVerificationResult] = useState<VerifyCampaignCodeResponse | CampaignCodeVerificationResult | null>(null);
   
   const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newCode = e.target.value;
-    setCode(newCode);
+    setCampaignCode(newCode);
+    setError(null);
+    setVerificationResult(null);
     if (onCodeChange) {
       onCodeChange(newCode);
     }
   };
   
-  const formatAmount = (amount: number, curr: string): string => {
+  const formatAmount = (amount: number | null | undefined, curr: string): string => {
+    if (amount === null || amount === undefined) {
+      return '-';
+    }
     return new Intl.NumberFormat('ja-JP', {
       style: 'currency',
       currency: curr.toUpperCase(),
@@ -43,79 +49,112 @@ export const CampaignCodeForm: React.FC<CampaignCodeFormProps> = ({
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!code) return;
+    if (!campaignCode || isLoading) return;
     
     setError(null);
-    setIsLoading(true);
+    setInternalIsLoading(true);
     
     try {
-      const result = await onSubmit(code);
+      const result = await onSubmit(campaignCode);
       setVerificationResult(result);
       
-      if (result.valid || ('is_valid' in result && result.is_valid)) {
+      const isValid = 'is_valid' in result ? result.is_valid : result.valid;
+      const message = 'message' in result ? result.message : '不明なメッセージ';
+      
+      if (isValid) {
         if (onApply) {
           onApply(result);
         }
       } else {
-        setError(result.message);
+        setError(message || '入力されたキャンペーンコードは無効です。');
       }
-    } catch (err) {
-      setError('キャンペーンコードの検証中にエラーが発生しました');
-      console.error(err);
+    } catch (error) {
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : typeof error === 'object' && error !== null && 'response' in error && typeof error.response === 'object' && error.response !== null && 'data' in error.response && typeof error.response.data === 'object' && error.response.data !== null && 'detail' in error.response.data && typeof error.response.data.detail === 'string'
+            ? error.response.data.detail 
+            : 'キャンペーンコードの検証中にエラーが発生しました';
+      setError(errorMessage);
+      console.error(error);
     } finally {
-      setIsLoading(false);
+      setInternalIsLoading(false);
     }
   };
   
-  // 結果が有効かどうかをチェックする関数
-  const isResultValid = (result: VerifyCampaignCodeResponse | CampaignCodeVerificationResult | null) => {
+  const isResultValid = (result: VerifyCampaignCodeResponse | CampaignCodeVerificationResult | null): boolean => {
     if (!result) return false;
-    return result.valid || ('is_valid' in result && result.is_valid);
+    return 'is_valid' in result ? result.is_valid : result.valid;
+  };
+  
+  const getDiscountDisplay = (result: VerifyCampaignCodeResponse | CampaignCodeVerificationResult) => {
+    if (!isResultValid(result)) return null;
+    
+    const discountType = 'discount_type' in result ? result.discount_type : null;
+    const discountValue = 'discount_value' in result ? result.discount_value : null;
+    
+    if (discountType && discountValue !== null) {
+      return discountType === 'percentage'
+        ? `${discountValue}%割引`
+        : `${formatAmount(discountValue, currency)}割引`;
+    }
+    return "割引適用";
+  };
+  
+  const getOriginalAmountDisplay = (result: VerifyCampaignCodeResponse | CampaignCodeVerificationResult) => {
+    return 'original_amount' in result ? result.original_amount : null;
+  };
+  
+  const getDiscountedAmountDisplay = (result: VerifyCampaignCodeResponse | CampaignCodeVerificationResult) => {
+    return 'discounted_amount' in result ? result.discounted_amount : null;
   };
   
   return (
     <div className="mt-4 border border-gray-200 rounded-lg p-4">
       <h4 className="font-medium mb-2">キャンペーンコード</h4>
       
-      <form onSubmit={handleSubmit} className="flex gap-2">
-        <div className="flex-grow">
-          <Input
-            value={code}
-            onChange={handleCodeChange}
-            placeholder="コードを入力"
-            disabled={isLoading || isResultValid(verificationResult)}
-          />
-        </div>
-        <Button
-          type="submit"
-          variant="secondary"
-          disabled={!code || isLoading || isResultValid(verificationResult)}
-        >
-          {isLoading ? '検証中...' : '適用'}
-        </Button>
-      </form>
+      {!isResultValid(verificationResult) ? (
+        <form onSubmit={handleSubmit} className="flex gap-2 items-start">
+          <div className="flex-grow">
+            <Input
+              value={campaignCode}
+              onChange={handleCodeChange}
+              placeholder="コードを入力"
+              disabled={isLoading}
+              className="h-10"
+            />
+          </div>
+          <Button
+            type="submit"
+            variant="secondary"
+            disabled={!campaignCode || isLoading}
+            className="h-10"
+          >
+            {isLoading ? '検証中...' : '適用'}
+          </Button>
+        </form>
+      ) : null}
       
       {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
       
       {isResultValid(verificationResult) && verificationResult && (
-        <div className="mt-4 bg-green-50 p-3 rounded-md">
-          <p className="text-green-700 font-medium">
-            キャンペーンコード「{code}」が適用されました
-          </p>
-          {verificationResult.discount_type && verificationResult.discount_value && (
-            <p className="text-sm text-green-600">
-              {verificationResult.discount_type === 'percentage' 
-                ? `${verificationResult.discount_value}%割引` 
-                : `${formatAmount(verificationResult.discount_value, currency)}割引`}
-            </p>
-          )}
-          {verificationResult.original_amount && verificationResult.discounted_amount && (
+        <div className="mt-4 bg-green-50 p-3 rounded-md border border-green-200">
+          <div className="flex justify-between items-center">
+            <div>
+              <p className="text-green-700 font-medium">
+                コード「{campaignCode}」適用済み
+              </p>
+              <p className="text-sm text-green-600">
+                {getDiscountDisplay(verificationResult)}
+              </p>
+            </div>
+          </div>
+          {getOriginalAmountDisplay(verificationResult) !== null && getDiscountedAmountDisplay(verificationResult) !== null && (
             <div className="mt-2 flex items-center">
               <span className="text-gray-500 line-through mr-2">
-                {formatAmount(verificationResult.original_amount, currency)}
+                {formatAmount(getOriginalAmountDisplay(verificationResult), currency)}
               </span>
               <span className="text-green-700 font-bold">
-                {formatAmount(verificationResult.discounted_amount, currency)}
+                {formatAmount(getDiscountedAmountDisplay(verificationResult), currency)}
               </span>
             </div>
           )}

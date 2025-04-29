@@ -1,46 +1,32 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Bell, User, Shield, LogOut, CreditCard } from 'lucide-react';
+import { Bell, User, Shield, CreditCard } from 'lucide-react';
 import LogoutButton from '@/components/common/LogoutButton';
 import { toast } from 'react-hot-toast';
 import { useSession } from 'next-auth/react';
-import { authApi } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
-import Link from 'next/link';
-import { Input } from '@/components/ui/input';
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Camera } from 'lucide-react';
-import { fetchUserSettings as fetchUserSettingsService, updateUserSettings } from '@/services/userService';
+import { Badge } from "@/components/ui/badge";
 import { UserSettings } from '@/types/user';
 import { useAuthHelpers } from "@/lib/authUtils";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { fetchUserSettings } from '@/services/userService';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5050';
 
-interface SubscriptionInfo {
-  id: string;
-  plan_name: string;
-  status: string;
-  current_period_end: string;
-}
-
 const SettingsPage = () => {
   const { data: session, status } = useSession();
-  const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
-  const [subscriptionInfo, setSubscriptionInfo] = useState<SubscriptionInfo | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
 
   // Get user role using the hook
   const { userRole, isLoading: isAuthLoading } = useAuthHelpers();
 
   const loadUserSettingsData = async () => {
-    setLoading(true);
+    setIsLoading(true);
     try {
-      const settingsData: UserSettings = await fetchUserSettingsService();
+      const settingsData: UserSettings = await fetchUserSettings();
       console.log('取得した設定データ:', settingsData);
 
       if (!settingsData) {
@@ -60,7 +46,6 @@ const SettingsPage = () => {
       };
 
       setUserSettings(mappedSettings);
-      setSubscriptionInfo(settingsData.subscription || null);
 
     } catch (error) {
       console.error('ユーザー設定の取得エラー:', error);
@@ -74,9 +59,8 @@ const SettingsPage = () => {
         theme: 'light',
         subscription: null
       });
-      setSubscriptionInfo(null);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -92,10 +76,9 @@ const SettingsPage = () => {
         browserNotifications: false, 
         theme: 'light' 
       });
-      setSubscriptionInfo(null);
-      setLoading(false);
+      setIsLoading(false);
     } else {
-      setLoading(true);
+      setIsLoading(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
@@ -146,21 +129,11 @@ const SettingsPage = () => {
     alert('プラン変更機能は現在実装中です。');
   };
 
-  if (loading || isAuthLoading) {
+  if (isLoading || isAuthLoading) {
     return (
       <div className="p-6 max-w-4xl mx-auto">
         <div className="text-center">
           <p>読み込み中...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6 max-w-4xl mx-auto">
-        <div className="text-center text-red-600">
-          <p>{error}</p>
         </div>
       </div>
     );

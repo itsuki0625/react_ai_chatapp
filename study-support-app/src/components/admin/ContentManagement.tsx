@@ -91,7 +91,7 @@ export const ContentManagement = () => {
       created_by_id: session.user.id as string,
     };
 
-    const { provider, ...submitData } = payload;
+    const { ...submitData } = payload;
 
     try {
       if (editingId) {

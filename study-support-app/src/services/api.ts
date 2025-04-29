@@ -14,7 +14,7 @@ export const getAxiosConfig = async (requireAuth = true) => {
   const config: {
     withCredentials: boolean;
     headers: Record<string, string>;
-    params?: Record<string, any>;
+    params?: Record<string, string | number | boolean>;
   } = {
     withCredentials: true, // クッキーを含める
     headers: {}

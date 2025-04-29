@@ -1,12 +1,12 @@
 'use client';
 
 import React from 'react';
-import { useSession } from 'next-auth/react';
+// import { useSession } from 'next-auth/react'; // Remove unused import
 import { SubscriptionPlansPage } from '@/components/subscription/SubscriptionPlansPage';
 import { StyledH2 } from '@/components/common/CustomHeadings';
 
 export default function SubscriptionPlans() {
-  const { status } = useSession();
+  // const { status } = useSession(); // Remove unused variable
 
   // FAQデータ
   const faqItems = [

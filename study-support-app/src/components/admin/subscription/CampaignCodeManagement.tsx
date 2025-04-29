@@ -252,9 +252,9 @@ export const CampaignCodeManagement: React.FC = () => {
   };
 
   // キャンペーンコードを作成/更新する
-  const handleSubmitCampaignCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  const handleSubmitCampaignCode = async (/* e: React.FormEvent */) => {
+    // e.preventDefault();
+
     // フォームのバリデーション
     const errors: { [key: string]: string } = {};
     
@@ -298,8 +298,8 @@ export const CampaignCodeManagement: React.FC = () => {
         try {
           const date = new Date(dateString + 'T00:00:00Z'); // UTCとして解釈
           return date.toISOString();
-        } catch (e) {
-          console.error("Invalid date format:", dateString);
+        } catch (error) {
+          console.error("Invalid date format:", dateString, error);
           return undefined; // 無効な場合は undefined を返す
         }
       };
@@ -347,7 +347,7 @@ export const CampaignCodeManagement: React.FC = () => {
           } else if (Array.isArray(err.response.data.detail)) {
               // バリデーションエラーの詳細を整形
               errorMessage = "エラー: 入力内容を確認してください。\n" + 
-                  err.response.data.detail.map((d: any) => `${d.loc.join('.')} - ${d.msg}`).join("\n");
+                  err.response.data.detail.map((d: { loc: string[], msg: string }) => `${d.loc.join('.')} - ${d.msg}`).join("\n");
           } 
       } else if (err instanceof Error) {
           errorMessage = err.message;

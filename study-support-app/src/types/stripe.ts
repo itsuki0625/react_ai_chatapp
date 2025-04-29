@@ -9,16 +9,16 @@ export interface StripeProductBase {
   name: string;
   description?: string | null;
   active: boolean;
-  metadata?: Record<string, any> | null;
+  metadata?: Record<string, string | number | boolean | null> | null;
 }
 
-export interface StripeProductCreate extends StripeProductBase {}
+export type StripeProductCreate = StripeProductBase;
 
 export interface StripeProductUpdate {
   name?: string | null;
   description?: string | null;
   active?: boolean | null;
-  metadata?: Record<string, any> | null;
+  metadata?: Record<string, string | number | boolean | null> | null;
 }
 
 export interface StripeProductResponse extends StripeProductBase {
@@ -32,7 +32,7 @@ export interface StripePriceBase {
   currency: string; // 例: 'jpy'
   recurring?: StripeRecurring | null; // nullの場合は都度払い
   active: boolean;
-  metadata?: Record<string, any> | null;
+  metadata?: Record<string, string | number | boolean | null> | null;
   lookup_key?: string | null;
 }
 
@@ -44,7 +44,7 @@ export interface StripePriceCreate extends StripePriceBase {
 
 export interface StripePriceUpdate {
   active?: boolean | null;
-  metadata?: Record<string, any> | null;
+  metadata?: Record<string, string | number | boolean | null> | null;
   lookup_key?: string | null;
 }
 

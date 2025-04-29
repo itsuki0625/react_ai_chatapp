@@ -1,18 +1,18 @@
 import axios from 'axios';
-// Axiosの型定義
-type AxiosResponseData<T = any> = {
-  data: T;
-  status: number;
-  statusText: string;
-  headers: Record<string, string>;
-  config: any;
-};
+// 未使用のため、コメントアウト
+// type AxiosResponseData<T = unknown> = {
+//   data: T;
+//   status: number;
+//   statusText: string;
+//   headers: Record<string, string>;
+//   config: Record<string, unknown>;
+// };
 
 type AxiosErrorType = Error & {
   isAxiosError: boolean;
   response?: {
     status?: number;
-    data?: { detail?: string } & Record<string, any>;
+    data?: { detail?: string } & Record<string, unknown>;
     headers?: Record<string, string>;
   };
 };
@@ -25,8 +25,9 @@ import {
   VerifyCampaignCodeResponse,
   CheckoutSession,
   CreateCheckoutRequest,
-  ManageSubscriptionRequest,
-  CampaignCodeVerificationResult
+  ManageSubscriptionRequest
+  // 未使用のため削除
+  // CampaignCodeVerificationResult
 } from '../types/subscription';
 import { getSession } from 'next-auth/react';
 
@@ -40,7 +41,7 @@ const getAxiosConfig = async (requireAuth = true) => {
   const config: {
     withCredentials: boolean;
     headers: Record<string, string>;
-    params?: Record<string, any>;
+    params?: Record<string, string | number>;
   } = {
     withCredentials: true, // クッキーを含める
     headers: {}
@@ -80,7 +81,7 @@ const isAxiosError = (error: unknown): error is AxiosErrorType => {
     typeof error === 'object' && 
     error !== null && 
     'isAxiosError' in error && 
-    (error as any).isAxiosError === true
+    (error as { isAxiosError: boolean }).isAxiosError === true
   );
 };
 
@@ -171,7 +172,7 @@ export const subscriptionService = {
     price_id: string,
     success_url: string,
     cancel_url: string,
-    metadata?: { [key: string]: string },
+    metadata?: Record<string, string>,
     discountInfo?: {
       campaign_code: string;
       discount_type: string;
@@ -262,7 +263,7 @@ export const subscriptionService = {
   },
 
   // サブスクリプション管理（キャンセル、再開、更新など） - 認証必要
-  manageSubscription: async (data: ManageSubscriptionRequest): Promise<any> => {
+  manageSubscription: async (data: ManageSubscriptionRequest): Promise<Record<string, unknown>> => {
     try {
       // price_idをplan_idとして使用するように修正
       const requestData = {
@@ -271,7 +272,7 @@ export const subscriptionService = {
       };
       
       const config = await getAxiosConfig(true);
-      const response = await axios.post(
+      const response = await axios.post<Record<string, unknown>>(
         `${API_URL}/subscriptions/manage-subscription`,
         requestData,
         config

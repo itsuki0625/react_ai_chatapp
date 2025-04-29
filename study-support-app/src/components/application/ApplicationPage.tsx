@@ -94,8 +94,10 @@ const fetchUserSubscription = async (): Promise<Subscription | null> => {
   try {
     const response = await apiClient.get<Subscription | null>('/subscriptions/user-subscription');
     return response.data; // null の可能性もある
-  } catch (error: any) { // エラーハンドリング改善
-    if (error.response && error.response.status === 404) {
+  } catch (error) { // エラーハンドリング改善
+    if (typeof error === 'object' && error !== null && 'response' in error && 
+        typeof error.response === 'object' && error.response !== null && 
+        'status' in error.response && error.response.status === 404) {
       // 404 はサブスクリプションがない状態なのでエラーではない
       return null;
     }

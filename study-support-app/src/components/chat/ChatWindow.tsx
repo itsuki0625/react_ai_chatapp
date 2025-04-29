@@ -12,12 +12,13 @@ import { useRouter } from 'next/navigation'; // ★ router をインポート
 interface ChatWindowProps {
   chatType: ChatType;
   sessionId?: string; // ★ sessionId を string 型 (UUID) で受け取る (パスパラメータから)
+  onNewSessionCreated?: (sessionId: string) => void; // 新しいセッションが作成されたときに呼び出すコールバック
 }
 
 // UUIDから数値IDを生成する関数 (不要になったため削除)
 // const generateNumericIdFromUUID = (uuid: string): number => { ... };
 
-const ChatWindow: React.FC<ChatWindowProps> = ({ chatType, sessionId: propSessionId }) => {
+const ChatWindow: React.FC<ChatWindowProps> = ({ chatType, sessionId: propSessionId, onNewSessionCreated }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(propSessionId || null);
   // const [numericSessionId, setNumericSessionId] = useState<number | null>(...); // numericSessionId 関連を削除
@@ -28,7 +29,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatType, sessionId: propSessio
   const router = useRouter(); // ★ router インスタンスを取得
 
   const token = session?.accessToken; // セッションからトークンを取得
-  const user = session?.user; // セッションからユーザー情報を取得
+  // const user = session?.user; // セッションからユーザー情報を取得 (未使用)
 
   useEffect(() => {
     setCurrentSessionId(propSessionId || null);
@@ -48,9 +49,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatType, sessionId: propSessio
         headers: { Authorization: `Bearer ${token}` },
       });
       setMessages(response.data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error fetching messages:", err);
-      setError(`メッセージの読み込みに失敗しました: ${err.response?.data?.detail || err.message}`);
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : 'Unknown error occurred';
+      const responseDetail = typeof err === 'object' && err !== null && 'response' in err 
+        ? (err.response as { data?: { detail?: string } })?.data?.detail 
+        : undefined;
+      setError(`メッセージの読み込みに失敗しました: ${responseDetail || errorMessage}`);
       setMessages([]); // エラー時はメッセージをクリア
     } finally {
       setIsFetchingHistory(false); // 履歴取得完了
@@ -95,6 +102,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatType, sessionId: propSessio
         // setNumericSessionId(targetNumericId); // numericId 関連を削除
         setMessages([]); // 新しいセッションなのでメッセージリストをクリア
         console.log("New session created with ID:", targetSessionId);
+        
+        // 親コンポーネントに新しいセッションIDを通知
+        if (onNewSessionCreated) {
+          onNewSessionCreated(targetSessionId);
+        }
+        
         // ★ 新規作成後、URLを更新
         router.push(`/chat/${chatType}/${targetSessionId}`);
       }
@@ -132,9 +145,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatType, sessionId: propSessio
         // return response.data; // または適切な処理
       });
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error sending message:", err);
-      setError(`メッセージの送信に失敗しました: ${err.response?.data?.detail || err.message}`);
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : 'Unknown error occurred';
+      const responseDetail = typeof err === 'object' && err !== null && 'response' in err 
+        ? (err.response as { data?: { detail?: string } })?.data?.detail 
+        : undefined;
+      setError(`メッセージの送信に失敗しました: ${responseDetail || errorMessage}`);
       // エラーが起きた場合、optimistic update したメッセージを削除
       if (userMessage) {
          setMessages((prev) => prev.filter(msg => msg.id !== userMessage!.id));

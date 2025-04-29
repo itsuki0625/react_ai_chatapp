@@ -1,31 +1,45 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+// import * as React from "react"; // Remove duplicate React import
+// import type { ToastActionElement, ToastProps } from "@/components/ui/toast"; // Remove import
+
+// const TOAST_LIMIT = 1; // Remove unused variable
+const TOAST_REMOVE_DELAY = 1000000;
 
 type ToastVariant = 'default' | 'success' | 'error' | 'warning' | 'destructive';
 
-interface ToastProps {
-  title: string;
-  description?: string;
+// Restore local ToastProps definition
+type ToastProps = {
+  id?: string;
+  title?: React.ReactNode;
+  description?: React.ReactNode;
   variant?: ToastVariant;
-  duration?: number;
-}
+  action?: React.ReactNode; // Restore action property if needed by the component
+  duration?: number; // Add duration property
+};
 
-interface ToastContextType {
-  toast: (props: ToastProps) => void;
-}
+// --- コンテキストの定義 ---
+type ToastContextType = {
+  toast: (props: ToastProps) => void; // Use local ToastProps
+};
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [toasts, setToasts] = useState<(ToastProps & { id: number })[]>([]);
+  const [toasts, setToasts] = useState<ToastProps[]>([]);
 
   const toast = useCallback((props: ToastProps) => {
-    const id = Date.now();
-    setToasts(current => [...current, { ...props, id }]);
+    const id = String(Date.now());
+    const newToast = { ...props, id };
+
+    setToasts((currentToasts) => [
+      ...currentToasts,
+      newToast,
+    ]);
 
     if (props.duration !== 0) {
       setTimeout(() => {
-        setToasts(current => current.filter(toast => toast.id !== id));
-      }, props.duration || 5000); // デフォルトは5秒
+        setToasts((current) => current.filter((t) => t.id !== id));
+      }, props.duration || TOAST_REMOVE_DELAY);
     }
   }, []);
 

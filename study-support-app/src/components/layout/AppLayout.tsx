@@ -19,7 +19,6 @@ import {
   GraduationCap,
   BookOpen,
   Users,
-  Shield,
   DollarSign
 } from 'lucide-react';
 

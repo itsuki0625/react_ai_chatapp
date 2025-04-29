@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AdminNavBar } from '@/components/common/AdminNavBar';
 import { User, UserRole } from '@/types/user';
 import { Plus, Search, Edit, Trash2 } from 'lucide-react';
@@ -66,7 +66,7 @@ const AdminUsersPage = () => {
   });
 
   // ユーザーリスト取得関数（再利用のため）
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     setIsLoading(true);
     try {
       const params: { search?: string; role?: string; status?: string } = {};
@@ -99,7 +99,7 @@ const AdminUsersPage = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [searchTerm, filterRole, filterStatus]);
 
   // --- ロール一覧を取得する useEffect ---
   useEffect(() => {

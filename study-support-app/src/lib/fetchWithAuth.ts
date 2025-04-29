@@ -1,5 +1,15 @@
 import { getSession } from 'next-auth/react'; // Assuming you use NextAuth.js
 
+// 型定義を追加
+interface SessionWithToken {
+  accessToken?: string;
+  user?: {
+    accessToken?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
 /**
  * A wrapper around the native fetch function that automatically adds
  * the Authorization header with the JWT access token obtained from the
@@ -17,7 +27,8 @@ export const fetchWithAuth = async (
   const session = await getSession(); // Get the current session
 
   // Try to access accessToken property safely
-  const accessToken = (session as any)?.accessToken; // Use 'as any' or define a proper Session type with accessToken
+  const sessionWithToken = session as SessionWithToken | null;
+  const accessToken = sessionWithToken?.accessToken || sessionWithToken?.user?.accessToken;
 
   if (!session || !accessToken) {
     // Handle cases where the user is not authenticated or token is missing
