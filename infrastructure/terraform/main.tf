@@ -199,7 +199,5 @@ resource "aws_secretsmanager_secret" "backend_env" {
 }
 resource "aws_secretsmanager_secret_version" "backend_env_version" {
   secret_id     = aws_secretsmanager_secret.backend_env.id
-  secret_string = join("\n", [
-    for key, value in local.backend_env : "${key}=${value}"
-  ])
+  secret_string = file("${path.module}/../../backend/.env.stg")
 } 
