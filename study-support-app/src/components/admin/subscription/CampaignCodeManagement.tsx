@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { PlusCircle, Edit, Trash2, AlertCircle, Check, X } from 'lucide-react';
+import axios from 'axios';
+import { PlusCircle, Edit, Trash2, AlertCircle, X } from 'lucide-react';
 import { Button } from '@/components/common/Button';
 import { Card, CardContent } from '@/components/common/Card';
 import { CampaignCode, DiscountTypeResponse } from '@/types/subscription';
 import { adminService } from '@/services/adminService';
 import { fetchDiscountTypes } from '@/lib/api/admin';
 import { useQuery } from '@tanstack/react-query';
-import axios from 'axios';
 
 // モーダルの共通コンポーネント
 const Modal: React.FC<{

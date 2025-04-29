@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PersonalStatementResponse, PersonalStatementCreate, PersonalStatementUpdate } from '@/types/personal_statement';
+import { PersonalStatementResponse } from '@/types/personal_statement';
 import { getStatements, deleteStatement } from '@/services/statementService';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';

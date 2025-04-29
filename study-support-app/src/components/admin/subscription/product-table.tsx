@@ -28,7 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ChevronDown, Pencil } from "lucide-react";
-import { StripePriceResponse, StripeProductWithPricesResponse } from "@/types/stripe";
+import { StripePriceResponse } from "@/types/stripe";
 
 // 価格フォーマット関数 (columns.tsx からコピーまたはインポート)
 const formatCurrency = (amount: number | null | undefined, currency: string) => {

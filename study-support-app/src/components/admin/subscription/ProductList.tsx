@@ -62,7 +62,7 @@ export function ProductList() {
   );
 
   // 商品作成
-  const createProductMutation = useMutation<
+  const _createProductMutation = useMutation<
     StripeProductResponse,
     Error,
     StripeProductCreate
@@ -79,7 +79,7 @@ export function ProductList() {
   });
 
   // 商品更新
-  const updateProductMutation = useMutation<
+  const _updateProductMutation = useMutation<
     StripeProductResponse,
     Error,
     { productId: string; data: StripeProductUpdate }
@@ -117,7 +117,7 @@ export function ProductList() {
   });
 
   // 価格更新
-  const updatePriceMutation = useMutation<
+  const _updatePriceMutation = useMutation<
     StripePriceResponse,
     Error,
     { priceId: string; data: StripePriceUpdate }
@@ -195,9 +195,9 @@ export function ProductList() {
         columns={columns({ 
           onEdit: handleOpenEditDialog, 
           onArchive: handleOpenArchiveDialog, 
-          onEditPrice: handleOpenEditPriceDialog 
         })} 
         data={products} 
+        onEditPrice={handleOpenEditPriceDialog}
       />
 
       <CreateProductDialog 

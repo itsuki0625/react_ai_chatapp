@@ -2,7 +2,7 @@
 
 import React from 'react'; // React をインポート
 import { ColumnDef, Row, Table as ReactTable, Column } from '@tanstack/react-table';
-import { ArrowUpDown, MoreHorizontal, Pencil, ChevronDown, ChevronRight } from 'lucide-react'; // Chevron アイコンを追加
+import { ArrowUpDown, MoreHorizontal, ChevronDown, ChevronRight } from 'lucide-react'; // Remove Pencil
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -18,11 +18,10 @@ import { Badge } from "@/components/ui/badge";
 // import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"; 
 import { StripeProductWithPricesResponse, StripePriceResponse } from "@/types/stripe";
 
-// オプション型は変更なし
+// オプション型から onEditPrice を削除
 interface ProductColumnsOptions {
   onEdit: (product: StripeProductWithPricesResponse) => void;
   onArchive: (productId: string) => void;
-  onEditPrice: (price: StripePriceResponse) => void;
 }
 
 // ActionsCell は変更なし
@@ -64,23 +63,8 @@ const ActionsCell = ({ row, onEdit, onArchive }: {
   );
 };
 
-// フォーマット関数はそのまま
-const formatCurrency = (amount: number | null | undefined, currency: string) => {
-  if (amount === null || amount === undefined) return '-';
-  return new Intl.NumberFormat('ja-JP', { style: 'currency', currency: currency }).format(amount / 100);
-};
-const formatRecurring = (recurring: StripePriceResponse['recurring']) => {
-  if (!recurring) return '都度払い';
-  const intervalMap: { [key: string]: string } = {
-    day: '日', week: '週', month: '月', year: '年',
-  };
-  const interval = intervalMap[recurring.interval] || recurring.interval;
-  return `${recurring.interval_count > 1 ? recurring.interval_count : ''}${interval}ごと`;
-};
-
-
-// columns 定義を修正
-export const columns = ({ onEdit, onArchive, onEditPrice }: ProductColumnsOptions): ColumnDef<StripeProductWithPricesResponse>[] => [
+// columns 定義を修正 (引数から onEditPrice を削除)
+export const columns = ({ onEdit, onArchive }: ProductColumnsOptions): ColumnDef<StripeProductWithPricesResponse>[] => [
   // 行展開用の列を追加
   {
     id: 'expander',

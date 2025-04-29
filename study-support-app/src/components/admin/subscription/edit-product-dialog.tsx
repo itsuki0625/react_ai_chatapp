@@ -4,7 +4,7 @@ import React from 'react';
 import { ControllerRenderProps, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
@@ -37,7 +37,6 @@ interface EditProductDialogProps {
 
 export function EditProductDialog({ isOpen, onClose, onSuccess, product }: EditProductDialogProps) {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(formSchema),

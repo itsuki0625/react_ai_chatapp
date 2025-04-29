@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AdminNavBar } from '@/components/common/AdminNavBar';
 import { User, UserRole } from '@/types/user';
 import { Plus, Search, Edit, Trash2 } from 'lucide-react';
@@ -123,7 +123,7 @@ const AdminUsersPage = () => {
 
   useEffect(() => {
     fetchUsers();
-  }, [searchTerm, filterRole, filterStatus]);
+  }, [searchTerm, filterRole, filterStatus, fetchUsers]);
 
   // ロール表示用のヘルパー (キーを日本語に変更)
   const roleDisplayMap: Record<string, string> = { // 型を Record<string, string> に変更
@@ -179,15 +179,14 @@ const AdminUsersPage = () => {
 
   const handleSaveUser = async (userData: UserCreatePayload | UserUpdatePayload) => {
     try {
-      let savedUser: UserDetailsResponse;
       if (modalMode === 'add') {
         if (!userData.password) {
           alert('新規作成時はパスワードが必須です。');
           return;
         }
-        savedUser = await createUser(userData as UserCreatePayload);
+        await createUser(userData as UserCreatePayload);
       } else if (modalMode === 'edit' && selectedUser) {
-        savedUser = await updateUser(selectedUser.id, userData as UserUpdatePayload);
+        await updateUser(selectedUser.id, userData as UserUpdatePayload);
       } else {
         console.error('不正なモードまたは選択されたユーザーなし');
         return;

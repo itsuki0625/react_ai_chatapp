@@ -17,7 +17,8 @@ interface DecodedToken {
   status?: string;
   permissions?: string[];
   exp?: number;
-  [key: string]: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any; // Allow other claims
 }
 
 // 認証情報の型定義
@@ -34,7 +35,7 @@ const authConfig: NextAuthConfig = {
         email: { label: "メールアドレス", type: "email" },
         password: { label: "パスワード", type: "password" }
       },
-      async authorize(credentials, request) {
+      async authorize(credentials) {
         console.log("[Authorize] Attempting authorization..."); // DEBUG LOG
         if (!credentials?.email || !credentials?.password) {
           console.log("[Authorize] Missing credentials."); // DEBUG LOG
@@ -109,12 +110,12 @@ const authConfig: NextAuthConfig = {
         token.email = user.email || '';
         token.role = user.role || [];
         token.name = user.name || undefined;
-        token.status = (user as any).status || 'pending';
-        token.permissions = (user as any).permissions || [];
+        token.status = user.status || 'pending';
+        token.permissions = user.permissions || [];
         token.accessToken = user.accessToken;
         token.refreshToken = user.refreshToken;
-        // authorizeから渡された有効期限を使用 (userにaccessTokenExpiresを追加する必要あり)
-        token.accessTokenExpires = (user as any).accessTokenExpires || Date.now() + 15 * 60 * 1000;
+        // authorizeから渡された有効期限を使用
+        token.accessTokenExpires = user.accessTokenExpires || Date.now() + 15 * 60 * 1000;
         console.log("[JWT Callback] Token populated:", token); // DEBUG LOG
         return token;
       }
@@ -216,7 +217,7 @@ const authConfig: NextAuthConfig = {
       userSession.role = primaryRole; // ★ Assign the normalized single role string
       userSession.status = token.status as string;
       userSession.permissions = token.permissions as string[];
-      (session as any).accessToken = token.accessToken as string; // Use 'as any' or define Session type properly
+      session.accessToken = token.accessToken as string;
       session.error = token.error as string | undefined;
 
       // Add derived boolean flags based on the primary role

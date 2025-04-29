@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Assuming Avatar components exist
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"; // Remove AvatarImage
 import { Bot, User, Loader2, AlertTriangle } from 'lucide-react';
 import { ChatMessage } from '@/types/chat';
 import ReactMarkdown from 'react-markdown';
@@ -32,7 +32,6 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({ messages, isLoading,
       {messages.map((message, index) => {
         const isUserMessage = message.sender_type === 'USER';
         const isAiMessage = message.sender_type === 'AI';
-        const isSystemMessage = message.sender_type === 'SYSTEM'; // Handle system messages if needed
         
         // Add temporary fields check for optimistic/error states
         const isOptimisticLoading = message.isLoading; 

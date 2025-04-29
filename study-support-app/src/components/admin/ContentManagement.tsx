@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { useSession } from "next-auth/react";
 import { 
   Plus, 
@@ -12,7 +13,7 @@ import {
   LayoutGrid,
   List
 } from 'lucide-react';
-import { Content, FormContentType } from '@/types/content';
+import { Content, FormContentType, BackendContentType, ContentCategory } from '@/types/content';
 import { contentAPI } from '@/services/api';
 import { Dialog } from '@/components/common/Dialog';
 import { getSlideProviderInfo } from '@/lib/slide';
@@ -84,8 +85,8 @@ export const ContentManagement = () => {
 
     const payload = {
       ...formData,
-      content_type: formData.content_type.toLowerCase(),
-      category: categoryMap[formData.category || ''] || 'other',
+      content_type: formData.content_type.toLowerCase() as BackendContentType,
+      category: (categoryMap[formData.category || ''] || 'other') as ContentCategory,
       tags: formData.tags ? formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag) : [],
       created_by_id: session.user.id as string,
     };
@@ -95,9 +96,9 @@ export const ContentManagement = () => {
     try {
       if (editingId) {
         const updatePayload = { ...submitData };
-        await contentAPI.updateContent(editingId, updatePayload as any);
+        await contentAPI.updateContent(editingId, updatePayload);
       } else {
-        await contentAPI.createContent(submitData as any);
+        await contentAPI.createContent(submitData);
       }
       setShowForm(false);
       setFormData(initialFormData);
@@ -221,10 +222,12 @@ ${error instanceof Error ? error.message : '不明なエラー'}`);
                 className="border rounded-lg p-3 hover:shadow-md transition-shadow flex flex-col"
               >
                 <div className="aspect-video relative mb-2">
-                  <img
+                  <Image
                     src={content.thumbnail_url || '/placeholder.png'}
                     alt={content.title}
-                    className="w-full h-full object-cover rounded"
+                    layout="fill"
+                    objectFit="cover"
+                    className="rounded"
                   />
                   <div className="absolute top-2 right-2 flex space-x-1">
                     <button
@@ -276,10 +279,12 @@ ${error instanceof Error ? error.message : '不明なエラー'}`);
                 className="py-3 flex items-center hover:bg-gray-50"
               >
                 <div className="flex-shrink-0 w-16 h-10 mr-4">
-                  <img
+                  <Image
                     src={content.thumbnail_url || '/placeholder.png'}
                     alt={content.title}
-                    className="w-full h-full object-cover rounded"
+                    layout="fill"
+                    objectFit="cover"
+                    className="rounded"
                   />
                 </div>
                 <div className="flex-grow min-w-0 mr-4">
@@ -418,10 +423,14 @@ ${error instanceof Error ? error.message : '不明なエラー'}`);
               />
               {formData.thumbnail_url && (
                 <div className="mt-2">
-                  <img
+                  <p className="text-xs text-gray-500 mb-1">プレビュー:</p>
+                  <Image
                     src={formData.thumbnail_url}
                     alt="サムネイルプレビュー"
-                    className="w-48 h-auto border rounded"
+                    width={160}
+                    height={90}
+                    objectFit="cover"
+                    className="rounded border"
                   />
                 </div>
               )}

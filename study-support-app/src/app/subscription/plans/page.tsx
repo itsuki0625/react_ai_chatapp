@@ -7,7 +7,6 @@ import { StyledH2 } from '@/components/common/CustomHeadings';
 
 export default function SubscriptionPlans() {
   const { status } = useSession();
-  const isAuthenticated = status === 'authenticated';
 
   // FAQデータ
   const faqItems = [

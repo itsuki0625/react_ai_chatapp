@@ -69,7 +69,7 @@ useEffect(() => {
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
-          <DialogTitle>'{role.name}' の権限設定</DialogTitle>
+          <DialogTitle>&apos;{role.name}&apos; の権限設定</DialogTitle>
           <DialogDescription>
             このロールに割り当てる権限を選択してください。
           </DialogDescription>

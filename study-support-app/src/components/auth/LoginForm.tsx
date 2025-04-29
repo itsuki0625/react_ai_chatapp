@@ -20,23 +20,21 @@ export const LoginForm: React.FC = () => {
       console.log('認証済み:', session);
       
       // ユーザーロールに基づいてリダイレクト先を決定
-      let redirectUrl = searchParams?.get('redirect') || getDashboardByRole(session.user.role);
+      const redirectUrl = searchParams?.get('redirect') || getDashboardByRole(session.user.role);
       console.log('遷移先:', redirectUrl);
       router.push(redirectUrl);
     }
   }, [session, status, router, searchParams]);
   
   // ユーザーロールに基づいてダッシュボードURLを取得
-  const getDashboardByRole = (roles: string[]): string => {
-    if (!roles || roles.length === 0) return '/dashboard';
+  const getDashboardByRole = (role: string): string => {
+    if (!role) return '/dashboard';
     
-    // ロールの優先順位に基づいて遷移先を決定
-    if (roles.includes('admin')) {
+    // 単一のロールに基づいて遷移先を決定
+    if (role === '管理者') {
       return '/admin/dashboard';
-    } else if (roles.includes('teacher')) {
+    } else if (role === '教員') {
       return '/teacher/dashboard';
-    } else if (roles.includes('student')) {
-      return '/dashboard';
     } else {
       return '/dashboard';
     }
