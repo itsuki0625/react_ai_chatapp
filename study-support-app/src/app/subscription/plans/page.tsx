@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { Suspense } from 'react';
 // import { useSession } from 'next-auth/react'; // Remove unused import
 import { SubscriptionPlansPage } from '@/components/subscription/SubscriptionPlansPage';
 import { StyledH2 } from '@/components/common/CustomHeadings';
@@ -48,7 +48,9 @@ export default function SubscriptionPlans() {
 
       {/* メインコンテンツ */}
       <div className="py-8 px-4">
-        <SubscriptionPlansPage />
+        <Suspense fallback={<div className="text-center p-8">プランを読み込み中...</div>}>
+          <SubscriptionPlansPage />
+        </Suspense>
       </div>
 
       {/* FAQ セクション */}

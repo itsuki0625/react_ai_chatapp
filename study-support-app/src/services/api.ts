@@ -30,10 +30,10 @@ export const getAxiosConfig = async (requireAuth = true) => {
          // アクセストークンがないがセッションはある場合（古い形式やカスタム認証？）
          // 必要に応じて X-Session-Token などのカスタムヘッダーを設定
          config.headers['X-Session-Token'] = 'true';
-         if (session.user?.email) {
+         if (typeof session.user?.email === 'string') {
            config.headers['X-User-Email'] = session.user.email;
          }
-         if (session.user?.name) {
+         if (typeof session.user?.name === 'string') {
            config.headers['X-User-Name'] = encodeURIComponent(session.user.name);
          }
          console.warn('Session found but no accessToken. Using custom headers.');

@@ -28,7 +28,7 @@ export default function TeacherLayout({
 
     // 認証されているが教師ロールがない場合はダッシュボードへリダイレクト
     if (status === 'authenticated' && session) {
-      const userRoles = session.user.role || [];
+      const userRoles = (session.user.role || []) as string[];
       const isTeacher = userRoles.includes('teacher') || session.user.isTeacher;
       
       if (!isTeacher) {
@@ -51,7 +51,7 @@ export default function TeacherLayout({
 
   // 認証済みかつ教師の場合のみ子コンポーネントを表示
   if (status === 'authenticated' && session) {
-    const userRoles = session.user.role || [];
+    const userRoles = (session.user.role || []) as string[];
     const isTeacher = userRoles.includes('teacher') || session.user.isTeacher;
     
     if (isTeacher) {
