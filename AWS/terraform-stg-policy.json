@@ -181,8 +181,10 @@
             "Action": [
               "iam:TagRole",
               "iam:ListRolePolicies",
+              "iam:ListAttachedRolePolicies",
               "elasticloadbalancing:AddTags",
               "elasticloadbalancing:ModifyTargetGroupAttributes",
+              "elasticloadbalancing:DescribeTargetGroupAttributes",
               "rds:AddTagsToResource",
               "secretsmanager:GetResourcePolicy",
               "ec2:DescribeInternetGateways",
