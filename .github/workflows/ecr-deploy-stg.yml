@@ -93,7 +93,6 @@ jobs:
       - name: Deploy Backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
-          aws-region: ${{ secrets.AWS_REGION }}
           cluster: smartao-api-stg
           service: smartao-api-stg-service
           task-definition: AWS/backend-task-def-stg.json
@@ -115,7 +114,6 @@ jobs:
       - name: Deploy Frontend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
-          aws-region: ${{ secrets.AWS_REGION }}
           cluster: smartao-front-stg
           service: smartao-front-stg-service
           task-definition: AWS/frontend-task-def-stg.json
