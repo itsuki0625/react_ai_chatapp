@@ -35,14 +35,13 @@ const SettingsPage = () => {
       }
 
       const mappedSettings: UserSettings = {
-        ...settingsData,
-        full_name: settingsData.full_name || 'Fallback Full Name',
-        name: settingsData.full_name || settingsData.name || '',
-        email: settingsData.email || session?.user?.email || '',
+        full_name: String(settingsData.full_name || session?.user?.name || ''),
+        name: String(settingsData.name || settingsData.full_name || session?.user?.name || ''),
+        email: String(settingsData.email || session?.user?.email || ''),
         emailNotifications: settingsData.emailNotifications ?? true,
         browserNotifications: settingsData.browserNotifications ?? false,
-        theme: settingsData.theme || 'light',
-        subscription: settingsData.subscription || null
+        theme: String(settingsData.theme || 'light'),
+        subscription: settingsData.subscription || null,
       };
 
       setUserSettings(mappedSettings);
@@ -51,13 +50,13 @@ const SettingsPage = () => {
       console.error('ユーザー設定の取得エラー:', error);
       toast.error('ユーザー設定の取得に失敗しました。');
       setUserSettings({
-        email: session?.user?.email || 'demo@example.com',
-        full_name: session?.user?.name || 'デモユーザー',
-        name: session?.user?.name || 'デモユーザー',
+        full_name: 'デモユーザー',
+        name: 'デモユーザー',
+        email: 'demo@example.com',
         emailNotifications: true,
         browserNotifications: false,
         theme: 'light',
-        subscription: null
+        subscription: null,
       });
     } finally {
       setIsLoading(false);
@@ -68,13 +67,14 @@ const SettingsPage = () => {
     if (status === 'authenticated') {
       loadUserSettingsData();
     } else if (status === 'unauthenticated') {
-      setUserSettings({ 
-        email: 'demo@example.com', 
+      setUserSettings({
         full_name: 'デモユーザー',
-        name: 'デモユーザー', 
-        emailNotifications: true, 
-        browserNotifications: false, 
-        theme: 'light' 
+        name: 'デモユーザー',
+        email: 'demo@example.com',
+        emailNotifications: true,
+        browserNotifications: false,
+        theme: 'light',
+        subscription: null,
       });
       setIsLoading(false);
     } else {

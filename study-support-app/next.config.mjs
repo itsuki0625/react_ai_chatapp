@@ -1,6 +1,6 @@
-import type { NextConfig } from "next";
+// import type { NextConfig } from "next"; // 型インポートを削除
 
-const nextConfig: NextConfig = {
+const nextConfig = { // 型注釈を削除
   reactStrictMode: true,
   staticPageGenerationTimeout: 180,
   images: {

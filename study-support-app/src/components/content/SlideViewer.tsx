@@ -48,7 +48,7 @@ export const SlideViewer = ({
     }
   };
 
-  const handleKeyDown = (e: KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'ArrowRight') {
       handleSlideChange('next');
     } else if (e.key === 'ArrowLeft') {

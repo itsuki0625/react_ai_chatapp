@@ -1,22 +1,22 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Content, ContentType } from '@/types/content';
+import { ArrowLeft } from 'lucide-react';
+import { Content, FormContentType, BackendContentType } from '@/types/content';
 import { contentAPI } from '@/services/api';
 import ContentList from '@/components/content/ContentList';
 import { useRouter } from 'next/navigation';
 
 const ContentsPage = () => {
   const [contents, setContents] = useState<Content[]>([]);
-  const [selectedType, setSelectedType] = useState<ContentType | 'ALL'>('ALL');
+  const [selectedType, setSelectedType] = useState<FormContentType | 'ALL'>('ALL');
   const router = useRouter();
 
   useEffect(() => {
     const fetchContents = async () => {
       try {
-        const data = await contentAPI.getContents(
-          selectedType === 'ALL' ? undefined : selectedType
-        );
+        const typeToSend = selectedType === 'ALL' ? undefined : selectedType.toLowerCase() as BackendContentType;
+        const data = await contentAPI.getContents(typeToSend);
         setContents(data);
       } catch (error) {
         console.error('Failed to fetch contents:', error);
@@ -40,13 +40,13 @@ const ContentsPage = () => {
         <nav className="flex space-x-8" aria-label="コンテンツタイプ">
           {[
             { label: 'すべて', value: 'ALL' },
-            { label: '動画', value: 'VIDEO' },
-            { label: 'スライド', value: 'SLIDE' },
-            { label: 'PDF', value: 'PDF' }
+            { label: '動画', value: 'VIDEO' as FormContentType },
+            { label: 'スライド', value: 'SLIDE' as FormContentType },
+            { label: 'PDF', value: 'PDF' as FormContentType }
           ].map((tab) => (
             <button
               key={tab.value}
-              onClick={() => setSelectedType(tab.value as ContentType | 'ALL')}
+              onClick={() => setSelectedType(tab.value as FormContentType | 'ALL')}
               className={`pb-4 px-1 ${
                 selectedType === tab.value
                   ? 'border-b-2 border-blue-500 text-blue-600'
