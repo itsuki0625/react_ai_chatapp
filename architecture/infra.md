@@ -18,16 +18,16 @@
 
 ## 2-1. Cloudflare での DNS 設定（手動）
 - Cloudflare ダッシュボードにログイン
-- 対象ドメイン（例: `smartao.com`）の **DNS** ページを開く
+- 対象ドメイン（例: `smartao.jp`）の **DNS** ページを開く
 - **CNAME レコードを追加 (frontend)**
   - **Type**: CNAME
-  - **Name**: `stg`  （`stg.smartao.com`）
+  - **Name**: `stg`  （`stg.smartao.jp`）
   - **Target / Content**: フロントエンド ALB の DNS 名 (例: `smartao-front-stg-xxxxxx.elb.amazonaws.com`)
   - **TTL**: Auto
   - **Proxy status**: DNS only（オレンジ雲オフ） or Proxied（オレンジ雲オン）
 - **CNAME レコードを追加 (backend)**
   - **Type**: CNAME
-  - **Name**: `stg-api`  （`stg-api.smartao.com`）
+  - **Name**: `stg-api`  （`stg-api.smartao.jp`）
   - **Target / Content**: バックエンド ALB の DNS 名 (例: `smartao-api-stg-yyyyyy.elb.amazonaws.com`)
   - **TTL**: Auto
   - **Proxy status**: DNS only（オレンジ雲オフ） or Proxied（オレンジ雲オン）

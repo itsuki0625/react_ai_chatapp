@@ -218,7 +218,7 @@ echo "SES domain verification requested: $SES_DOMAIN"
 # =================================================
 # 9. Parameter Store (例)
 # =================================================
-aws ssm put-parameter --name /smartao/stg/api-base-url --value https://stg-api.smartao.com --type String --overwrite --region $AWS_REGION
+aws ssm put-parameter --name /smartao/stg/api-base-url --value https://stg-api.smartao.jp --type String --overwrite --region $AWS_REGION
 
 echo "Parameter Store entry created"
 
