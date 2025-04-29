@@ -2,9 +2,15 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
+# ci前にnode_modulesとキャッシュを削除
+RUN rm -rf node_modules .next
 RUN npm ci --legacy-peer-deps
 COPY . .
-COPY .env.stg .env
+# 公開環境変数を直接指定
+ENV NEXT_PUBLIC_API_BASE_URL=https://stg-api.smartao.com
+ENV NEXT_PUBLIC_BROWSER_API_URL=https://stg-api.smartao.com
+# ビルド前にキャッシュを削除
+RUN rm -rf .next
 RUN npm run build
 
 FROM node:20-alpine AS runner
@@ -16,7 +22,7 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/.env .env
+# .envのコピーは不要になりました
 
 EXPOSE 3000
 CMD ["npm", "run", "start", "--", "-p", "3000"] 

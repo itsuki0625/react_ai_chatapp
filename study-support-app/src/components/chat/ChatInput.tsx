@@ -37,7 +37,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading =
         textareaRef.current.style.height = 'auto'; // Reset height
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [message, isLoading, onSendMessage, canSendMessage]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {

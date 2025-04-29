@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, FileText, Edit2, Trash2, MessageSquare } from 'lucide-react';
+import { Plus, Edit2, Trash2, MessageSquare } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
 import { API_BASE_URL } from '@/lib/config';

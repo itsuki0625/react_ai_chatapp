@@ -1,6 +1,16 @@
-import axios, { AxiosRequestConfig, InternalAxiosRequestConfig, AxiosRequestHeaders } from 'axios';
+import axios, { InternalAxiosRequestConfig, AxiosRequestHeaders } from 'axios';
 import { API_BASE_URL } from '@/lib/config'; // config からインポート
 import { getSession } from 'next-auth/react'; // getSession をインポート
+
+// 型定義を追加
+interface SessionWithToken {
+  accessToken?: string;
+  user?: {
+    accessToken?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
 
 // APIのベースURLを直接指定する代わりに config から読み込む
 // const baseURL = 'http://localhost:5050/api/v1'; 
@@ -22,7 +32,8 @@ apiClient.interceptors.request.use(
       // getSession は非同期なので、即座に config を返すことは難しい
       // Promise を返すパターンで実装する
       return getSession().then(session => {
-        const accessToken = (session as any)?.accessToken || (session?.user as any)?.accessToken;
+        const sessionData = session as SessionWithToken | null;
+        const accessToken = sessionData?.accessToken || sessionData?.user?.accessToken;
         if (accessToken) {
           config.headers.Authorization = `Bearer ${accessToken}`;
           console.log("Authorization header set with token from session.");

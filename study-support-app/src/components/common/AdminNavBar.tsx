@@ -2,8 +2,8 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { signOut } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
-import { getSession, signOut } from 'next-auth/react';
 
 export const AdminNavBar: React.FC = () => {
   const pathname = usePathname();

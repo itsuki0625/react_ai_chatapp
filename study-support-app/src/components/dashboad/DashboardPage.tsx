@@ -4,7 +4,6 @@ import {
   FileText, 
   User, 
   Clock,
-  ArrowRight 
 } from 'lucide-react';
 import DashboardCard from '@/components/dashboad/DashboardCard';
 import ActivityCard from '@/components/dashboad/ActivityCard';

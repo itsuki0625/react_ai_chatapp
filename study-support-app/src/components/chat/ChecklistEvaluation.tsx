@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useState, useCallback } from 'react';
 import { AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 import { API_BASE_URL } from '@/lib/config';
 
@@ -30,7 +30,7 @@ export const ChecklistEvaluation = forwardRef<{ triggerUpdate: () => void }, Pro
     const [checklistData, setChecklistData] = useState<ChecklistData | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchChecklist = async () => {
+    const fetchChecklist = useCallback(async () => {
       if (!chatId) return;
 
       try {
@@ -58,7 +58,7 @@ export const ChecklistEvaluation = forwardRef<{ triggerUpdate: () => void }, Pro
         setError('チェックリストの取得に失敗しました');
         console.error('Checklist fetch error:', error);
       }
-    };
+    }, [chatId, sessionType]);
 
     useImperativeHandle(ref, () => ({
       triggerUpdate: () => {
@@ -71,7 +71,7 @@ export const ChecklistEvaluation = forwardRef<{ triggerUpdate: () => void }, Pro
       if (chatId) {
         fetchChecklist();
       }
-    }, []); // 依存配列を空にする
+    }, [chatId, fetchChecklist]); // chatIdとfetchChecklistを依存配列に追加
 
     if (error) {
       return (

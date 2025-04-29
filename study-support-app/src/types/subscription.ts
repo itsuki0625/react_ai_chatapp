@@ -121,7 +121,7 @@ export interface DiscountTypeBase {
     description?: string | null;
 }
 
-export interface DiscountTypeCreate extends DiscountTypeBase {}
+export type DiscountTypeCreate = DiscountTypeBase;
 
 export interface DiscountTypeUpdate {
     name?: string | null;

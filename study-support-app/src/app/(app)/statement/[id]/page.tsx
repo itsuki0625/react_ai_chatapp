@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import StatementEditorPage from '@/components/statement/StatementEditorPage';
+import StatementEditorPage, { PersonalStatementStatus } from '@/components/statement/StatementEditorPage';
+import { PersonalStatementResponse } from '@/types/personal_statement';
 
 interface Props {
   params: {
@@ -14,7 +15,7 @@ const getToken = () => {
 };
 
 export default function Page({ params }: Props) {
-  const [statement, setStatement] = useState<any>(null);
+  const [statement, setStatement] = useState<PersonalStatementResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -56,5 +57,9 @@ export default function Page({ params }: Props) {
     return <div className="p-4">Loading...</div>;
   }
 
-  return <StatementEditorPage id={params.id} initialData={statement} />;
+  return <StatementEditorPage id={params.id} initialData={{
+    ...statement,
+    status: statement.status as PersonalStatementStatus,
+    desired_department_id: statement.desired_department_id ?? undefined
+  }} />;
 }

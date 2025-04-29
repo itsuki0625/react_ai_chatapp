@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { GraduationCap, Plus, Edit, Trash2, Calendar, FileText, ArrowUp, ArrowDown, ChevronRight, ChevronDown, AlertCircle, ChevronUp } from 'lucide-react';
+import { GraduationCap, Plus, Edit, Trash2, Calendar, FileText, ArrowUp, ArrowDown, ChevronDown, AlertCircle, ChevronUp } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { applicationApi } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,7 @@ interface DocumentResponse {
   updated_at: string;
 }
 
-interface ScheduleResponse {
+export interface ScheduleResponse {
   id: string;
   desired_department_id: string;
   event_name: string;
@@ -36,7 +36,7 @@ interface ApplicationDepartmentInfo {
     faculty_name: string;
 }
 
-interface ApplicationDetailResponse {
+export interface ApplicationDetailResponse {
   id: string;
   user_id: string;
   university_id: string;
@@ -187,7 +187,7 @@ export const ApplicationList = () => {
   const formatDate = (dateString: string) => {
     try {
       return new Date(dateString).toLocaleDateString('ja-JP');
-    } catch (e) {
+    } catch {
       return '日付不明';
     }
   };

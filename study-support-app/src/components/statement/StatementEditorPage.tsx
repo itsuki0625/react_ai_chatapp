@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/common/Button';
 import { API_BASE_URL } from '@/lib/config';
 
-enum PersonalStatementStatus {
+export enum PersonalStatementStatus {
   DRAFT = "DRAFT",
   REVIEW = "REVIEW",
   REVIEWED = "REVIEWED",

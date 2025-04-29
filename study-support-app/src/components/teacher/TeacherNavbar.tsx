@@ -89,7 +89,7 @@ export default function TeacherNavbar() {
           <div className="hidden sm:ml-6 sm:flex sm:items-center">
             <div className="flex items-center space-x-2">
               <span className="text-sm text-gray-700">
-                {session?.user?.name || '講師'}
+                {typeof session?.user?.name === 'string' ? session.user.name : '講師'}
               </span>
               <button
                 onClick={handleSignOut}
@@ -154,10 +154,10 @@ export default function TeacherNavbar() {
               </div>
               <div className="ml-3">
                 <div className="text-base font-medium text-gray-800">
-                  {session?.user?.name || '講師'}
+                  {typeof session?.user?.name === 'string' ? session.user.name : '講師'}
                 </div>
                 <div className="text-sm font-medium text-gray-500">
-                  {session?.user?.email || ''}
+                  {typeof session?.user?.email === 'string' ? session.user.email : ''}
                 </div>
               </div>
             </div>

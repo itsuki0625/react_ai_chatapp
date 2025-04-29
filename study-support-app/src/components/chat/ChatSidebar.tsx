@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+// import { usePathname } from 'next/navigation'; // 未使用
 import { useSession } from 'next-auth/react';
 import { apiClient } from '@/lib/api-client';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Archive } from 'lucide-react';
-import { cn } from "@/lib/utils";
+// import { PlusCircle, Archive } from 'lucide-react'; // Archive は未使用
+import { PlusCircle } from 'lucide-react';
+// import { cn } from "@/lib/utils"; // 未使用
 import { ChatType } from '@/types/chat';
 
 // APIから取得するセッションリストの型 (要調整)
@@ -26,7 +27,7 @@ interface ChatSidebarProps {
 
 const ChatSidebar: React.FC<ChatSidebarProps> = ({ chatType, currentSessionId }) => {
   const { data: session, status } = useSession();
-  const pathname = usePathname(); // 現在のパスを取得
+  // const pathname = usePathname(); // 未使用
   const [activeSessions, setActiveSessions] = useState<ChatSessionSummary[]>([]);
   // const [archivedSessions, setArchivedSessions] = useState<ChatSessionSummary[]>([]); // 必要ならアーカイブも取得
   const [isLoading, setIsLoading] = useState(false);
@@ -53,7 +54,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ chatType, currentSessionId })
         // const archivedResponse = await apiClient.get<ChatSessionSummary[]>(`/api/v1/chat/sessions/archived`, { ... });
         // setArchivedSessions(archivedResponse.data.filter(s => s.chat_type === chatType));
 
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Error fetching sessions:", err);
         setError("会話履歴の取得に失敗しました。");
         setActiveSessions([]);

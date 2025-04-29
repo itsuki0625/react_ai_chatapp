@@ -1,15 +1,14 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, FileCheck, School, Clock, Plus, ChevronDown, Edit2, Trash2, AlertCircle } from 'lucide-react';
+import { Calendar, FileCheck, School, Clock, Plus, Edit2, Trash2, AlertCircle } from 'lucide-react';
 import { DesiredSchoolForm } from '@/components/application/DesiredSchoolForm';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription, DialogClose, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { API_BASE_URL } from '@/lib/config';
 import { apiClient } from '@/lib/api/client';
 import { Subscription } from '@/types/subscription';
 import { PlanSelection } from '@/components/subscription/PlanSelection';
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 interface Application {
   id: string;
@@ -47,6 +46,14 @@ interface ScheduleFormData {
   event_name: string;
   date: string;
   type: string;
+}
+
+interface ApplicationFormData {
+  university_id: string;
+  department_id: string;
+  admission_method_id: string;
+  priority: number;
+  notes?: string;
 }
 
 const getToken = () => {
@@ -87,8 +94,10 @@ const fetchUserSubscription = async (): Promise<Subscription | null> => {
   try {
     const response = await apiClient.get<Subscription | null>('/subscriptions/user-subscription');
     return response.data; // null の可能性もある
-  } catch (error: any) { // エラーハンドリング改善
-    if (error.response && error.response.status === 404) {
+  } catch (error) { // エラーハンドリング改善
+    if (typeof error === 'object' && error !== null && 'response' in error && 
+        typeof error.response === 'object' && error.response !== null && 
+        'status' in error.response && error.response.status === 404) {
       // 404 はサブスクリプションがない状態なのでエラーではない
       return null;
     }
@@ -150,17 +159,16 @@ export default function ApplicationPage() {
 
   const fetchApplications = async () => {
     try {
-      const token = getToken();
       const response = await apiClient.get<Application[]>('/applications/');
       setApplications(response.data);
-    } catch (error: any) {
+    } catch (error) {
       setError('志望校情報の取得に失敗しました');
       console.error('Error fetching applications:', error);
       throw error;
     }
   };
 
-  const handleCreateApplication = async (formData: any) => {
+  const handleCreateApplication = async (formData: ApplicationFormData) => { 
     try {
       const token = getToken();
       const response = await fetch(`${API_BASE_URL}/api/v1/applications/`, {
@@ -179,7 +187,7 @@ export default function ApplicationPage() {
 
       await fetchApplications();
       setShowForm(false);
-    } catch (error) {
+    } catch (error: unknown) {
       setError('志望校の登録に失敗しました');
       console.error('Error creating application:', error);
     }
@@ -201,13 +209,13 @@ export default function ApplicationPage() {
       }
 
       await fetchApplications();
-    } catch (error) {
+    } catch (error: unknown) {
       setError('志望校の削除に失敗しました');
       console.error('Error deleting application:', error);
     }
   };
 
-  const handleEditApplication = async (id: string, formData: any) => {
+  const handleEditApplication = async (id: string, formData: ApplicationFormData) => { 
     try {
       const token = getToken();
       const response = await fetch(`${API_BASE_URL}/api/v1/applications/${id}`, {
@@ -226,7 +234,7 @@ export default function ApplicationPage() {
 
       await fetchApplications();
       setEditingApplication(null);
-    } catch (error) {
+    } catch (error: unknown) {
       setError('志望校の更新に失敗しました');
       console.error('Error updating application:', error);
     }
@@ -234,24 +242,16 @@ export default function ApplicationPage() {
 
   const handleAddDocument = async (applicationId: string, documentData: DocumentFormData) => {
     try {
-      const token = getToken();
-      const response = await fetch(`${API_BASE_URL}/api/v1/applications/${applicationId}/documents`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'include',
-        body: JSON.stringify(documentData)
-      });
+      const response = await apiClient.post(`/applications/${applicationId}/documents`, documentData);
 
-      if (!response.ok) {
+      if (response.status !== 201 && response.status !== 200) {
         throw new Error('Failed to add document');
       }
 
-      await fetchApplications();
+      await fetchApplications(); 
       setShowDocumentForm(false);
-    } catch (error) {
+      setEditingDocument(null);
+    } catch (error: unknown) {
       setError('書類の追加に失敗しました');
       console.error('Error adding document:', error);
     }
@@ -259,24 +259,16 @@ export default function ApplicationPage() {
 
   const handleAddSchedule = async (applicationId: string, scheduleData: ScheduleFormData) => {
     try {
-      const token = getToken();
-      const response = await fetch(`${API_BASE_URL}/api/v1/applications/${applicationId}/schedules`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'include',
-        body: JSON.stringify(scheduleData)
-      });
+      const response = await apiClient.post(`/applications/${applicationId}/schedules`, scheduleData);
 
-      if (!response.ok) {
+      if (response.status !== 201 && response.status !== 200) {
         throw new Error('Failed to add schedule');
       }
 
-      await fetchApplications();
+      await fetchApplications(); 
       setShowScheduleForm(false);
-    } catch (error) {
+      setEditingSchedule(null);
+    } catch (error: unknown) {
       setError('スケジュールの追加に失敗しました');
       console.error('Error adding schedule:', error);
     }
@@ -284,28 +276,16 @@ export default function ApplicationPage() {
 
   const handleUpdateDocument = async (applicationId: string, documentId: string, documentData: DocumentFormData) => {
     try {
-      const token = getToken();
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/applications/${applicationId}/documents/${documentId}`,
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          credentials: 'include',
-          body: JSON.stringify(documentData)
-        }
-      );
+      const response = await apiClient.put(`/applications/${applicationId}/documents/${documentId}`, documentData);
 
-      if (!response.ok) {
+      if (response.status !== 200) {
         throw new Error('Failed to update document');
       }
 
       await fetchApplications();
-      setEditingDocument(null);
       setShowDocumentForm(false);
-    } catch (error) {
+      setEditingDocument(null);
+    } catch (error: unknown) {
       setError('書類の更新に失敗しました');
       console.error('Error updating document:', error);
     }
@@ -313,84 +293,18 @@ export default function ApplicationPage() {
 
   const handleUpdateSchedule = async (applicationId: string, scheduleId: string, scheduleData: ScheduleFormData) => {
     try {
-      const token = getToken();
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/applications/${applicationId}/schedules/${scheduleId}`,
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          credentials: 'include',
-          body: JSON.stringify(scheduleData)
-        }
-      );
+      const response = await apiClient.put(`/applications/${applicationId}/schedules/${scheduleId}`, scheduleData);
 
-      if (!response.ok) {
+      if (response.status !== 200) {
         throw new Error('Failed to update schedule');
       }
 
       await fetchApplications();
-      setEditingSchedule(null);
       setShowScheduleForm(false);
-    } catch (error) {
+      setEditingSchedule(null);
+    } catch (error: unknown) {
       setError('スケジュールの更新に失敗しました');
       console.error('Error updating schedule:', error);
-    }
-  };
-
-  const handleDeleteDocument = async (applicationId: string, documentId: string) => {
-    try {
-      const token = getToken();
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/applications/${applicationId}/documents/${documentId}`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-          credentials: 'include'
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to delete document');
-      }
-
-      await fetchApplications();
-      setShowDocumentForm(false);
-      setEditingDocument(null);
-    } catch (error) {
-      setError('書類の削除に失敗しました');
-      console.error('Error deleting document:', error);
-    }
-  };
-
-  const handleDeleteSchedule = async (applicationId: string, scheduleId: string) => {
-    try {
-      const token = getToken();
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/applications/${applicationId}/schedules/${scheduleId}`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-          credentials: 'include'
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to delete schedule');
-      }
-
-      await fetchApplications();
-      setShowScheduleForm(false);
-      setEditingSchedule(null);
-    } catch (error) {
-      setError('スケジュールの削除に失敗しました');
-      console.error('Error deleting schedule:', error);
     }
   };
 

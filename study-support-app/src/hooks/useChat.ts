@@ -1,24 +1,5 @@
 import { chatApi } from '@/lib/api-client';
 
-interface ChatResponse {
-  response: string;
-}
-
-interface Message {
-  id?: string;
-  content: string;
-  sender_type?: 'user' | 'ai' | 'system';
-  sender?: string;
-  timestamp?: string | Date;
-  created_at?: string;
-}
-
-interface ChatRequest {
-  message: string;
-  history?: Message[];
-  session_id?: string | null;
-}
-
 interface StreamResponse {
   newSessionId: string;
 }
@@ -39,7 +20,7 @@ export const useChat = () => {
     sessionId: string | undefined,
     type: string,
     onChunk: (content: string) => void,
-    onError: (error: any) => void
+    onError: (error: unknown) => void
   ): Promise<StreamResponse> => {
     try {
       const response = await chatApi.sendStreamMessage(message, sessionId, type);

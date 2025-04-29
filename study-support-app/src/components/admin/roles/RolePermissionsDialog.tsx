@@ -67,9 +67,9 @@ useEffect(() => {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
+      <DialogContent className="sm:max-w-md" onInteractOutside={(e: Event) => e.preventDefault()}>
         <DialogHeader>
-          <DialogTitle>'{role.name}' の権限設定</DialogTitle>
+          <DialogTitle>&apos;{role.name}&apos; の権限設定</DialogTitle>
           <DialogDescription>
             このロールに割り当てる権限を選択してください。
           </DialogDescription>
@@ -89,7 +89,7 @@ useEffect(() => {
                         <Checkbox
                             id={`perm-${permission.id}`}
                             checked={selectedIds.has(permission.id)}
-                            onCheckedChange={(checked) => handleCheckedChange(permission.id, checked)}
+                            onCheckedChange={(checked: boolean | 'indeterminate') => handleCheckedChange(permission.id, checked)}
                             disabled={isSaving}
                             className="mt-1" // Align checkbox with the first line of label
                         />

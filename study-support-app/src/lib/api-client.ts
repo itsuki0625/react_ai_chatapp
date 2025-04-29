@@ -1,7 +1,23 @@
 import axios, { AxiosRequestHeaders } from 'axios';
 import { API_BASE_URL } from '@/lib/config';
-// import { auth } from '@/auth'; // サーバーサイドでのみ使用
 import { getSession } from 'next-auth/react'; // ★★★ 変更: コメントアウト解除 ★★★
+
+// 各種レスポンス型を定義
+type ApiResponse<T> = {
+  data: T;
+  status: number;
+  message?: string;
+};
+
+// セッション型を定義
+interface SessionWithToken {
+  accessToken?: string;
+  user?: {
+    accessToken?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -17,11 +33,11 @@ apiClient.interceptors.request.use(
     // クライアントサイドでのみ実行
     if (typeof window !== 'undefined') {
       try {
-        const session = await getSession();
+        const session = await getSession() as SessionWithToken | null;
         // NextAuth v5 以降など、session.accessToken が直接存在しない場合があるため
         // session?.user?.accessToken のような構造も考慮する
         // session オブジェクトと accessToken の実際の構造に合わせて調整してください
-        const accessToken = (session as any)?.accessToken || (session?.user as any)?.accessToken; // session から accessToken を取得
+        const accessToken = session?.accessToken || session?.user?.accessToken;
 
         if (accessToken) {
           // config.headers が undefined の場合を考慮
@@ -95,6 +111,64 @@ apiClient.interceptors.response.use(
 //   };
 // };
 
+// API リクエスト/レスポンスデータ型
+interface ApplicationData {
+  id?: string;
+  name: string;
+  university: string;
+  department?: string;
+  course?: string;
+  deadline?: string;
+  status?: string;
+  notes?: string;
+  documents?: DocumentData[];
+  schedules?: ScheduleData[];
+  priority?: number;
+  [key: string]: unknown;
+}
+
+interface DocumentData {
+  id?: string;
+  name: string;
+  type: string;
+  status?: string;
+  dueDate?: string;
+  notes?: string;
+  [key: string]: unknown;
+}
+
+interface ScheduleData {
+  id?: string;
+  title: string;
+  date: string;
+  time?: string;
+  location?: string;
+  type: string;
+  notes?: string;
+  [key: string]: unknown;
+}
+
+interface StatementData {
+  id?: string;
+  title: string;
+  content: string;
+  university?: string;
+  department?: string;
+  status?: string;
+  feedback?: FeedbackData[];
+  createdAt?: string;
+  updatedAt?: string;
+  [key: string]: unknown;
+}
+
+interface FeedbackData {
+  id?: string;
+  content: string;
+  createdBy?: string;
+  createdAt?: string;
+  [key: string]: unknown;
+}
+
 // ダッシュボード関連API
 export const dashboardApi = {
   getStudentDashboard: async () => {
@@ -131,34 +205,34 @@ export const applicationApi = {
   getApplication: async (id: string) => {
     return apiClient.get(`/api/v1/applications/${id}`);
   },
-  createApplication: async (data: any) => {
+  createApplication: async (data: ApplicationData) => {
     return apiClient.post('/api/v1/applications', data);
   },
-  updateApplication: async (id: string, data: any) => {
+  updateApplication: async (id: string, data: ApplicationData) => {
     return apiClient.put(`/api/v1/applications/${id}`, data);
   },
   deleteApplication: async (id: string) => {
     return apiClient.delete(`/api/v1/applications/${id}`);
   },
-  addDocument: async (applicationId: string, data: any) => {
+  addDocument: async (applicationId: string, data: DocumentData) => {
     return apiClient.post(`/api/v1/applications/${applicationId}/documents`, data);
   },
-  updateDocument: async (applicationId: string, documentId: string, data: any) => {
+  updateDocument: async (applicationId: string, documentId: string, data: DocumentData) => {
     return apiClient.put(`/api/v1/applications/${applicationId}/documents/${documentId}`, data);
   },
   deleteDocument: async (applicationId: string, documentId: string) => {
     return apiClient.delete(`/api/v1/applications/${applicationId}/documents/${documentId}`);
   },
-  addSchedule: async (applicationId: string, data: any) => {
+  addSchedule: async (applicationId: string, data: ScheduleData) => {
     return apiClient.post(`/api/v1/applications/${applicationId}/schedules`, data);
   },
-  updateSchedule: async (applicationId: string, scheduleId: string, data: any) => {
+  updateSchedule: async (applicationId: string, scheduleId: string, data: ScheduleData) => {
     return apiClient.put(`/api/v1/applications/${applicationId}/schedules/${scheduleId}`, data);
   },
   deleteSchedule: async (applicationId: string, scheduleId: string) => {
     return apiClient.delete(`/api/v1/applications/${applicationId}/schedules/${scheduleId}`);
   },
-  reorderApplications: async (data: any) => {
+  reorderApplications: async (data: { application_order: Record<string, number> }) => {
     return apiClient.put('/api/v1/applications/reorder', data);
   },
   getStatistics: async () => {
@@ -177,22 +251,22 @@ export const statementApi = {
   getStatement: async (id: string) => {
     return apiClient.get(`/api/v1/statements/${id}`);
   },
-  createStatement: async (data: any) => {
+  createStatement: async (data: StatementData) => {
     return apiClient.post('/api/v1/statements', data);
   },
-  updateStatement: async (id: string, data: any) => {
+  updateStatement: async (id: string, data: StatementData) => {
     return apiClient.put(`/api/v1/statements/${id}`, data);
   },
   deleteStatement: async (id: string) => {
     return apiClient.delete(`/api/v1/statements/${id}`);
   },
-  requestFeedback: async (id: string, data: any) => {
+  requestFeedback: async (id: string, data: { message?: string }) => {
     return apiClient.post(`/api/v1/statements/${id}/feedback/request`, data);
   },
   getFeedback: async (id: string) => {
     return apiClient.get(`/api/v1/statements/${id}/feedback`);
   },
-  provideFeedback: async (id: string, data: any) => {
+  provideFeedback: async (id: string, data: { content: string }) => {
     return apiClient.post(`/api/v1/statements/${id}/feedback`, data);
   },
   improveWithAI: async (id: string) => {
@@ -206,6 +280,21 @@ export const statementApi = {
   }
 };
 
+// チャットメッセージや操作のタイプ定義
+interface StreamChatMessage {
+  message: string;
+  session_id?: string;
+  session_type?: string;
+}
+
+interface ChatSession {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  [key: string]: unknown;
+}
+
 // チャットAPI
 export const chatApi = {
   sendMessage: async (message: string) => {
@@ -213,27 +302,32 @@ export const chatApi = {
   },
   sendStreamMessage: async (message: string, sessionId?: string, sessionType?: string) => {
     // Stream APIは fetch を直接使っているので Authorization ヘッダーを明示的に設定する必要あり
-    const token = localStorage.getItem('token'); // Stream APIではlocalStorageを使っている → これも修正が必要かも
+    const session = await getSession() as SessionWithToken | null;
+    const accessToken = session?.accessToken || session?.user?.accessToken || '';
+    
+    // StreamChatMessage型を使用してリクエストボディを作成
+    const requestBody: StreamChatMessage = {
+      message,
+      session_id: sessionId,
+      session_type: sessionType
+    };
+    
     return fetch(`${API_BASE_URL}/api/v1/chat/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`, // ここも同様の問題がある可能性
+        'Authorization': `Bearer ${accessToken}`,
         'Accept': 'text/event-stream',
       },
-      body: JSON.stringify({
-        message,
-        session_id: sessionId,
-        session_type: sessionType
-      }),
+      body: JSON.stringify(requestBody),
       credentials: 'include'
     });
   },
   getSessions: async () => {
-    return apiClient.get('/api/v1/chat/sessions');
+    return apiClient.get<ApiResponse<ChatSession[]>>('/api/v1/chat/sessions');
   },
   getArchivedSessions: async () => {
-    return apiClient.get('/api/v1/chat/sessions/archived');
+    return apiClient.get<ApiResponse<ChatSession[]>>('/api/v1/chat/sessions/archived');
   },
   getSessionMessages: async (sessionId: string) => {
     return apiClient.get(`/api/v1/chat/sessions/${sessionId}/messages`);
@@ -261,27 +355,83 @@ export const chatApi = {
   }
 };
 
+interface University {
+  id: string;
+  name: string;
+  location?: string;
+  type?: string;
+  ranking?: number;
+  [key: string]: unknown;
+}
+
+interface Department {
+  id: string;
+  name: string;
+  university_id: string;
+  [key: string]: unknown;
+}
+
+interface AdmissionMethod {
+  id: string;
+  name: string;
+  university_id: string;
+  [key: string]: unknown;
+}
+
 // 大学情報API
 export const universityApi = {
   getUniversities: async () => {
-    return apiClient.get('/api/v1/universities');
+    return apiClient.get<ApiResponse<University[]>>('/api/v1/universities');
   },
   getUniversity: async (id: string) => {
-    return apiClient.get(`/api/v1/universities/${id}`);
+    return apiClient.get<ApiResponse<University>>(`/api/v1/universities/${id}`);
   },
   getDepartments: async (universityId: string) => {
-    return apiClient.get(`/api/v1/universities/${universityId}/departments`);
+    return apiClient.get<ApiResponse<Department[]>>(`/api/v1/universities/${universityId}/departments`);
   },
   getAdmissionMethods: async (universityId: string) => {
-    return apiClient.get(`/api/v1/universities/${universityId}/admission-methods`);
+    return apiClient.get<ApiResponse<AdmissionMethod[]>>(`/api/v1/universities/${universityId}/admission-methods`);
   },
   searchUniversities: async (query: string) => {
-    return apiClient.get(`/api/v1/universities/search?q=${encodeURIComponent(query)}`);
+    return apiClient.get<ApiResponse<University[]>>(`/api/v1/universities/search?q=${encodeURIComponent(query)}`);
   },
   getRecommendedUniversities: async () => {
-    return apiClient.get('/api/v1/universities/recommended');
+    return apiClient.get<ApiResponse<University[]>>('/api/v1/universities/recommended');
   }
 };
+
+interface Content {
+  id: string;
+  title: string;
+  description?: string;
+  type: string;
+  url?: string;
+  category_id?: string;
+  [key: string]: unknown;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  description?: string;
+  [key: string]: unknown;
+}
+
+interface Faq {
+  id: string;
+  question: string;
+  answer: string;
+  category?: string;
+  [key: string]: unknown;
+}
+
+interface Review {
+  id?: string;
+  rating: number;
+  comment?: string;
+  user_id?: string;
+  [key: string]: unknown;
+}
 
 // 学習コンテンツAPI
 export const contentApi = {
@@ -289,122 +439,203 @@ export const contentApi = {
     const url = categoryId 
       ? `/api/v1/contents/categories/${categoryId}` 
       : '/api/v1/contents';
-    return apiClient.get(url);
+    return apiClient.get<ApiResponse<Content[]>>(url);
   },
   getContent: async (id: string) => {
-    return apiClient.get(`/api/v1/contents/${id}`);
+    return apiClient.get<ApiResponse<Content>>(`/api/v1/contents/${id}`);
   },
   getCategories: async () => {
-    return apiClient.get('/api/v1/contents/categories');
+    return apiClient.get<ApiResponse<Category[]>>('/api/v1/contents/categories');
   },
   getFaqs: async () => {
-    return apiClient.get('/api/v1/contents/faqs');
+    return apiClient.get<ApiResponse<Faq[]>>('/api/v1/contents/faqs');
   },
   getFaq: async (id: string) => {
-    return apiClient.get(`/api/v1/contents/faqs/${id}`);
+    return apiClient.get<ApiResponse<Faq>>(`/api/v1/contents/faqs/${id}`);
   },
   recordView: async (contentId: string) => {
     return apiClient.post(`/api/v1/contents/${contentId}/view`, {});
   },
   getReviews: async (contentId: string) => {
-    return apiClient.get(`/api/v1/contents/${contentId}/reviews`);
+    return apiClient.get<ApiResponse<Review[]>>(`/api/v1/contents/${contentId}/reviews`);
   },
-  addReview: async (contentId: string, data: any) => {
-    return apiClient.post(`/api/v1/contents/${contentId}/reviews`, data);
+  addReview: async (contentId: string, data: Review) => {
+    return apiClient.post<ApiResponse<Review>>(`/api/v1/contents/${contentId}/reviews`, data);
   },
   getRecommended: async () => {
-    return apiClient.get('/api/v1/contents/recommended');
+    return apiClient.get<ApiResponse<Content[]>>('/api/v1/contents/recommended');
   },
   getHistory: async () => {
-    return apiClient.get('/api/v1/contents/history');
+    return apiClient.get<ApiResponse<Content[]>>('/api/v1/contents/history');
   }
 };
+
+interface StudyPlan {
+  id?: string;
+  title: string;
+  description?: string;
+  startDate?: string;
+  endDate?: string;
+  goals?: StudyGoal[];
+  [key: string]: unknown;
+}
+
+interface StudyGoal {
+  id?: string;
+  title: string;
+  description?: string;
+  dueDate?: string;
+  status?: string;
+  [key: string]: unknown;
+}
+
+interface StudyProgress {
+  goalId: string;
+  status: string;
+  completedAt?: string;
+  notes?: string;
+  [key: string]: unknown;
+}
 
 // 学習計画API
 export const studyPlanApi = {
   getPlans: async () => {
-    return apiClient.get('/api/v1/study-plans');
+    return apiClient.get<ApiResponse<StudyPlan[]>>('/api/v1/study-plans');
   },
   getPlan: async (id: string) => {
-    return apiClient.get(`/api/v1/study-plans/${id}`);
+    return apiClient.get<ApiResponse<StudyPlan>>(`/api/v1/study-plans/${id}`);
   },
-  createPlan: async (data: any) => {
-    return apiClient.post('/api/v1/study-plans', data);
+  createPlan: async (data: StudyPlan) => {
+    return apiClient.post<ApiResponse<StudyPlan>>('/api/v1/study-plans', data);
   },
-  updatePlan: async (id: string, data: any) => {
-    return apiClient.put(`/api/v1/study-plans/${id}`, data);
+  updatePlan: async (id: string, data: StudyPlan) => {
+    return apiClient.put<ApiResponse<StudyPlan>>(`/api/v1/study-plans/${id}`, data);
   },
   deletePlan: async (id: string) => {
-    return apiClient.delete(`/api/v1/study-plans/${id}`);
+    return apiClient.delete<ApiResponse<void>>(`/api/v1/study-plans/${id}`);
   },
-  addGoal: async (planId: string, data: any) => {
-    return apiClient.post(`/api/v1/study-plans/${planId}/goals`, data);
+  addGoal: async (planId: string, data: StudyGoal) => {
+    return apiClient.post<ApiResponse<StudyGoal>>(`/api/v1/study-plans/${planId}/goals`, data);
   },
-  updateGoal: async (planId: string, goalId: string, data: any) => {
-    return apiClient.put(`/api/v1/study-plans/${planId}/goals/${goalId}`, data);
+  updateGoal: async (planId: string, goalId: string, data: StudyGoal) => {
+    return apiClient.put<ApiResponse<StudyGoal>>(`/api/v1/study-plans/${planId}/goals/${goalId}`, data);
   },
   deleteGoal: async (planId: string, goalId: string) => {
-    return apiClient.delete(`/api/v1/study-plans/${planId}/goals/${goalId}`);
+    return apiClient.delete<ApiResponse<void>>(`/api/v1/study-plans/${planId}/goals/${goalId}`);
   },
   getProgress: async (planId: string) => {
-    return apiClient.get(`/api/v1/study-plans/${planId}/progress`);
+    return apiClient.get<ApiResponse<StudyProgress[]>>(`/api/v1/study-plans/${planId}/progress`);
   },
-  updateProgress: async (planId: string, data: any) => {
-    return apiClient.post(`/api/v1/study-plans/${planId}/progress`, data);
+  updateProgress: async (planId: string, data: StudyProgress[]) => {
+    return apiClient.post<ApiResponse<StudyProgress[]>>(`/api/v1/study-plans/${planId}/progress`, data);
   },
   getTemplates: async () => {
-    return apiClient.get('/api/v1/study-plans/templates');
+    return apiClient.get<ApiResponse<StudyPlan[]>>('/api/v1/study-plans/templates');
   },
-  generateWithAI: async (data: any) => {
-    return apiClient.post('/api/v1/study-plans/ai-generate', data);
+  generateWithAI: async (data: { subject?: string; duration?: string; level?: string }) => {
+    return apiClient.post<ApiResponse<StudyPlan>>('/api/v1/study-plans/ai-generate', data);
   }
 };
+
+interface Quiz {
+  id?: string;
+  title: string;
+  description?: string;
+  category?: string;
+  difficulty?: string;
+  duration?: number;
+  questions?: QuizQuestion[];
+  [key: string]: unknown;
+}
+
+interface QuizQuestion {
+  id?: string;
+  question: string;
+  options: string[];
+  correctAnswer: string | number;
+  explanation?: string;
+  [key: string]: unknown;
+}
+
+interface QuizAnswer {
+  questionId: string;
+  answerId?: string;
+  answerText?: string;
+  [key: string]: unknown;
+}
+
+interface QuizResult {
+  id: string;
+  score: number;
+  correctAnswers: number;
+  totalQuestions: number;
+  completedAt: string;
+  [key: string]: unknown;
+}
 
 // クイズ・テストAPI
 export const quizApi = {
   getQuizzes: async () => {
-    return apiClient.get('/api/v1/quizzes');
+    return apiClient.get<ApiResponse<Quiz[]>>('/api/v1/quizzes');
   },
   getQuiz: async (id: string) => {
-    return apiClient.get(`/api/v1/quizzes/${id}`);
+    return apiClient.get<ApiResponse<Quiz>>(`/api/v1/quizzes/${id}`);
   },
-  createQuiz: async (data: any) => {
-    return apiClient.post('/api/v1/quizzes', data);
+  createQuiz: async (data: Quiz) => {
+    return apiClient.post<ApiResponse<Quiz>>('/api/v1/quizzes', data);
   },
-  updateQuiz: async (id: string, data: any) => {
-    return apiClient.put(`/api/v1/quizzes/${id}`, data);
+  updateQuiz: async (id: string, data: Quiz) => {
+    return apiClient.put<ApiResponse<Quiz>>(`/api/v1/quizzes/${id}`, data);
   },
   deleteQuiz: async (id: string) => {
-    return apiClient.delete(`/api/v1/quizzes/${id}`);
+    return apiClient.delete<ApiResponse<void>>(`/api/v1/quizzes/${id}`);
   },
-  addQuestion: async (quizId: string, data: any) => {
-    return apiClient.post(`/api/v1/quizzes/${quizId}/questions`, data);
+  addQuestion: async (quizId: string, data: QuizQuestion) => {
+    return apiClient.post<ApiResponse<QuizQuestion>>(`/api/v1/quizzes/${quizId}/questions`, data);
   },
-  updateQuestion: async (quizId: string, questionId: string, data: any) => {
-    return apiClient.put(`/api/v1/quizzes/${quizId}/questions/${questionId}`, data);
+  updateQuestion: async (quizId: string, questionId: string, data: QuizQuestion) => {
+    return apiClient.put<ApiResponse<QuizQuestion>>(`/api/v1/quizzes/${quizId}/questions/${questionId}`, data);
   },
   deleteQuestion: async (quizId: string, questionId: string) => {
-    return apiClient.delete(`/api/v1/quizzes/${quizId}/questions/${questionId}`);
+    return apiClient.delete<ApiResponse<void>>(`/api/v1/quizzes/${quizId}/questions/${questionId}`);
   },
   startAttempt: async (quizId: string) => {
-    return apiClient.post(`/api/v1/quizzes/${quizId}/attempt`, {});
+    return apiClient.post<ApiResponse<{ attemptId: string }>>(`/api/v1/quizzes/${quizId}/attempt`, {});
   },
-  submitAnswers: async (quizId: string, data: any) => {
-    return apiClient.post(`/api/v1/quizzes/${quizId}/submit`, data);
+  submitAnswers: async (quizId: string, data: { answers: QuizAnswer[] }) => {
+    return apiClient.post<ApiResponse<QuizResult>>(`/api/v1/quizzes/${quizId}/submit`, data);
   },
   getResults: async (quizId: string) => {
-    return apiClient.get(`/api/v1/quizzes/${quizId}/results`);
+    return apiClient.get<ApiResponse<QuizResult[]>>(`/api/v1/quizzes/${quizId}/results`);
   },
   getRecommended: async () => {
-    return apiClient.get('/api/v1/quizzes/recommended');
+    return apiClient.get<ApiResponse<Quiz[]>>('/api/v1/quizzes/recommended');
   },
   getHistory: async () => {
-    return apiClient.get('/api/v1/quizzes/history');
+    return apiClient.get<ApiResponse<QuizResult[]>>('/api/v1/quizzes/history');
   },
   getAnalysis: async () => {
-    return apiClient.get('/api/v1/quizzes/analysis');
+    return apiClient.get<ApiResponse<{ strengths: string[]; weaknesses: string[] }>>('/api/v1/quizzes/analysis');
   }
 };
+
+interface UserSettings {
+  id: string;
+  email: string;
+  name: string;
+  profileImage?: string;
+  notificationSettings?: {
+    email: boolean;
+    push: boolean;
+    sms: boolean;
+  };
+  subscription?: {
+    status: string;
+    plan: string;
+    renewalDate?: string;
+  };
+  [key: string]: unknown;
+}
 
 // ★★★ 追加: 認証・ユーザー関連API ★★★
 export const authApi = {
@@ -414,7 +645,7 @@ export const authApi = {
    * 現在のユーザーの設定情報とサブスクリプション情報を取得
    */
   getUserSettings: async () => {
-    return apiClient.get('/api/v1/auth/user-settings');
+    return apiClient.get<ApiResponse<UserSettings>>('/api/v1/auth/user-settings');
   },
 
   // 他の認証関連API（パスワード変更、2FAなど）も追加

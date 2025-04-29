@@ -28,5 +28,5 @@ export interface PersonalStatementResponse {
   }
   
   // Placeholder for Feedback types if needed
-  export interface FeedbackResponse { /* ... */ }
-  export interface FeedbackCreate { /* ... */ } 
+  export type FeedbackResponse = Record<string, unknown>;
+  export type FeedbackCreate = Record<string, unknown>; 

@@ -7,7 +7,6 @@ import {
   MessageSquare, 
   Activity,
   Eye,
-  CheckCircle,
   AlertCircle,
   Clock
 } from 'lucide-react';

@@ -17,16 +17,13 @@ import {
 import { useToast } from "@/hooks/use-toast";
 
 // API 関数 (./../../lib/api/admin から)
-import { fetchProducts, createProduct, updateProduct, archiveProduct, updatePrice } from '@/lib/api/admin'; 
+import { fetchProducts, archiveProduct } from '@/lib/api/admin'; 
 
 // 型定義
 import { 
   StripeProductWithPricesResponse, 
   StripeProductResponse, 
   StripePriceResponse,
-  StripeProductCreate, // CreateProductDialog用
-  StripeProductUpdate, // EditProductDialog用
-  StripePriceUpdate    // EditPriceDialog用
 } from '@/types/stripe';
 
 // 依存コンポーネント (後で移動/作成するファイル)
@@ -61,41 +58,6 @@ export function ProductList() {
     }
   );
 
-  // 商品作成
-  const createProductMutation = useMutation<
-    StripeProductResponse,
-    Error,
-    StripeProductCreate
-  >({
-    mutationFn: createProduct,
-    onSuccess: (data) => {
-      toast({ title: "成功", description: `商品「${data.name}」を作成しました。` });
-      queryClient.invalidateQueries({ queryKey: ['adminProducts'] });
-      setIsCreateDialogOpen(false);
-    },
-    onError: (error) => {
-      toast({ title: "エラー", description: `商品の作成に失敗: ${error.message}`, variant: "destructive" });
-    },
-  });
-
-  // 商品更新
-  const updateProductMutation = useMutation<
-    StripeProductResponse,
-    Error,
-    { productId: string; data: StripeProductUpdate }
-  >({
-    mutationFn: (variables) => updateProduct(variables.productId, variables.data),
-    onSuccess: (data) => {
-      toast({ title: "成功", description: `商品「${data.name}」を更新しました。` });
-      queryClient.invalidateQueries({ queryKey: ['adminProducts'] });
-      setIsEditDialogOpen(false);
-      setEditingProduct(null);
-    },
-    onError: (error) => {
-      toast({ title: "エラー", description: `商品の更新に失敗: ${error.message}`, variant: "destructive" });
-    },
-  });
-
   // 商品アーカイブ
   const archiveProductMutation = useMutation<
     StripeProductResponse,
@@ -116,34 +78,16 @@ export function ProductList() {
     },
   });
 
-  // 価格更新
-  const updatePriceMutation = useMutation<
-    StripePriceResponse,
-    Error,
-    { priceId: string; data: StripePriceUpdate }
-  >({
-    mutationFn: (variables) => updatePrice(variables.priceId, variables.data),
-    onSuccess: (data) => {
-      toast({ title: "成功", description: `価格 (ID: ${data.id}) を更新しました。` });
-      queryClient.invalidateQueries({ queryKey: ['adminProducts'] });
-      setIsEditPriceDialogOpen(false);
-      setEditingPrice(null);
-    },
-    onError: (error) => {
-      toast({ title: "エラー", description: `価格の更新に失敗: ${error.message}`, variant: "destructive" });
-    },
-  });
-
   // --- Handlers --- 
   const handleCreateSuccess = () => {
-    // Mutation の onSuccess で処理
     setIsCreateDialogOpen(false);
+    queryClient.invalidateQueries({ queryKey: ['adminProducts'] });
   };
 
   const handleEditSuccess = () => {
-    // Mutation の onSuccess で処理
     setIsEditDialogOpen(false);
     setEditingProduct(null);
+    queryClient.invalidateQueries({ queryKey: ['adminProducts'] });
   };
 
   const handleOpenCreateDialog = () => {
@@ -172,9 +116,9 @@ export function ProductList() {
   };
 
   const handleEditPriceSuccess = () => {
-      // Mutation の onSuccess で処理
-      setIsEditPriceDialogOpen(false);
-      setEditingPrice(null);
+    setIsEditPriceDialogOpen(false);
+    setEditingPrice(null);
+    queryClient.invalidateQueries({ queryKey: ['adminProducts'] });
   };
 
 
@@ -195,9 +139,9 @@ export function ProductList() {
         columns={columns({ 
           onEdit: handleOpenEditDialog, 
           onArchive: handleOpenArchiveDialog, 
-          onEditPrice: handleOpenEditPriceDialog 
         })} 
         data={products} 
+        onEditPrice={handleOpenEditPriceDialog}
       />
 
       <CreateProductDialog 

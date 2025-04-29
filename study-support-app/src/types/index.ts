@@ -1,3 +1,5 @@
+import React from 'react';
+
 export interface UserProfile {
     id: string
     name: string
@@ -18,7 +20,7 @@ export interface NextAction {
 }
   
 export interface Stat {
-    icon: any
+    icon: React.ReactNode | React.ElementType
     title: string
     value: string
     unit: string

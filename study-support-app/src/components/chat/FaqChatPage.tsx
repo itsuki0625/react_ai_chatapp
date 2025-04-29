@@ -135,10 +135,6 @@ export default function FaqChatPage() {
 
     try {
       const currentSessionId = sessionId || undefined;
-      const messageHistory = messages.map(msg => ({
-        sender: msg.sender_type === 'user' ? 'user' : 'ai',
-        content: msg.content
-      }));
 
       let aiResponse = '';
       const { newSessionId } = await sendStreamMessage(
@@ -167,7 +163,7 @@ export default function FaqChatPage() {
             }
           });
         },
-        (error: any) => {
+        (error: unknown) => {
           console.error('エラーが発生しました:', error);
         }
       );
@@ -176,8 +172,8 @@ export default function FaqChatPage() {
         setSessionId(newSessionId);
         fetchChatSessions();
       }
-    } catch (error: any) {
-      console.error('エラーが発生しました:', error);
+    } catch (error) {
+      console.error('エラーが発生しました:', error instanceof Error ? error.message : String(error));
     } finally {
       setIsLoading(false);
     }

@@ -1,9 +1,7 @@
-import axios, { AxiosError } from 'axios';
+import axios, { AxiosError, } from 'axios';
 import { CampaignCode } from '@/types/subscription';
-import { getSession } from 'next-auth/react';
 import { getApiBaseUrl, getAxiosConfig } from './api';
-import { User, UserRole, AdminUser } from '@/types/user';
-import { RoleRead } from '@/types/role';
+import { AdminUser } from '@/types/user';
 
 // APIのベースURLを取得
 const API_URL = getApiBaseUrl();
@@ -37,16 +35,17 @@ export interface StripePrice {
 }
 
 // セッション情報とアクセストークンの型 (NextAuthのデフォルトに合わせる)
-interface ExtendedSession {
-  accessToken?: string;
-  user?: {
-    id?: string;
-    email?: string | null;
-    name?: string | null;
-    // 他のユーザー情報...
-  };
-  expires?: string;
-}
+// 未使用のためコメントアウト
+// interface ExtendedSession {
+//   accessToken?: string;
+//   user?: {
+//     id?: string;
+//     email?: string | null;
+//     name?: string | null;
+//     // 他のユーザー情報...
+//   };
+//   expires?: string;
+// }
 
 // ユーザー一覧取得（管理者）
 export interface AdminUserListResponse {
@@ -114,6 +113,15 @@ export const getUserDetails = async (userId: string): Promise<UserDetailsRespons
   return response.data;
 };
 
+// エラー詳細の型定義
+interface ValidationErrorDetail {
+  loc: string[];
+  msg: string;
+  type: string;
+}
+
+type BackendErrorDetail = ValidationErrorDetail[] | string | Record<string, unknown>;
+
 /**
  * ユーザー情報を更新します
  * @param userId 更新するユーザーのID
@@ -131,7 +139,7 @@ export const updateUser = async (userId: string, userData: UserUpdatePayload): P
     console.error('Error during user update request:', error); // エラー全体を出力
 
     if (axios.isAxiosError(error)) {
-      const axiosError = error as AxiosError<any>; // エラーの型を明示
+      const axiosError = error as AxiosError<{ detail?: BackendErrorDetail }>;
       if (axiosError.response) {
         // サーバーからのレスポンスがある場合 (4xx, 5xx エラー)
         console.error('Failed to update user - Status:', axiosError.response.status);
@@ -192,6 +200,16 @@ export const deleteUser = async (userId: string): Promise<void> => {
   await axios.delete(`${API_URL}/api/v1/admin/users/${userId}`, config);
 };
 
+// StripeAPIエラーレスポンスの型
+interface StripeErrorResponse {
+  detail?: string;
+  error?: {
+    message: string;
+    type?: string;
+    code?: string;
+  };
+}
+
 export const adminService = {
   // Stripe商品一覧取得
   getProducts: async (): Promise<StripeProduct[]> => {
@@ -210,26 +228,29 @@ export const adminService = {
         // 配列でない場合は空配列を返す
         return [];
       }
-    } catch (error: any) {
+    } catch (error) {
       // Stripeエラーメッセージを確認して詳細なエラーメッセージを作成
       let errorMessage = '商品の取得に失敗しました';
       
-      if (error.response) {
+      if (axios.isAxiosError(error)) {
         // サーバーからのレスポンスがある場合
-        const status = error.response.status;
-        const responseData = error.response.data;
-        
-        if (status === 401) {
-          errorMessage = '認証エラー: APIへのアクセス権限がありません';
-        } else if (status === 400) {
-          errorMessage = 'リクエストエラー: ' + (responseData.detail || '不正なリクエストです');
-        } else if (status === 500) {
-          errorMessage = 'サーバーエラー: ' + (responseData.detail || 'サーバー内部エラーが発生しました');
-        }
-        
-        // Stripeエラーの詳細を確認
-        if (responseData && responseData.error && responseData.error.message) {
-          errorMessage += ` (Stripe: ${responseData.error.message})`;
+        const axiosError = error as AxiosError<StripeErrorResponse>;
+        if (axiosError.response) {
+          const status = axiosError.response.status;
+          const responseData = axiosError.response.data;
+          
+          if (status === 401) {
+            errorMessage = '認証エラー: APIへのアクセス権限がありません';
+          } else if (status === 400) {
+            errorMessage = 'リクエストエラー: ' + (responseData.detail || '不正なリクエストです');
+          } else if (status === 500) {
+            errorMessage = 'サーバーエラー: ' + (responseData.detail || 'サーバー内部エラーが発生しました');
+          }
+          
+          // Stripeエラーの詳細を確認
+          if (responseData && responseData.error && responseData.error.message) {
+            errorMessage += ` (Stripe: ${responseData.error.message})`;
+          }
         }
       }
       
@@ -250,10 +271,9 @@ export const adminService = {
   },
 
   // Stripe商品削除
-  deleteProduct: async (productId: string): Promise<any> => {
+  deleteProduct: async (productId: string): Promise<void> => {
     const config = await getAxiosConfig(true);
-    const response = await axios.delete(`${API_URL}/api/v1/admin/products/${productId}`, config);
-    return response.data;
+    await axios.delete(`${API_URL}/api/v1/admin/products/${productId}`, config);
   },
 
   // Stripe価格一覧取得
@@ -279,26 +299,29 @@ export const adminService = {
         console.error('価格データが存在しません');
         return [];
       }
-    } catch (error: any) {
+    } catch (error) {
       // Stripeエラーメッセージを確認して詳細なエラーメッセージを作成
       let errorMessage = '価格の取得に失敗しました';
       
-      if (error.response) {
+      if (axios.isAxiosError(error)) {
         // サーバーからのレスポンスがある場合
-        const status = error.response.status;
-        const responseData = error.response.data;
-        
-        if (status === 401) {
-          errorMessage = '認証エラー: APIへのアクセス権限がありません';
-        } else if (status === 400) {
-          errorMessage = 'リクエストエラー: ' + (responseData.detail || '不正なリクエストです');
-        } else if (status === 500) {
-          errorMessage = 'サーバーエラー: ' + (responseData.detail || 'サーバー内部エラーが発生しました');
-        }
-        
-        // Stripeエラーの詳細を確認
-        if (responseData && responseData.error && responseData.error.message) {
-          errorMessage += ` (Stripe: ${responseData.error.message})`;
+        const axiosError = error as AxiosError<StripeErrorResponse>;
+        if (axiosError.response) {
+          const status = axiosError.response.status;
+          const responseData = axiosError.response.data;
+          
+          if (status === 401) {
+            errorMessage = '認証エラー: APIへのアクセス権限がありません';
+          } else if (status === 400) {
+            errorMessage = 'リクエストエラー: ' + (responseData.detail || '不正なリクエストです');
+          } else if (status === 500) {
+            errorMessage = 'サーバーエラー: ' + (responseData.detail || 'サーバー内部エラーが発生しました');
+          }
+          
+          // Stripeエラーの詳細を確認
+          if (responseData && responseData.error && responseData.error.message) {
+            errorMessage += ` (Stripe: ${responseData.error.message})`;
+          }
         }
       }
       
@@ -330,7 +353,7 @@ export const adminService = {
 
   // キャンペーンコード一覧取得
   getCampaignCodes: async (skip = 0, limit = 20, ownerId?: string): Promise<CampaignCode[]> => {
-    const params: any = { skip, limit };
+    const params: Record<string, string | number> = { skip, limit };
     if (ownerId) params.owner_id = ownerId;
     
     const config = await getAxiosConfig(true);

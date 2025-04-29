@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { signOut } from 'next-auth/react';
-import { apiClient } from '@/lib/api-client';
+// import { apiClient } from '@/lib/api-client'; // Remove unused import
+// import { Button } from '@/components/ui/button'; // Remove unused import
+// import { LogOut } from 'lucide-react'; // Remove unused import
 
 export default function LogoutButton() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Plus, PlusCircle } from 'lucide-react';
+import { PlusCircle } from 'lucide-react';
 import { RoleTable } from './RoleTable';
 import { RoleDialog } from './RoleDialog';
 import { RolePermissionsDialog } from './RolePermissionsDialog';
@@ -69,7 +69,7 @@ const RoleManagementTab: React.FC = () => {
 
     const deleteRoleMutation = useMutation<RoleRead, Error, string>({
         mutationFn: deleteRole,
-        onSuccess: (_, deletedRoleId) => {
+        onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['roles'] });
             alert('ロールを削除しました。');
         },

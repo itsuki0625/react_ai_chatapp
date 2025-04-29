@@ -31,7 +31,7 @@ const ContentDetailPage = ({ id }: Props) => {
 
   const renderContent = () => {
     switch (content.content_type) {
-      case 'VIDEO':
+      case 'video':
         return (
           <div className="relative w-full pt-[56.25%]">
             <iframe
@@ -42,7 +42,7 @@ const ContentDetailPage = ({ id }: Props) => {
             />
           </div>
         );
-      case 'SLIDE':
+      case 'slide':
         return (
           <SlideViewer
             url={content.url}
@@ -51,7 +51,7 @@ const ContentDetailPage = ({ id }: Props) => {
             presenterNotes={content.presenter_notes}
           />
         );
-      case 'PDF':
+      case 'pdf':
         return (
           <div className="relative w-full pt-[141.42%]">
             <iframe

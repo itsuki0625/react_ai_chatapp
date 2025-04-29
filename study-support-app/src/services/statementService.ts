@@ -1,6 +1,7 @@
 // Placeholder for Statement API service functions
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
-import { PersonalStatementResponse, PersonalStatementCreate, PersonalStatementUpdate } from '@/types/personal_statement';
+import { PersonalStatementResponse } from '@/types/personal_statement';
+// import { PersonalStatementCreate, PersonalStatementUpdate } from '@/types/personal_statement';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5050';
 const STATEMENTS_API_URL = `${API_BASE_URL}/api/v1/statements`;
@@ -32,7 +33,10 @@ export const deleteStatement = async (id: string): Promise<void> => {
         try {
             const errorData = await response.json();
             errorDetail = errorData.detail || errorDetail;
-        } catch (e) { /* Ignore JSON parsing error */ }
+        } catch (error) { 
+            // JSON パース失敗時は元のエラーを使用
+            console.warn('Could not parse error response as JSON', error);
+        }
         console.error('Failed to delete statement:', response.status, errorDetail);
         throw new Error(errorDetail);
     }

@@ -2,17 +2,8 @@
 
 import React from 'react'; 
 import { ColumnDef } from '@tanstack/react-table';
-import { MoreHorizontal } from 'lucide-react'; 
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { DiscountTypeResponse } from "@/types/subscription";
 // import { DataTableColumnHeader } from "@/components/ui/data-table-column-header"; // 列ヘッダー用
 

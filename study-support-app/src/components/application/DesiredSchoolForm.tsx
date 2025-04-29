@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/common/Button';
-import { Input } from '@/components/common/Input';
 import { API_BASE_URL } from '@/lib/config';
 
 interface University {
@@ -19,8 +18,17 @@ interface AdmissionMethod {
   name: string;
 }
 
+// Define ApplicationFormData type here
+interface ApplicationFormData {
+  university_id: string;
+  department_id: string;
+  admission_method_id: string;
+  priority: number;
+  notes?: string;
+}
+
 interface DesiredSchoolFormProps {
-  onSubmit: (data: any) => void;
+  onSubmit: (data: ApplicationFormData) => void; // Use ApplicationFormData type
   onCancel: () => void;
   initialData?: {
     id?: string;
@@ -134,7 +142,7 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
     onSubmit(formData);
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,

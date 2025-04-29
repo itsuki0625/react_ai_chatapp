@@ -154,17 +154,18 @@ export const sendMessageStream = async (
                             } else {
                                 console.warn("[ChatService] Received non-string content:", parsedChunk);
                             }
-                        } catch (e) {
+                        } catch (_e) {
                             console.warn("[ChatService] Chunk not JSON, treating as text:", chunkData);
+                            console.log("Error:", _e);
                             onChunk(chunkData);
                         }
                     }
                 }
             }
         }
-    } catch (error) {
-        console.error('[ChatService] Error in sendMessageStream:', error);
-        throw error; // Re-throw for mutation handler
+    } catch (_error) {
+        console.error('[ChatService] Error in sendMessageStream:', _error);
+        throw _error; // Re-throw for mutation handler
     }
 };
 

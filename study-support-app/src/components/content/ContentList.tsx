@@ -1,6 +1,7 @@
 import React from 'react';
 import { Content } from '@/types/content';
 import { Video, Presentation, FileText } from 'lucide-react';
+import Image from 'next/image';
 
 interface ContentListProps {
   contents: Content[];
@@ -30,10 +31,12 @@ const ContentList: React.FC<ContentListProps> = ({ contents, onContentClick }) =
           onClick={() => onContentClick(content)}
         >
           <div className="aspect-video relative bg-gray-100">
-            <img
+            <Image
               src={content.thumbnail_url || '/placeholder.png'}
               alt={content.title}
-              className="w-full h-full object-cover"
+              className="object-cover"
+              fill
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
             />
           </div>
           <div className="p-4">
@@ -52,7 +55,7 @@ const ContentList: React.FC<ContentListProps> = ({ contents, onContentClick }) =
                   {content.category}
                 </span>
               )}
-              {content.tags?.split(',').map((tag) => (
+              {content.tags && content.tags.map((tag: string) => (
                 <span
                   key={tag}
                   className="px-2 py-1 text-xs font-medium border border-gray-200 text-gray-600 rounded-full"

@@ -3,7 +3,12 @@
 import React, { useEffect, useState } from 'react';
 import { Calendar, GraduationCap, BookOpen, FileText, BrainCircuit } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { dashboardApi, statementApi, applicationApi } from '@/lib/api-client';
+import { applicationApi } from '@/lib/api-client';
+import { useQuery } from '@tanstack/react-query';
+import { ApplicationDetailResponse } from '@/components/application/ApplicationList';
+import { subscriptionService } from '@/services/subscriptionService';
+import { AxiosResponse } from 'axios';
+import { Subscription } from '@/types/subscription';
 
 interface DashboardData {
   progress: {
@@ -29,18 +34,24 @@ export const StudentDashboard = () => {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
+  useQuery<AxiosResponse<ApplicationDetailResponse[]>, Error, ApplicationDetailResponse[]>({ 
+    queryKey: ['applications'], 
+    queryFn: applicationApi.getApplications,
+    select: (response) => response.data
+  });
+  useQuery<Subscription | null>({ 
+    queryKey: ['subscription'], 
+    queryFn: subscriptionService.getUserSubscription
+  });
+
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
         // バックエンドの実装に合わせてAPIを変更
         // Statement、Applicationなどの既存エンドポイントからデータを取得する
-        const [statementsResponse, applicationsResponse] = await Promise.all([
-          statementApi.getStatements(),
-          applicationApi.getApplications()
-        ]);
+        const applicationsResponse = await applicationApi.getApplications();
         
         // 取得したデータからダッシュボードデータを構築
-        const statements = statementsResponse.data || [];
         const applications = applicationsResponse.data || [];
         
         // ダッシュボードデータを構築
@@ -61,11 +72,11 @@ export const StudentDashboard = () => {
           ],
           applications: {
             count: Array.isArray(applications) ? applications.length : 0,
-            nextDeadline: {
-              university: '東京大学',
-              document: '志望理由書',
-              date: '2023-09-10'
-            }
+            nextDeadline: applications.length > 0 ? {
+              university: applications[0].university_name,
+              document: applications[0].documents?.[0]?.name ?? '書類',
+              date: applications[0].documents?.[0]?.deadline ?? '未定'
+            } : null
           },
           recommendations: [
             { type: 'content', title: '総合型選抜のための小論文対策', id: '101' },

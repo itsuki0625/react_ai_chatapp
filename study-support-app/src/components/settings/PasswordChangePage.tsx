@@ -64,8 +64,10 @@ const PasswordChangePage = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
+    // e.preventDefault(); // unused
+    setErrors({});
+    // setMessage(''); // unused
     
     if (!validateForm()) {
       return;
@@ -117,7 +119,8 @@ const PasswordChangePage = () => {
         let errorData;
         try {
           errorData = JSON.parse(errorText);
-        } catch (e) {
+        } catch (error) {
+          console.warn('Error response could not be parsed:', error);
           errorData = { detail: errorText || 'パスワードの変更に失敗しました' };
         }
         

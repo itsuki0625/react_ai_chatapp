@@ -5,235 +5,181 @@ import { StyledH1, StyledH2 } from '@/components/common/CustomHeadings';
 import { SubscriptionPlan, CampaignCodeVerificationResult, Subscription, VerifyCampaignCodeResponse } from '@/types/subscription';
 import { subscriptionService } from '@/services/subscriptionService';
 import { CampaignCodeForm } from '@/components/subscription/CampaignCodeForm';
-import { UserSubscription } from '@/types/user';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import { formatAmount } from '@/utils/formatting';
 import { Button } from '@/components/common/Button';
-import toast from 'react-hot-toast';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useToast } from '@/hooks/use-toast';
 
 export const SubscriptionPlansPage: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { data: session, status } = useSession();
-  const isAuthenticated = status === 'authenticated';
+  const { data: session } = useSession();
+  const queryClient = useQueryClient();
+  const { data: plans = [], isLoading: isLoadingPlans } = useQuery<SubscriptionPlan[]>({ queryKey: ['subscriptionPlans'], queryFn: subscriptionService.getSubscriptionPlans });
+  const { data: currentSubscription, isLoading: isLoadingSubscription } = useQuery<Subscription | null>({ queryKey: ['userSubscription'], queryFn: subscriptionService.getUserSubscription });
 
-  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
-  const [currentSubscription, setCurrentSubscription] = useState<UserSubscription | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
+  const [isPageLoading, setIsPageLoading] = useState(true);
   const [campaignCode, setCampaignCode] = useState<string>('');
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [campaignCodeVerificationResult, setCampaignCodeVerificationResult] = useState<CampaignCodeVerificationResult | null>(null);
 
-  const [isPageLoading, setIsPageLoading] = useState(true);
-  const [isLoadingPlans, setIsLoadingPlans] = useState(true);
-  const [isLoadingSubscription, setIsLoadingSubscription] = useState(true);
-  const [isCreatingCheckoutSession, setIsCreatingCheckoutSession] = useState(false);
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const { toast } = useToast();
 
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (status === 'loading' || isLoadingPlans || isLoadingSubscription) {
-      setIsPageLoading(true);
-    } else {
-      setIsPageLoading(false);
-    }
-  }, [status, isLoadingPlans, isLoadingSubscription]);
-
-  useEffect(() => {
-    const planId = searchParams?.get('plan');
-    const code = searchParams?.get('code');
-    
-    if (code) {
-      setCampaignCode(code);
-    }
-    
-    // fetchData(); // fetchData は status 変更時に呼ばれる
-    
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
-
-  useEffect(() => {
-    console.log('SubscriptionPlansPage - Authentication status changed:', status);
-    // status が 'loading' でない場合に fetchData を呼び出す（二重呼び出し防止）
-    if (status !== 'loading') {
-        fetchData();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status]);
-
-  const fetchData = useCallback(async () => {
-    setIsLoadingPlans(true);
-    setIsLoadingSubscription(true);
-    setError(null);
-    setCurrentSubscription(null);
-
-    try {
-      const fetchedPlans = await subscriptionService.getSubscriptionPlans();
-      console.log('Fetched Subscription Plans:', JSON.stringify(fetchedPlans, null, 2));
-      setPlans(fetchedPlans);
-
-      const planId = searchParams?.get('plan');
-      if (planId && fetchedPlans.length > 0) {
-        const plan = fetchedPlans.find(p => p.id === planId || p.price_id === planId);
-        setSelectedPlan(plan || fetchedPlans[0]);
-      } else if (fetchedPlans.length > 0) {
-        setSelectedPlan(fetchedPlans[0]);
-      }
-      setIsLoadingPlans(false);
-
-      if (status === 'authenticated') {
-        console.log('User is authenticated, fetching user subscription...');
-        try {
-          const subscription = await subscriptionService.getUserSubscription();
-          console.log('Fetched user subscription result:', subscription);
-          if (subscription) {
-             const subData = subscription as Subscription & { price_id?: string };
-             const userSubscription: UserSubscription = {
-               id: subData.id,
-               user_id: subData.user_id,
-               plan_name: subData.plan_name,
-               price_id: subData.price_id,
-               status: subData.status,
-               stripe_customer_id: subData.stripe_customer_id || undefined,
-               stripe_subscription_id: subData.stripe_subscription_id || undefined,
-               current_period_start: subData.current_period_start || undefined,
-               current_period_end: subData.current_period_end || undefined,
-               cancel_at: subData.cancel_at || undefined,
-               canceled_at: subData.canceled_at || undefined,
-               is_active: subData.is_active,
-               created_at: subData.created_at,
-               updated_at: subData.updated_at
-             };
-             setCurrentSubscription(userSubscription);
-             console.log('Set currentSubscription state:', userSubscription);
-          } else {
-            console.log('No active subscription found.');
-          }
-        } catch (subscriptionError) {
-          console.error('Error fetching user subscription:', subscriptionError);
-        } finally {
-          setIsLoadingSubscription(false);
-        }
-      } else {
-        console.log('User not authenticated, skipping subscription fetch.');
-        setIsLoadingSubscription(false);
-      }
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      setError('データの取得中にエラーが発生しました。');
-       setIsLoadingPlans(false);
-       setIsLoadingSubscription(false);
-    }
-  }, [status]);
-
-  const handleSelectPlan = (plan: SubscriptionPlan) => {
+  const handleSelectPlan = useCallback((plan: SubscriptionPlan) => {
     setSelectedPlan(plan);
     setCampaignCodeVerificationResult(null);
     setCampaignCode('');
-  };
+    setError(null);
+  }, []);
 
-  const handleVerifyCampaignCode = async (code: string, planId: string) => {
+  useEffect(() => {
+    const planIdFromUrl = searchParams?.get('plan');
+    const codeFromUrl = searchParams?.get('code');
+
+    if (!isLoadingPlans && plans.length > 0) {
+        const planToSelect = planIdFromUrl
+            ? plans.find(p => p.id === planIdFromUrl || p.price_id === planIdFromUrl)
+            : plans[0];
+
+        if (planToSelect) {
+            if (!selectedPlan || selectedPlan.price_id !== planToSelect.price_id) {
+                handleSelectPlan(planToSelect);
+            }
+        }
+    }
+
+    if (codeFromUrl && !campaignCode && !campaignCodeVerificationResult) {
+        setCampaignCode(codeFromUrl);
+    }
+
+    setIsPageLoading(isLoadingPlans || isLoadingSubscription);
+
+  }, [plans, isLoadingPlans, isLoadingSubscription, searchParams, selectedPlan, campaignCode, campaignCodeVerificationResult, handleSelectPlan]);
+
+  useEffect(() => {
+    console.log('SubscriptionPlansPage - Authentication status changed:', session);
+    if (session) {
+        // fetchData();
+    }
+  }, [session]);
+
+  const handleVerifyCampaignCode = useCallback(async (code: string): Promise<VerifyCampaignCodeResponse> => {
+    if (!selectedPlan) {
+      toast({ variant: 'destructive', title: "エラー", description: 'プランが選択されていません。' });
+      throw new Error("Plan not selected");
+    }
     try {
-      const result = await subscriptionService.verifyCampaignCode(code, planId);
+      const result = await subscriptionService.verifyCampaignCode(code, selectedPlan.price_id);
       const verificationResult: CampaignCodeVerificationResult = {
-        ...result,
-        is_valid: result.valid
+        is_valid: result.valid,
+        valid: result.valid,
+        campaign_code_id: null,
+        message: result.message ?? '',
+        discount_type: result.discount_type ?? null,
+        discount_value: result.discount_value ?? null,
+        original_amount: result.original_amount ?? null,
+        discounted_amount: result.discounted_amount ?? null,
       };
+
       setCampaignCodeVerificationResult(verificationResult);
-      return verificationResult;
+
+      if (verificationResult.is_valid) {
+          toast({ title: "成功", description: verificationResult.message || `コード「${code}」が適用されました。` });
+      } else {
+          toast({ variant: 'destructive', title: "無効なコード", description: verificationResult.message || 'コードが無効です。' });
+      }
+      return result;
     } catch (error) {
       console.error('Error verifying campaign code:', error);
       setCampaignCodeVerificationResult(null);
+      const errorMessage = error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error !== null && 'response' in error && error.response && typeof error.response === 'object' && 'data' in error.response && typeof error.response.data === 'object' && error.response.data !== null && 'detail' in error.response.data && typeof error.response.data.detail === 'string'
+          ? error.response.data.detail
+          : 'キャンペーンコードの検証中にエラーが発生しました。';
+      toast({ variant: 'destructive', title: "検証エラー", description: errorMessage });
       throw error;
     }
-  };
-
-  const handleApplyCampaignCode = (result: VerifyCampaignCodeResponse | CampaignCodeVerificationResult) => {
-    console.log('キャンペーンコードが適用されました', result);
-  };
+  }, [selectedPlan, toast]);
 
   const handleProceedToCheckout = async () => {
+    if (!session) {
+      toast({ variant: 'destructive', title: "エラー", description: 'ログインが必要です。' });
+      router.push(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      return;
+    }
     setCheckoutLoading(true);
-    console.log('SubscriptionPlansPage - handleProceedToCheckout called', {
-      status,
-      selectedPlan
-    });
-    
+    setError(null);
+
     try {
-      if (status !== 'authenticated') {
-        console.log('SubscriptionPlansPage - User not authenticated, redirecting to login');
-        const returnUrl = encodeURIComponent(`/subscription/plans?plan=${selectedPlan?.price_id || ''}`);
-        window.location.href = `/login?redirect=${returnUrl}`;
+      const priceId = selectedPlan?.price_id;
+      if (!selectedPlan || !priceId) {
+        toast({ variant: 'destructive', title: "エラー", description: 'プランが選択されていません。' });
         setCheckoutLoading(false);
         return;
       }
 
-      if (!selectedPlan) {
-        toast.error('プランが選択されていません。');
-        setCheckoutLoading(false);
-        return;
-      }
-
-      setError(null);
-
-      const successUrl = `${window.location.origin}/subscription/success?session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = `${window.location.origin}/subscription/plans`;
-
-      const priceId = selectedPlan.price_id;
-      
-      console.log('チェックアウトセッション作成リクエスト:', {
-        price_id: priceId,
-        plan_id: priceId
-      });
+      const successUrl = `${window.location.origin}/payment/success?session_id={CHECKOUT_SESSION_ID}`;
+      const cancelUrl = window.location.href;
 
       try {
         const response = await subscriptionService.createCheckoutSession(
           priceId,
           successUrl,
           cancelUrl,
-          {
-            user_id: session?.user?.id || '',
-            price_id: priceId
-          },
-          campaignCodeVerificationResult?.is_valid && campaignCode 
-            ? { 
-                campaign_code: campaignCode, 
-                discount_type: campaignCodeVerificationResult.discount_type || 'percentage',
-                discount_value: campaignCodeVerificationResult.discount_value || 0
-              } 
+          campaignCodeVerificationResult?.is_valid && campaignCode
+            ? { campaign_code: campaignCode }
             : undefined
         );
 
-        if (response) {
-          window.location.href = response;
+        let checkoutUrl: string | null = null;
+        if (response && typeof response === 'object') {
+            const potentialUrl = (response as { url?: unknown }).url;
+            if (typeof potentialUrl === 'string') {
+                checkoutUrl = potentialUrl;
+            }
+        } else if (typeof response === 'string') {
+             checkoutUrl = response;
+        }
+
+        if (checkoutUrl) {
+          window.location.href = checkoutUrl;
         } else {
-          toast.error('チェックアウトセッションの作成に失敗しました。');
-          console.error('チェックアウトセッションの作成に失敗しました。URLがありません。');
+          toast({ variant: 'destructive', title: "エラー", description: 'チェックアウトセッションの作成に失敗しました。(URL取得エラー)' });
+          console.error('チェックアウトセッションの作成に失敗しました。URLがありません。 Response:', response);
         }
       } catch (apiError) {
-        console.error('チェックアウトセッション作成APIエラー:', apiError);
-        
-        let errorMessage = 'チェックアウトセッションの作成に失敗しました。';
-        
+        let errorMessage = 'チェックアウトセッションの作成中にエラーが発生しました。';
         if (apiError instanceof Error) {
+          errorMessage = apiError.message || errorMessage;
           if (apiError.message.includes('認証') || apiError.message.includes('ログイン')) {
-            toast.error('認証セッションが切れています。再ログインしてください。');
-            
+            toast({ variant: 'destructive', title: "エラー", description: '認証セッションが切れています。再ログインしてください。' });
+
             setTimeout(() => {
-              const returnUrl = encodeURIComponent(`/subscription/plans?plan=${selectedPlan?.price_id || ''}`);
-              window.location.href = `/login?redirect=${returnUrl}`;
-            }, 1500);
+              const returnUrl = encodeURIComponent(`/subscription/plans?plan=${selectedPlan?.price_id || ''}${campaignCode ? `&code=${campaignCode}` : ''}`);
+              router.push(`/login?redirect=${returnUrl}`);
+            }, 2000);
+            setCheckoutLoading(false);
             return;
           }
-          
-          errorMessage = apiError.message;
+        } else if (typeof apiError === 'object' && apiError !== null && 
+                   'response' in apiError && apiError.response && 
+                   typeof apiError.response === 'object' && 
+                   'data' in apiError.response && typeof apiError.response.data === 'object' && 
+                   apiError.response.data !== null && 
+                   'detail' in apiError.response.data && 
+                   typeof apiError.response.data.detail === 'string') {
+            errorMessage = apiError.response.data.detail;
         }
-        
-        toast.error(errorMessage);
+        console.error('Stripe Checkout Session Error:', apiError);
+        toast({ variant: 'destructive', title: "APIエラー", description: errorMessage });
       }
     } catch (error) {
       console.error('チェックアウトセッション作成中の予期せぬエラー:', error);
-      toast.error('チェックアウトセッションの作成に失敗しました。');
+      toast({ variant: 'destructive', title: "予期せぬエラー", description: 'チェックアウトセッションの作成に失敗しました。' });
     } finally {
       setCheckoutLoading(false);
     }
@@ -251,10 +197,11 @@ export const SubscriptionPlansPage: React.FC = () => {
     return (
       <div className="text-center py-10">
         <p className="text-red-500">{error}</p>
-        <Button 
+        <Button
           onClick={() => {
             setError(null);
-            fetchData();
+            queryClient.invalidateQueries({ queryKey: ['subscriptionPlans'] });
+            queryClient.invalidateQueries({ queryKey: ['userSubscription'] });
           }}
           className="mt-4"
         >
@@ -264,7 +211,7 @@ export const SubscriptionPlansPage: React.FC = () => {
     );
   }
 
-  if (status === 'authenticated' && currentSubscription && currentSubscription.is_active) {
+  if (session && currentSubscription && currentSubscription.is_active) {
     return (
       <div className="max-w-4xl mx-auto p-6">
         <StyledH1 className="mb-6">サブスクリプション</StyledH1>
@@ -289,7 +236,7 @@ export const SubscriptionPlansPage: React.FC = () => {
           <p className="mt-4 text-gray-600">
             サブスクリプションの管理や解約は「マイページ」から行うことができます。
           </p>
-          <Button 
+          <Button
             onClick={() => router.push('/settings/profile')}
             className="mt-4"
           >
@@ -381,7 +328,7 @@ export const SubscriptionPlansPage: React.FC = () => {
             <p className="text-xl font-semibold">{selectedPlan.name}</p>
             <p className="mt-1">
               <span className="font-semibold">料金:</span>{' '}
-              {campaignCodeVerificationResult?.is_valid && campaignCodeVerificationResult.discounted_amount ? (
+              {campaignCodeVerificationResult?.is_valid && typeof campaignCodeVerificationResult.discounted_amount === 'number' ? (
                 <span>
                   <span className="line-through text-gray-500">{formatAmount(selectedPlan.amount)}</span>{' '}
                   <span className="text-green-600 font-semibold">{formatAmount(campaignCodeVerificationResult.discounted_amount)}</span>
@@ -400,19 +347,21 @@ export const SubscriptionPlansPage: React.FC = () => {
 
           <div className="mb-6">
             <CampaignCodeForm
-              onSubmit={(code) => handleVerifyCampaignCode(code, selectedPlan.price_id)}
-              onApply={handleApplyCampaignCode}
-              initialCode={campaignCode}
+              onSubmit={handleVerifyCampaignCode}
               onCodeChange={setCampaignCode}
-              originalAmount={selectedPlan.amount}
-              currency={selectedPlan.currency}
+              initialCode={campaignCode}
+              onApply={(result) => {
+                console.log('Applying code:', result);
+              }}
+              currency={selectedPlan?.currency || "jpy"}
+              isLoading={checkoutLoading}
             />
           </div>
 
           <button
             className={`w-full text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors duration-200 ${
-              status === 'authenticated'
-                ? (checkoutLoading ? 'bg-gray-500' : 'bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800')
+              session
+                ? (checkoutLoading ? 'bg-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800')
                 : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'
             }`}
             onClick={handleProceedToCheckout}
@@ -426,7 +375,7 @@ export const SubscriptionPlansPage: React.FC = () => {
                 </svg>
                 処理中...
               </div>
-            ) : status === 'authenticated' ? (
+            ) : session ? (
               'お支払いに進む'
             ) : (
               'ログインして続ける'

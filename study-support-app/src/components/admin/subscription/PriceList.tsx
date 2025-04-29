@@ -278,28 +278,18 @@ export const PriceList: React.FC = () => {
     
     try {
       // バックエンドの StripePriceCreate スキーマに合わせたデータを作成
-      const priceDataPayload: any = { // Use a more specific type if available
-        product_id: newPrice.product,
-        unit_amount: parseInt(newPrice.unit_amount, 10), // JPY assumes no decimals needed
+      const priceDataPayload = {
+        product: newPrice.product,
+        unit_amount: parseInt(newPrice.unit_amount, 10),
         currency: newPrice.currency, 
-        active: true, // Assuming new prices are active by default
-        // nickname: newPrice.nickname || null, // Add if nickname is part of your schema
-        // metadata: {}, // Add if metadata is needed
-      };
-
-      // recurring は type が recurring の場合のみ設定
-      if (newPrice.type === 'recurring') {
-        priceDataPayload.recurring = {
+        active: true, 
+        recurring: newPrice.type === 'recurring' ? {
           interval: newPrice.interval as 'day' | 'week' | 'month' | 'year',
           interval_count: parseInt(newPrice.interval_count, 10),
-        };
-      } else {
-         // one_time の場合、recurring は null または undefined にする（スキーマ定義による）
-         // スキーマで recurring が Optional[StripeRecurring] の場合:
-         priceDataPayload.recurring = null; 
-      }
+        } : undefined,
+      };
 
-      console.log("Submitting Price Data:", priceDataPayload); // 送信するデータを確認
+      console.log("Submitting Price Data:", priceDataPayload);
       
       if (isEditModalOpen && currentPrice) {
         // --- 編集ロジック --- (今回は新規作成エラーなので、一旦既存のまま)
