@@ -26,7 +26,7 @@ jobs:
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          aws-region:            ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -43,7 +43,7 @@ jobs:
 
       - name: Build STG backend image
         run: |
-          REGISTRY=$(echo "${{ env.ECR_REGISTRY }}" | sed 's:/*$::')
+          REGISTRY=$(echo "${{ secrets.ECR_REGISTRY }}" | sed 's:/*$::')
           IMAGE_URI="${REGISTRY}/stg-backend:latest"
           docker build \
             --file backend/Dockerfile.stg \
@@ -52,7 +52,7 @@ jobs:
 
       - name: Push STG backend to ECR
         run: |
-          REGISTRY=$(echo "${{ env.ECR_REGISTRY }}" | sed 's:/*$::')
+          REGISTRY=$(echo "${{ secrets.ECR_REGISTRY }}" | sed 's:/*$::')
           docker push ${REGISTRY}/stg-backend:latest
 
   # Frontend STG イメージのビルド & プッシュ
@@ -66,7 +66,7 @@ jobs:
 
       - name: Build STG frontend image
         run: |
-          REGISTRY=$(echo "${{ env.ECR_REGISTRY }}" | sed 's:/*$::')
+          REGISTRY=$(echo "${{ secrets.ECR_REGISTRY }}" | sed 's:/*$::')
           IMAGE_URI="${REGISTRY}/stg-frontend:latest"
           docker build \
             --file study-support-app/Dockerfile.stg \
@@ -75,7 +75,7 @@ jobs:
 
       - name: Push STG frontend to ECR
         run: |
-          REGISTRY=$(echo "${{ env.ECR_REGISTRY }}" | sed 's:/*$::')
+          REGISTRY=$(echo "${{ secrets.ECR_REGISTRY }}" | sed 's:/*$::')
           docker push ${REGISTRY}/stg-frontend:latest
 
   # DB migration on ECS
@@ -92,7 +92,7 @@ jobs:
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          aws-region:            ${{ secrets.AWS_REGION }}
 
       - name: Run DB migrations on ECS
         run: |
@@ -115,11 +115,11 @@ jobs:
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          aws-region:            ${{ secrets.AWS_REGION }}
       - name: Deploy Backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
           cluster: smartao-api-stg
           service: smartao-api-stg-service
           task-definition: ECS/backend-task-def-stg.json
@@ -137,11 +137,11 @@ jobs:
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          aws-region:            ${{ secrets.AWS_REGION }}
       - name: Deploy Frontend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
           cluster: smartao-front-stg
           service: smartao-front-stg-service
           task-definition: ECS/frontend-task-def-stg.json
