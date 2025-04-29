@@ -3,6 +3,7 @@ terraform {
   required_providers {
     aws      = { source = "hashicorp/aws",      version = "~> 5.0" }
     external = { source = "hashicorp/external", version = "~> 2.1" }
+    random   = { source = "hashicorp/random",   version = "~> 3.5" }
   }
 }
 
@@ -189,8 +190,12 @@ resource "aws_ssm_parameter" "api_base_url" {
 }
 
 # Secrets Manager (backend.env)
+resource "random_id" "secret_suffix" {
+  byte_length = 4
+}
 resource "aws_secretsmanager_secret" "backend_env" {
-  name = "${var.environment}/api/env"
+  name                         = "${var.environment}/api/env-${random_id.secret_suffix.hex}"
+  force_delete_without_recovery = true
 }
 resource "aws_secretsmanager_secret_version" "backend_env_version" {
   secret_id     = aws_secretsmanager_secret.backend_env.id

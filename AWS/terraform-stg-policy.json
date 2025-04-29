@@ -90,7 +90,9 @@
               "elasticloadbalancing:DescribeTargetGroups",
               "elasticloadbalancing:CreateListener",
               "elasticloadbalancing:DeleteListener",
-              "elasticloadbalancing:DescribeListeners"
+              "elasticloadbalancing:DescribeListeners",
+              "elasticloadbalancing:ModifyLoadBalancerAttributes",
+              "elasticloadbalancing:DescribeLoadBalancerAttributes"
             ],
             "Resource": "*"
         },
@@ -132,7 +134,8 @@
               "rds:DescribeDBSubnetGroups",
               "rds:CreateDBInstance",
               "rds:DeleteDBInstance",
-              "rds:DescribeDBInstances"
+              "rds:DescribeDBInstances",
+              "rds:ListTagsForResource"
             ],
             "Resource": "*"
         },
