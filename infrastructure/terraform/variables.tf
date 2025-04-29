@@ -40,7 +40,7 @@ variable "db_allocated_storage" {
 
 variable "db_username" {
   type    = string
-  default = "user"
+  default = "monono"
 }
 
 variable "db_password" {

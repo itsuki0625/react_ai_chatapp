@@ -1,0 +1,213 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "StateBackendS3",
+            "Effect": "Allow",
+            "Action": [
+              "s3:ListBucket",
+              "s3:GetObject",
+              "s3:PutObject",
+              "s3:DeleteObject"
+            ],
+            "Resource": [
+              "arn:aws:s3:::smartao-stg-terraform-state",
+              "arn:aws:s3:::smartao-stg-terraform-state/*"
+            ]
+        },
+        {
+            "Sid": "StateLockDynamoDB",
+            "Effect": "Allow",
+            "Action": [
+              "dynamodb:DescribeTable",
+              "dynamodb:GetItem",
+              "dynamodb:PutItem",
+              "dynamodb:DeleteItem",
+              "dynamodb:UpdateItem"
+            ],
+            "Resource": "arn:aws:dynamodb:ap-northeast-1:354918390375:table/smartao-stg-terraform-lock"
+        },
+        {
+            "Sid": "VPCNetwork",
+            "Effect": "Allow",
+            "Action": [
+              "ec2:CreateVpc",
+              "ec2:DeleteVpc",
+              "ec2:DescribeVpcs",
+              "ec2:ModifyVpcAttribute",
+              "ec2:CreateSubnet",
+              "ec2:DeleteSubnet",
+              "ec2:DescribeSubnets",
+              "ec2:CreateInternetGateway",
+              "ec2:DeleteInternetGateway",
+              "ec2:AttachInternetGateway",
+              "ec2:DetachInternetGateway",
+              "ec2:CreateRouteTable",
+              "ec2:DeleteRouteTable",
+              "ec2:DescribeRouteTables",
+              "ec2:CreateRoute",
+              "ec2:DeleteRoute",
+              "ec2:AssociateRouteTable",
+              "ec2:DisassociateRouteTable",
+              "ec2:DescribeNetworkInterfaces"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "SecurityGroup",
+            "Effect": "Allow",
+            "Action": [
+              "ec2:CreateSecurityGroup",
+              "ec2:DeleteSecurityGroup",
+              "ec2:DescribeSecurityGroups",
+              "ec2:AuthorizeSecurityGroupIngress",
+              "ec2:RevokeSecurityGroupIngress",
+              "ec2:AuthorizeSecurityGroupEgress",
+              "ec2:RevokeSecurityGroupEgress"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "NetworkAcl",
+            "Effect": "Allow",
+            "Action": [
+              "ec2:CreateNetworkAcl",
+              "ec2:DeleteNetworkAcl",
+              "ec2:CreateNetworkAclEntry",
+              "ec2:DeleteNetworkAclEntry"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ELB",
+            "Effect": "Allow",
+            "Action": [
+              "elasticloadbalancing:CreateLoadBalancer",
+              "elasticloadbalancing:DeleteLoadBalancer",
+              "elasticloadbalancing:DescribeLoadBalancers",
+              "elasticloadbalancing:CreateTargetGroup",
+              "elasticloadbalancing:DeleteTargetGroup",
+              "elasticloadbalancing:DescribeTargetGroups",
+              "elasticloadbalancing:CreateListener",
+              "elasticloadbalancing:DeleteListener",
+              "elasticloadbalancing:DescribeListeners",
+              "elasticloadbalancing:ModifyLoadBalancerAttributes",
+              "elasticloadbalancing:DescribeLoadBalancerAttributes",
+              "elasticloadbalancing:ModifyListenerAttributes",
+              "elasticloadbalancing:DescribeListenerAttributes"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ECS",
+            "Effect": "Allow",
+            "Action": [
+              "ecs:CreateCluster",
+              "ecs:DeleteCluster",
+              "ecs:DescribeClusters",
+              "ecs:RegisterTaskDefinition",
+              "ecs:DeregisterTaskDefinition",
+              "ecs:DescribeTaskDefinition",
+              "ecs:CreateService",
+              "ecs:UpdateService",
+              "ecs:DeleteService",
+              "ecs:DescribeServices",
+              "ecs:RunTask"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ECR",
+            "Effect": "Allow",
+            "Action": [
+              "ecr:CreateRepository",
+              "ecr:DeleteRepository",
+              "ecr:DescribeRepositories",
+              "ecr:ListImages"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "RDS",
+            "Effect": "Allow",
+            "Action": [
+              "rds:CreateDBSubnetGroup",
+              "rds:DeleteDBSubnetGroup",
+              "rds:DescribeDBSubnetGroups",
+              "rds:CreateDBInstance",
+              "rds:DeleteDBInstance",
+              "rds:DescribeDBInstances",
+              "rds:ListTagsForResource"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "SSMParameterStore",
+            "Effect": "Allow",
+            "Action": [
+              "ssm:PutParameter",
+              "ssm:DeleteParameter",
+              "ssm:GetParameter",
+              "ssm:DescribeParameters"
+            ],
+            "Resource": "arn:aws:ssm:ap-northeast-1:354918390375:parameter/stg/*"
+        },
+        {
+            "Sid": "SecretsManager",
+            "Effect": "Allow",
+            "Action": [
+              "secretsmanager:CreateSecret",
+              "secretsmanager:DeleteSecret",
+              "secretsmanager:DescribeSecret",
+              "secretsmanager:PutSecretValue",
+              "secretsmanager:ListSecrets"
+            ],
+            "Resource": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/*"
+        },
+        {
+            "Sid": "IAMForECSRoles",
+            "Effect": "Allow",
+            "Action": [
+              "iam:CreateRole",
+              "iam:DeleteRole",
+              "iam:GetRole",
+              "iam:UpdateAssumeRolePolicy",
+              "iam:AttachRolePolicy",
+              "iam:DetachRolePolicy",
+              "iam:PassRole",
+              "iam:ListInstanceProfilesForRole"
+            ],
+            "Resource": [
+              "arn:aws:iam::354918390375:role/stg-*",
+              "arn:aws:iam::354918390375:role/*ecs-task-exec-role*"
+            ]
+        },
+        {
+            "Sid": "AdditionalActions",
+            "Effect": "Allow",
+            "Action": [
+              "elasticloadbalancing:ModifyListenerAttributes",
+              "elasticloadbalancing:DescribeListenerAttributes",
+              "iam:TagRole",
+              "elasticloadbalancing:DescribeTags",
+              "iam:ListRolePolicies",
+              "iam:ListAttachedRolePolicies",
+              "elasticloadbalancing:AddTags",
+              "elasticloadbalancing:ModifyTargetGroupAttributes",
+              "elasticloadbalancing:DescribeTargetGroupAttributes",
+              "rds:AddTagsToResource",
+              "secretsmanager:GetResourcePolicy",
+              "ec2:DescribeInternetGateways",
+              "ec2:DescribeSecurityGroupRules",
+              "ssm:DescribeParameters",
+              "ssm:ListTagsForResource",
+              "ssm:GetParameters",
+              "ssm:GetParameter",
+              "ecr:ListTagsForResource",
+              "ec2:DescribeVpcAttribute",
+              "ec2:CreateTags"
+            ],
+            "Resource": "*"
+        }
+    ]
+}

@@ -3,6 +3,7 @@ terraform {
   required_providers {
     aws      = { source = "hashicorp/aws",      version = "~> 5.0" }
     external = { source = "hashicorp/external", version = "~> 2.1" }
+    random   = { source = "hashicorp/random",   version = "~> 3.5" }
   }
 }
 
@@ -22,6 +23,7 @@ module "vpc" {
   private_subnets      = var.private_subnets
   enable_nat_gateway   = false
   enable_dns_hostnames = true
+  manage_default_network_acl = false
 
   tags = { Environment = var.environment }
 }
@@ -145,10 +147,10 @@ resource "aws_lb_listener" "backend_http" {
 
 # ECR リポジトリ
 resource "aws_ecr_repository" "backend" {
-  name = "backend"
+  name = "${var.environment}-backend"
 }
 resource "aws_ecr_repository" "frontend" {
-  name = "frontend"
+  name = "${var.environment}-frontend"
 }
 
 # ECS クラスター
@@ -188,12 +190,10 @@ resource "aws_ssm_parameter" "api_base_url" {
 }
 
 # Secrets Manager (backend.env)
-resource "aws_secretsmanager_secret" "backend_env" {
-  name = "${var.environment}/api/env"
+resource "random_id" "secret_suffix" {
+  byte_length = 4
 }
-resource "aws_secretsmanager_secret_version" "backend_env_version" {
-  secret_id     = aws_secretsmanager_secret.backend_env.id
-  secret_string = join("\n", [
-    for key, value in local.backend_env : "${key}=${value}"
-  ])
+resource "aws_secretsmanager_secret" "backend_env" {
+  name                         = "${var.environment}/api/env-${random_id.secret_suffix.hex}"
+  recovery_window_in_days      = 0
 } 
