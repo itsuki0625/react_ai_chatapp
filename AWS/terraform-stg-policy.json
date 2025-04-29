@@ -229,6 +229,21 @@
               "ec2:CreateTags"
             ],
             "Resource": "*"
+        },
+        {
+            "Sid": "S3CACertsBucketAccess",
+            "Effect": "Allow",
+            "Action": [
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:ListBucket",
+                "s3:DeleteObject",
+                "s3:GetBucketLocation"
+            ],
+            "Resource": [
+                "arn:aws:s3:::stg-rds-ca-certs-354918390375",
+                "arn:aws:s3:::stg-rds-ca-certs-354918390375/*"
+            ]
         }
     ]
 }
