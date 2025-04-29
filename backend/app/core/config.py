@@ -3,6 +3,7 @@ from typing import List, ClassVar, Optional
 import os
 from dotenv import load_dotenv
 import openai
+from urllib.parse import urlparse, urlunparse
 
 load_dotenv()
 
@@ -43,12 +44,22 @@ class Settings(BaseSettings):
 
     def __init__(self, **values):
         super().__init__(**values)
-        # DATABASE_URL から ASYNC_DATABASE_URL を生成
-        if self.DATABASE_URL and self.DATABASE_URL.startswith("postgresql://"):
-            self.ASYNC_DATABASE_URL = self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-        elif self.DATABASE_URL:
-            # 他のDBタイプの場合、適切な非同期URLに変換するロジックをここに追加
-            print(f"Warning: Could not automatically generate ASYNC_DATABASE_URL for {self.DATABASE_URL}")
+        # DATABASE_URL から ASYNC_DATABASE_URL を生成 (修正)
+        if self.DATABASE_URL:
+            parsed_url = urlparse(self.DATABASE_URL)
+            if parsed_url.scheme == "postgresql":
+                # スキームを 'postgresql+asyncpg' に変更
+                # クエリパラメータはそのまま保持する
+                async_parsed_url = parsed_url._replace(scheme="postgresql+asyncpg")
+                self.ASYNC_DATABASE_URL = urlunparse(async_parsed_url)
+            elif parsed_url.scheme == "postgresql+asyncpg":
+                 # すでに非同期URLの場合はそのまま使う
+                 self.ASYNC_DATABASE_URL = self.DATABASE_URL
+            else:
+                print(f"Warning: Unsupported database scheme for async: {parsed_url.scheme}")
+                self.ASYNC_DATABASE_URL = None # または適切なデフォルト値
+        else:
+             self.ASYNC_DATABASE_URL = None
 
     # OpenAI設定
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
