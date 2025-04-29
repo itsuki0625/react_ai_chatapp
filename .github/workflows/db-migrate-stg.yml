@@ -35,6 +35,6 @@ jobs:
             --launch-type FARGATE \
             --task-definition backend-stg \
             --network-configuration "awsvpcConfiguration={subnets=[${{ secrets.STG_SUBNETS }}],securityGroups=[${{ secrets.STG_SECURITY_GROUPS }}],assignPublicIp=DISABLED}" \
-            --overrides '{"containerOverrides":[{"name":"backend","command":["alembic","upgrade","head"]}]}'
-            --output json | cat # エラー確認のため出力を表示
+            --overrides '{"containerOverrides":[{"name":"backend","command":["alembic","upgrade","head"]}]}' \
+            --output json | cat
           echo "DB migration task started. Check ECS console for status." 
