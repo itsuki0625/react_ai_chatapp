@@ -145,10 +145,10 @@ resource "aws_lb_listener" "backend_http" {
 
 # ECR リポジトリ
 resource "aws_ecr_repository" "backend" {
-  name = "backend"
+  name = "${var.environment}-backend"
 }
 resource "aws_ecr_repository" "frontend" {
-  name = "frontend"
+  name = "${var.environment}-frontend"
 }
 
 # ECS クラスター

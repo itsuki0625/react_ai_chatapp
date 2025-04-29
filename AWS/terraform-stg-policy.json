@@ -174,6 +174,28 @@
               "arn:aws:iam::354918390375:role/stg-*",
               "arn:aws:iam::354918390375:role/*ecs-task-exec-role*"
             ]
+        },
+        {
+            "Sid": "AdditionalActions",
+            "Effect": "Allow",
+            "Action": [
+              "iam:TagRole",
+              "iam:ListRolePolicies",
+              "elasticloadbalancing:AddTags",
+              "elasticloadbalancing:ModifyTargetGroupAttributes",
+              "rds:AddTagsToResource",
+              "secretsmanager:GetResourcePolicy",
+              "ec2:DescribeInternetGateways",
+              "ec2:DescribeSecurityGroupRules",
+              "ssm:DescribeParameters",
+              "ssm:ListTagsForResource",
+              "ssm:GetParameters",
+              "ssm:GetParameter",
+              "ecr:ListTagsForResource",
+              "ec2:DescribeVpcAttribute",
+              "ec2:CreateTags"
+            ],
+            "Resource": "*"
         }
     ]
 }
