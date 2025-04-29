@@ -9,10 +9,6 @@ COPY . .
 # 公開環境変数を直接指定
 ENV NEXT_PUBLIC_API_BASE_URL=https://stg-api.smartao.jp
 ENV NEXT_PUBLIC_BROWSER_API_URL=https://stg-api.smartao.jp
-# NextAuth環境変数を追加
-ENV NEXTAUTH_URL=https://stg.smartao.jp
-ENV NEXTAUTH_COOKIE_DOMAIN=stg.smartao.jp
-ENV AUTH_SECRET=gLl9JJlJN95emviDnWGSUZlm9u7He2n+C7YLxveaVoc=
 # ビルド前にキャッシュを削除
 RUN rm -rf .next
 RUN npm run build
@@ -20,6 +16,10 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+# NextAuth用の環境変数を追加（Runtime）
+ENV NEXTAUTH_URL=https://stg.smartao.jp
+ENV NEXTAUTH_COOKIE_DOMAIN=stg.smartao.jp
+ENV NEXTAUTH_SECRET=gLl9JJlJN95emviDnWGSUZlm9u7He2n+C7YLxveaVoc=
 
 # build成果物をコピー
 COPY --from=builder /app/.next ./.next
