@@ -31,12 +31,10 @@ url_obj = url_obj.set(drivername="postgresql+asyncpg")
 async_engine = create_async_engine(
     url_obj,
     echo=True,
-    # ★ 変更: connect_argsでsslコンテキストを指定
+    # ★ 変更: connect_argsでsslコンテキストとsslmodeを指定
     connect_args={
         "ssl": ssl_context,
-        # "sslmode": "verify-ca" # または "verify-full"
-        # DSNにsslmode=verify-ca/verify-fullが含まれていない場合はここで指定
-        # settings.ASYNC_DATABASE_URL の生成時に含まれているか確認が必要
+        "sslmode": "verify-ca" # ★ 追加: SSLモードを明示的に指定
     }
 )
 
