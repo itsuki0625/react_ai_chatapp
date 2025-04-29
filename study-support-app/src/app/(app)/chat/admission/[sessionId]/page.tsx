@@ -3,11 +3,7 @@ import ChatWindow from '@/components/chat/ChatWindow';
 import { ChatType } from '@/types/chat';
 import { Metadata } from 'next';
 
-// Next.js App Routerの標準的な型を使用
-type PageProps = {
-  params: { sessionId: string };
-  searchParams: { [key: string]: string | string[] | undefined };
-};
+// 型定義を削除し、直接型付け
 
 export async function generateMetadata({ params }: { params: { sessionId: string } }): Promise<Metadata> {
     return {
@@ -15,7 +11,7 @@ export async function generateMetadata({ params }: { params: { sessionId: string
     };
 }
 
-export default function ChatSessionPage({ params }: PageProps) {
+export default function ChatSessionPage({ params }: { params: { sessionId: string } }) {
   const chatType = ChatType.ADMISSION;
   const { sessionId } = params;
 

@@ -3,7 +3,6 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   staticPageGenerationTimeout: 180,
-  swcMinify: true,
   images: {
     domains: ['localhost', 'backend'],
     remotePatterns: [
