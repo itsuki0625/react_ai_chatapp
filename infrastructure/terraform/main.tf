@@ -196,8 +196,4 @@ resource "random_id" "secret_suffix" {
 resource "aws_secretsmanager_secret" "backend_env" {
   name                         = "${var.environment}/api/env-${random_id.secret_suffix.hex}"
   recovery_window_in_days      = 0
-}
-resource "aws_secretsmanager_secret_version" "backend_env_version" {
-  secret_id     = aws_secretsmanager_secret.backend_env.id
-  secret_string = file("${path.module}/../../backend/.env.stg")
 } 
