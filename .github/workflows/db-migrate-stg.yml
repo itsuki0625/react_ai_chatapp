@@ -4,7 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: "Run DB migrations on STG? (Type 'yes' to confirm)"
+        description: >
+          Run DB migrations on STG? (Type 'yes' to confirm)
         required: true
 
 env:
