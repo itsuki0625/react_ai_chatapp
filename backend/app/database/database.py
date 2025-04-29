@@ -63,19 +63,23 @@ def get_ssl_context() -> ssl.SSLContext | None:
     global _global_ssl_context
     logger.debug("get_ssl_context called.") # ★ デバッグログ追加
     if _global_ssl_context is None:
-        logger.info("SSL context is None, attempting to initialize.") # ★ INFOログ追加
-        local_cert_path = download_ca_cert_from_s3()
-        if local_cert_path and os.path.exists(local_cert_path):
-             try:
-                logger.info(f"Creating SSL context using CA cert: {local_cert_path}")
-                _global_ssl_context = ssl.create_default_context(cafile=local_cert_path)
+        logger.info("SSL context is None, initializing from local cert.")
+        # 環境ごとに証明書ファイルを切り替え
+        cert_filename = f"rds-ca-{settings.ENVIRONMENT}-bundle.pem"
+        cert_path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "certs", cert_filename)
+        )
+        if os.path.exists(cert_path):
+            try:
+                logger.info(f"Creating SSL context using local CA cert: {cert_path}")
+                _global_ssl_context = ssl.create_default_context(cafile=cert_path)
                 logger.info("SSL context created successfully.")
-             except ssl.SSLError as e:
-                 logger.error(f"SSL Error creating SSL context from {local_cert_path}", exc_info=True) # ★ exc_info追加
-             except Exception as e:
-                 logger.exception(f"Unexpected error during SSL context creation") # ★ メッセージ調整
+            except ssl.SSLError as e:
+                logger.error(f"SSL Error creating SSL context from {cert_path}", exc_info=True)
+            except Exception:
+                logger.exception("Unexpected error during SSL context creation")
         else:
-            logger.warning("Failed to obtain CA cert, SSL context cannot be created.")
+            logger.warning(f"Local CA cert not found at {cert_path}, SSL context cannot be created.")
     else:
         logger.debug("Returning existing SSL context.") # ★ デバッグログ追加
     return _global_ssl_context
