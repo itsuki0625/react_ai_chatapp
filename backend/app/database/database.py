@@ -66,8 +66,9 @@ def get_ssl_context() -> ssl.SSLContext | None:
         logger.info("SSL context is None, initializing from local cert.")
         # 環境ごとに証明書ファイルを切り替え
         cert_filename = f"rds-ca-{settings.ENVIRONMENT}-bundle.pem"
+        # プロジェクトルートの certs ディレクトリを参照
         cert_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "certs", cert_filename)
+            os.path.join(os.path.dirname(__file__), "..", "..", "certs", cert_filename)
         )
         if os.path.exists(cert_path):
             try:
