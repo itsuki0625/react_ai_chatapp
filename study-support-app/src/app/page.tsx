@@ -3,12 +3,12 @@ import Link from 'next/link';
 export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
-      <h1 className="text-3xl font-bold text-blue-600 mb-6">Study Support App</h1>
+      <h1 className="text-3xl font-bold text-blue-600 mb-6">SmartAO</h1>
       
       <div className="bg-white shadow-md rounded-lg p-8 w-full max-w-md">
         <h2 className="text-2xl font-medium text-gray-800 mb-4">ようこそ</h2>
         <p className="text-gray-600 mb-6">
-          学習支援アプリケーションへようこそ。ログインして続行してください。
+          SmartAOへようこそ。ログインして続行してください。
         </p>
         
         <div className="space-y-4">
