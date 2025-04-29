@@ -22,6 +22,16 @@
       },
       "environment": [
         { "name": "PORT", "value": "5050" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/backend/env-4ca0490e-35nuir:DATABASE_URL::" },
+        { "name": "OPENAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/backend/env-4ca0490e-35nuir:OPENAI_API_KEY::" },
+        { "name": "SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/backend/env-4ca0490e-35nuir:SECRET_KEY::" },
+        { "name": "STRIPE_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/backend/env-4ca0490e-35nuir:STRIPE_SECRET_KEY::" },
+        { "name": "STRIPE_PUBLISHABLE_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/backend/env-4ca0490e-35nuir:STRIPE_PUBLISHABLE_KEY::" },
+        { "name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/backend/env-4ca0490e-35nuir:STRIPE_WEBHOOK_SECRET::" },
+        { "name": "NEXTAUTH_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/backend/env-4ca0490e-35nuir:NEXTAUTH_URL::" },
+        { "name": "AUTH_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/backend/env-4ca0490e-35nuir:AUTH_SECRET::" }
       ]
     }
   ]
