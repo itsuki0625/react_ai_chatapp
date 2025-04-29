@@ -44,7 +44,7 @@ jobs:
       - name: Build STG backend image
         run: |
           REGISTRY=$(echo "${{ env.ECR_REGISTRY }}" | sed 's:/*$::')
-          IMAGE_URI="${REGISTRY}/api:stg"
+          IMAGE_URI="${REGISTRY}/stg-backend:latest"
           docker build \
             --file backend/Dockerfile.stg \
             --tag  $IMAGE_URI \
@@ -53,7 +53,7 @@ jobs:
       - name: Push STG backend to ECR
         run: |
           REGISTRY=$(echo "${{ env.ECR_REGISTRY }}" | sed 's:/*$::')
-          docker push ${REGISTRY}/api:stg
+          docker push ${REGISTRY}/stg-backend:latest
 
   # Frontend STG イメージのビルド & プッシュ
   build-push-frontend-stg:
@@ -67,7 +67,7 @@ jobs:
       - name: Build STG frontend image
         run: |
           REGISTRY=$(echo "${{ env.ECR_REGISTRY }}" | sed 's:/*$::')
-          IMAGE_URI="${REGISTRY}/front:stg"
+          IMAGE_URI="${REGISTRY}/stg-frontend:latest"
           docker build \
             --file study-support-app/Dockerfile.stg \
             --tag  $IMAGE_URI \
@@ -76,7 +76,7 @@ jobs:
       - name: Push STG frontend to ECR
         run: |
           REGISTRY=$(echo "${{ env.ECR_REGISTRY }}" | sed 's:/*$::')
-          docker push ${REGISTRY}/front:stg
+          docker push ${REGISTRY}/stg-frontend:latest
 
   # DB migration on ECS
   run-db-migrations:
