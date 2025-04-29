@@ -22,6 +22,7 @@ module "vpc" {
   private_subnets      = var.private_subnets
   enable_nat_gateway   = false
   enable_dns_hostnames = true
+  manage_default_network_acl = false
 
   tags = { Environment = var.environment }
 }
