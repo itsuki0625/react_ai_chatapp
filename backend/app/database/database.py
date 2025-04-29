@@ -4,24 +4,20 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 from sqlalchemy.engine import make_url
-import ssl
 
 # SQLAlchemyエンジンの作成
 engine = create_engine(settings.DATABASE_URL)
 # 非同期エンジン用のURLを組み立て
 url_obj = make_url(settings.ASYNC_DATABASE_URL)
-# ドライバ名を設定し、sslmodeパラメータを削除
+# ドライバ名を設定し、sslmode=requireを追加
 url_obj = url_obj.set(drivername="postgresql+asyncpg")
-clean_query = {k: v for k, v in url_obj.query.items() if k != "sslmode"}
-url_obj = url_obj.set(query=clean_query)
-
-# 非同期pg用のSSLコンテキストを生成（検証なし）
-ssl_context = ssl._create_unverified_context()
+query = dict(url_obj.query)
+query["sslmode"] = "require"
+url_obj = url_obj.set(query=query)
 
 async_engine = create_async_engine(
     url_obj,
     echo=True,
-    connect_args={"ssl": ssl_context},
 )
 
 # セッションファクトリの作成
