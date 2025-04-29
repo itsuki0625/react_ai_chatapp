@@ -21,7 +21,8 @@
         }
       },
       "environment": [
-        { "name": "PORT", "value": "5050" }
+        { "name": "PORT", "value": "5050" },
+        { "name": "AWS_ACCOUNT_ID", "value": "354918390375" }
       ],
       "secrets": [
         { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/api/env-3dcfaf7a-c976G7:DATABASE_URL::" },
