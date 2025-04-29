@@ -165,7 +165,7 @@
             "Resource": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/*"
         },
         {
-            "Sid": "IAMForECSRoles",
+            "Sid": "IAMForECSRolesAndPolicies",
             "Effect": "Allow",
             "Action": [
               "iam:CreateRole",
@@ -175,12 +175,33 @@
               "iam:AttachRolePolicy",
               "iam:DetachRolePolicy",
               "iam:PassRole",
-              "iam:ListInstanceProfilesForRole"
+              "iam:ListInstanceProfilesForRole",
+              "iam:CreatePolicy",
+              "iam:CreatePolicyVersion",
+              "iam:GetPolicy",
+              "iam:ListPolicyVersions",
+              "iam:GetPolicyVersion",
+              "iam:DeletePolicy",
+              "iam:TagRole"
             ],
             "Resource": [
               "arn:aws:iam::354918390375:role/stg-*",
-              "arn:aws:iam::354918390375:role/*ecs-task-exec-role*"
+              "arn:aws:iam::354918390375:role/*ecs-task-exec-role*",
+              "arn:aws:iam::354918390375:policy/stg-*"
             ]
+        },
+        {
+            "Sid": "CloudWatchLogsManagement",
+            "Effect": "Allow",
+            "Action": [
+              "logs:CreateLogGroup",
+              "logs:PutRetentionPolicy",
+              "logs:TagResource",
+              "logs:DescribeLogGroups",
+              "logs:ListTagsForResource",
+              "logs:DeleteLogGroup"
+            ],
+            "Resource": "*"
         },
         {
             "Sid": "AdditionalActions",
@@ -188,7 +209,6 @@
             "Action": [
               "elasticloadbalancing:ModifyListenerAttributes",
               "elasticloadbalancing:DescribeListenerAttributes",
-              "iam:TagRole",
               "elasticloadbalancing:DescribeTags",
               "iam:ListRolePolicies",
               "iam:ListAttachedRolePolicies",
