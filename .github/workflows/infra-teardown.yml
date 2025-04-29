@@ -27,7 +27,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: infrastructure/terraform
-        run: terraform init -input=false
+        run: terraform init -upgrade -input=false
 
       - name: Terraform Destroy
         working-directory: infrastructure/terraform

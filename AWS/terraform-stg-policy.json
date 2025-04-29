@@ -180,6 +180,7 @@
             "Effect": "Allow",
             "Action": [
               "iam:TagRole",
+              "elasticloadbalancing:DescribeTags",
               "iam:ListRolePolicies",
               "iam:ListAttachedRolePolicies",
               "elasticloadbalancing:AddTags",
