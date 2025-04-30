@@ -55,5 +55,5 @@ variable "db_name" {
 
 variable "api_base_url" {
   type        = string
-  description = "http://stg-api.smartao.com"
+  description = "http://stg-api.smartao.jp"
 } 

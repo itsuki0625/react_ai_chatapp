@@ -49,7 +49,11 @@
               "ec2:DeleteRoute",
               "ec2:AssociateRouteTable",
               "ec2:DisassociateRouteTable",
-              "ec2:DescribeNetworkInterfaces"
+              "ec2:DescribeNetworkInterfaces",
+              "ec2:CreateVpcEndpoint",
+              "ec2:DescribeVpcEndpoints",
+              "ec2:ModifyVpcEndpoint",
+              "ec2:DeleteVpcEndpoints"
             ],
             "Resource": "*"
         },
@@ -137,7 +141,13 @@
               "rds:CreateDBInstance",
               "rds:DeleteDBInstance",
               "rds:DescribeDBInstances",
-              "rds:ListTagsForResource"
+              "rds:ListTagsForResource",
+              "rds:CreateDBParameterGroup",
+              "rds:ModifyDBInstance",
+              "rds:DeleteDBParameterGroup",
+              "rds:DescribeDBParameterGroups",
+              "rds:DescribeDBParameters",
+              "rds:ModifyDBParameterGroup"
             ],
             "Resource": "*"
         },
@@ -182,6 +192,7 @@
               "iam:ListPolicyVersions",
               "iam:GetPolicyVersion",
               "iam:DeletePolicy",
+              "iam:DeletePolicyVersion",
               "iam:TagRole"
             ],
             "Resource": [
@@ -225,9 +236,21 @@
               "ssm:GetParameter",
               "ecr:ListTagsForResource",
               "ec2:DescribeVpcAttribute",
-              "ec2:CreateTags"
+              "ec2:CreateTags",
+              "ec2:DescribePrefixLists"
             ],
             "Resource": "*"
+        },
+        {
+            "Sid": "S3CACertsBucketAccess",
+            "Effect": "Allow",
+            "Action": [
+                "s3:*"
+            ],
+            "Resource": [
+                "arn:aws:s3:::stg-rds-ca-certs-354918390375",
+                "arn:aws:s3:::stg-rds-ca-certs-354918390375/*"
+            ]
         }
     ]
 }

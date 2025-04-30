@@ -25,15 +25,15 @@
       "secrets": [
         {
           "name": "AUTH_SECRET",
-          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/api/env-4ca0490e-35nuir:AUTH_SECRET::"
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/api/env-6cbb2af5-R8qnHc:AUTH_SECRET::"
         },
         {
           "name": "NEXTAUTH_URL",
-          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/api/env-4ca0490e-35nuir:NEXTAUTH_URL::"
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/api/env-6cbb2af5-R8qnHc:NEXTAUTH_URL::"
         },
         {
           "name": "NEXTAUTH_COOKIE_DOMAIN",
-          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/api/env-4ca0490e-35nuir:NEXTAUTH_COOKIE_DOMAIN::"
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/api/env-6cbb2af5-R8qnHc:NEXTAUTH_COOKIE_DOMAIN::"
         }
       ]
     }

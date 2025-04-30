@@ -12,10 +12,14 @@ from sqlalchemy.orm import Session
 from contextlib import contextmanager
 import asyncio
 import time
+import os  # CA証明書確認用
 
 
-# ロギング設定
-logging.basicConfig(level=logging.INFO)
+# ロギング設定（DEBUG出力を有効化）
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 # データベースセッションコンテキスト
@@ -106,6 +110,12 @@ async def startup_event():
     # 期限切れトークンのクリーンアップタスク
     asyncio.create_task(cleanup_expired_tokens())
     logger.info("バックグラウンド期限切れトークンクリーンアップタスクを開始しました")
+    # 起動時にCA証明書ディレクトリ内容を確認
+    try:
+        certs = os.listdir("/app/certs")
+        logger.debug(f"/app/certs 内容: {certs}")
+    except Exception as e:
+        logger.error(f"/app/certs の一覧取得に失敗: {e}")
 
 @app.get("/")
 def read_root():

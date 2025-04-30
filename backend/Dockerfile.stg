@@ -1,4 +1,7 @@
 # STG用Dockerfile
+# ★ 追加: ビルド引数で環境名を受け取る (デフォルトは stg)
+ARG ENV_NAME=stg
+
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -24,4 +27,4 @@ ENV PYTHONPATH=/app
 EXPOSE 5050
 
 # STGではreloadなしの起動
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5050"] 
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5050", "--log-level", "debug"] 
