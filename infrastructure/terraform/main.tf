@@ -182,12 +182,6 @@ resource "aws_db_parameter_group" "custom_rds_pg" {
 resource "aws_db_subnet_group" "rds" {
   name       = "${var.environment}-rds-subnet-group"
   subnet_ids = module.vpc.private_subnets
-  db_name                 = var.db_name
-  db_subnet_group_name    = aws_db_subnet_group.rds.name
-  vpc_security_group_ids  = [aws_security_group.rds.id]
-  skip_final_snapshot     = true
-  publicly_accessible     = false
-  parameter_group_name = aws_db_parameter_group.custom_rds_pg.name # ★ 作成したパラメータグループを指定
   tags = { Environment = var.environment }
 }
 resource "aws_db_instance" "rds" {
@@ -197,7 +191,6 @@ resource "aws_db_instance" "rds" {
   allocated_storage       = var.db_allocated_storage
   username                = var.db_username
   password                = var.db_password
-  db_name                 = var.db_name
   db_subnet_group_name    = aws_db_subnet_group.rds.name
   vpc_security_group_ids  = [aws_security_group.rds.id]
   skip_final_snapshot     = true
