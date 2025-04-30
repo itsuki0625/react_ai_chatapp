@@ -291,6 +291,22 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
   }
 }
 
+# CloudWatch Logs VPC Endpoint
+resource "aws_vpc_endpoint" "logs" {
+  vpc_id            = module.vpc.vpc_id
+  service_name      = "com.amazonaws.${var.aws_region}.logs"
+  vpc_endpoint_type = "Interface"
+
+  subnet_ids         = module.vpc.private_subnets # プライベートサブネットを指定
+  security_group_ids = [aws_security_group.vpc_endpoint.id] # 既存のSGを再利用
+  private_dns_enabled = true
+
+  tags = {
+    Name        = "${var.environment}-logs-vpce"
+    Environment = var.environment
+  }
+}
+
 # The following S3 Gateway VPC Endpoint block is removed as it's now managed by the VPC module
 # Restore the external definition
 # S3 Gateway VPC Endpoint
