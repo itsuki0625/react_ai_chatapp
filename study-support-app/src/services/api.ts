@@ -9,6 +9,27 @@ export const getApiBaseUrl = () => {
     : process.env.NEXT_PUBLIC_API_BASE_URL || 'http://backend:5050';
 };
 
+// 認証付き・未認証リクエストの共通設定を取得します
+export const getAxiosConfig = async (requireAuth = true) => {
+  const config: { withCredentials: boolean; headers: Record<string, string> } = {
+    withCredentials: true,
+    headers: {}
+  };
+  if (requireAuth && typeof window !== 'undefined') {
+    try {
+      const session = await getSession();
+      if (session?.accessToken) {
+        config.headers['Authorization'] = `Bearer ${session.accessToken}`;
+      } else {
+        console.warn('API Service: 認証トークンが見つかりません');
+      }
+    } catch (error) {
+      console.error('API Service: セッション取得エラー', error);
+    }
+  }
+  return config;
+};
+
 // 既存のコードに追加
 export const contentAPI = {
   getContents: async (contentType?: string): Promise<Content[]> => {
