@@ -41,6 +41,14 @@ def get_ssl_context() -> ssl.SSLContext | None:
                 logger.info(f"Creating SSL context using local CA cert: {cert_path}")
                 _global_ssl_context = ssl.create_default_context(cafile=cert_path)
                 logger.info("SSL context created successfully.")
+                # デバッグ: 読み込んだCAリストを確認
+                try:
+                    ca_list = _global_ssl_context.get_ca_certs()
+                    logger.debug(f"Loaded CA certs count: {len(ca_list)}")
+                    subjects = [cert.get('subject') for cert in ca_list]
+                    logger.debug(f"Loaded CA cert subjects: {subjects}")
+                except Exception as e:
+                    logger.error(f"Failed to get CA certs from SSLContext: {e}")
             except ssl.SSLError as e:
                 logger.error(f"SSL Error creating SSL context from {cert_path}", exc_info=True)
             except Exception:
@@ -66,14 +74,10 @@ logger.info(f"Async engine base URL object created: {url_obj}") # ★ INFOログ
 
 # 非同期エンジンを作成 (connect_argsでSSLContextを指定)
 logger.info("Determining SSL context for async engine...")
-# ステージング／本番環境のみSSLコンテキストを使用
-if settings.ENVIRONMENT in ("stg", "production"):
-    logger.info("Initializing SSL context for environment: {settings.ENVIRONMENT}")
-    db_ssl_context = get_ssl_context()
-    logger.info(f"Result of get_ssl_context: {'SSLContext object' if db_ssl_context else 'None'}")
-else:
-    db_ssl_context = None
-    logger.info(f"Skipping SSL context in development environment: {settings.ENVIRONMENT}")
+# 常に SSL コンテキストを取得
+logger.info("Initializing SSL context...")
+db_ssl_context = get_ssl_context()
+logger.info(f"Result of get_ssl_context: {'SSLContext object' if db_ssl_context else 'None'}")
 
 async_engine_kwargs = {
     "echo": settings.ENVIRONMENT != "production",
