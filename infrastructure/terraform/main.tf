@@ -226,4 +226,10 @@ resource "aws_s3_object" "rds_ca_bundle_pem" {
 
   # RDSインスタンスの作成後に実行されるようにする
   depends_on = [aws_db_instance.rds, aws_s3_bucket.ca_certs]
+}
+
+# ★ デバッグ用: ダウンロードした内容を出力
+output "debug_downloaded_ca_bundle_content" {
+  value     = data.http.rds_ca_bundle.response_body
+  sensitive = true # 中身が証明書データの可能性があるので sensitive にする
 } 

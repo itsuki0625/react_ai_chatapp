@@ -26,6 +26,10 @@ jobs:
         with:
           terraform_version: '1.5.0'
 
+      # ★ デバッグ用: CA証明書URLへのアクセス確認
+      - name: Check CA Bundle URL Access
+        run: curl -v https://truststore.pki.rds.amazonaws.com/rds-combined-ca-bundle.pem -o /dev/null
+
       - name: Terraform Init
         working-directory: infrastructure/terraform
         run: terraform init -upgrade -input=false
