@@ -25,10 +25,8 @@ module "vpc" {
   enable_dns_hostnames = true
   manage_default_network_acl = false
 
-  # Add this block to configure gateway endpoints within the module
-  gateway_endpoints = {
-    s3 = true
-  }
+  # Re-adding the apparently correct parameter
+  enable_s3_endpoint = true
 
   tags = { Environment = var.environment }
 }
