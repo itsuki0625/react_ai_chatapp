@@ -34,7 +34,7 @@ jobs:
           aws ecs run-task \
             --cluster stg-api \
             --launch-type FARGATE \
-            --task-definition backend-stg \
+            --task-definition backend-stg-migration \
             --network-configuration "awsvpcConfiguration={subnets=[${{ secrets.STG_SUBNETS }}],securityGroups=[${{ secrets.STG_SECURITY_GROUPS }}],assignPublicIp=DISABLED}" \
             --overrides '{"containerOverrides":[{"name":"backend","command":["alembic","upgrade","head"]}]}' \
             --output json | cat
