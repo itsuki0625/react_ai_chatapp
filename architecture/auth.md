@@ -25,24 +25,41 @@
     -   Access Token: メモリ内、または `HttpOnly` Cookie（`SameSite=Lax` または `Strict`）。Authorization ヘッダーでの送信も考慮。
     -   Refresh Token: `HttpOnly`, `Secure`, `SameSite=Strict` (または `Lax`) 属性付きの Cookie に保存します。
 
-### 2.2 ログイン
+### 2.2 ログイン (Credentials Provider)
 
 1.  ユーザーがフロントエンドでメールアドレスとパスワードを入力します。
-2.  フロントエンドは NextAuth.js の Credentials Provider を使用します。このプロバイダー内の `authorize` 関数が、入力された認証情報（メール、パスワード）を受け取り、バックエンドの `/api/v1/auth/login` エンドポイントに POST リクエストを送信します。
-3.  バックエンドは認証情報を検証（ユーザー存在確認、パスワード照合）し、成功した場合、新しい Access Token と Refresh Token を生成して返します。
-4.  `authorize` 関数はバックエンドからのレスポンス（トークンとユーザー情報を含む）を受け取り、NextAuth.js がセッション管理のために利用できる形式で返却します。
-5.  フロントエンド (NextAuth.js) はサインアップ時と同様にトークンを保存します。Access Token は NextAuth.js のセッションオブジェクト内に保持され、Refresh Token は HttpOnly Cookie に安全に保存されます。
+2.  フロントエンドは NextAuth.js の `CredentialsProvider` を使用します。このプロバイダー内の `authorize` 関数が実行されます。
+3.  `authorize` 関数は、入力された認証情報（メール、パスワード）を `application/x-www-form-urlencoded` 形式にエンコードします。
+4.  バックエンドの `/api/v1/auth/login` エンドポイントに `POST` リクエストを送信します。`Content-Type` ヘッダーは `application/x-www-form-urlencoded` に設定されます。
+5.  バックエンドは認証情報を検証（ユーザー存在確認、パスワード照合）し、成功した場合、新しい Access Token と Refresh Token を含むユーザー情報を JSON レスポンスとして返します。
+6.  `authorize` 関数はバックエンドからのレスポンスを受け取り、NextAuth.js が `jwt` コールバックで利用できる形式の `User` オブジェクト（アクセストークン、リフレッシュトークン、有効期限を含む）を返却します。
+7.  ログインに失敗した場合（例: 認証情報不一致、バックエンドエラー）、`authorize` 関数は `null` を返し、NextAuth.js はエラー（`CredentialsSignin`）をスローしてログイン失敗として処理します。
 
-### 2.3 トークンリフレッシュ
+### 2.3 トークンリフレッシュ (`jwt` コールバック)
 
-1.  Access Token の有効期限が切れた後、クライアントが保護されたリソースにアクセスしようとすると、NextAuth.js の `jwt` コールバックがトリガーされます。
-2.  `jwt` コールバックは、保存されている Refresh Token を使用してバックエンドの `/api/v1/auth/refresh` エンドポイントに POST リクエストを送信します。
-3.  バックエンドは受け取った Refresh Token を検証します（有効期限、失効リストの確認）。
-4.  検証が成功した場合、新しい Access Token（およびオプションで新しい Refresh Token）を生成して返します。古い Refresh Token は失効リストに追加される場合があります。
-5.  `jwt` コールバックはバックエンドから受け取った新しい Access Token（と場合によっては Refresh Token）で NextAuth.js の内部状態（トークン）を更新します。
-6.  後続の `session` コールバックが実行され、更新されたトークン情報（特に新しい Access Token の有効期限など）を含むセッションオブジェクトが生成され、フロントエンドアプリケーション（例: `useSession` フック）で利用可能になります。
+NextAuth.js の `jwt` コールバックは、セッションが読み込まれる度（例: `getSession()`, `useSession()` 呼び出し時）や、特定のイベント（サインイン、サインアップ、`update()` 呼び出し）で実行され、JWT トークン (`token` オブジェクト) を管理します。
 
-### 2.4 ログアウト
+1.  **初回ログイン/サインアップ時 (`trigger === 'signIn' || trigger === 'signUp'`)**: `authorize` 関数から渡された `user` オブジェクトの情報（ユーザーID、名前、ロール、トークン、有効期限など）を使って、NextAuth.js の `token` オブジェクトを初期化します。
+2.  **セッション更新時 (`trigger === 'update'`)**: `useSession().update()` などで渡された `session` データを使って、`token` オブジェクト内の情報（名前、学年、都道府県など）を更新します。
+3.  **通常セッション読み込み時 (上記トリガー以外)**:
+    a.  **有効期限チェック**: `token` オブジェクト内の `accessTokenExpires` (秒単位のタイムスタンプ) を確認します。
+    b.  **リフレッシュ不要**: 現在時刻が有効期限の 60 秒前より手前であれば、トークンはまだ有効とみなし、現在の `token` オブジェクトをそのまま返します。
+    c.  **リフレッシュ実行**: 現在時刻が有効期限の 60 秒前以降の場合、トークンリフレッシュが必要と判断します。
+        i.  `token` オブジェクト内の `refreshToken` が存在するか確認します。なければ `error: "RefreshAccessTokenError"` を含む `token` を返します。
+        ii. バックエンドの `/api/v1/auth/refresh-token` エンドポイントに `POST` リクエストを送信します。リクエストボディには `{ "refresh_token": token.refreshToken }` を JSON 形式で含めます。`credentials: 'include'` オプションにより、関連する Cookie（HttpOnly のリフレッシュトークン Cookie など）も送信されます。
+        iii. **リフレッシュ成功**: バックエンドから新しい `access_token` と `expires_in` (および任意で新しい `refresh_token`) を含む JSON レスポンスが返ってきた場合、`token` オブジェクトの `accessToken`, `accessTokenExpires`, `refreshToken` (更新された場合) などを更新し、`error` フィールドをクリアして返します。
+        iv. **リフレッシュ失敗**: バックエンドがエラーレスポンス（例: 500エラー、無効なリフレッシュトークン）を返した場合、`token` オブジェクトに `error: "RefreshAccessTokenError"` と、可能であればバックエンドからのエラー詳細 `errorDetail` を設定して返します。
+        v.  **通信エラー等**: `fetch` 自体が失敗した場合も、`token` オブジェクトに `error: "RefreshAccessTokenError"` とエラーメッセージ `errorDetail` を設定して返します。
+
+### 2.4 セッション作成 (`session` コールバック)
+
+`jwt` コールバックの後に実行され、フロントエンドで利用可能なセッションオブジェクト (`session`) を作成します。
+
+1.  `jwt` コールバックから渡された `token` オブジェクトを受け取ります。
+2.  **エラーチェック**: `token` オブジェクトに `error` フィールドが存在する場合、そのエラー情報 (`error` および `errorDetail`) を `session` オブジェクトにコピーして返します。これにより、フロントエンドはトークンリフレッシュのエラーを検知できます。
+3.  **セッション構築**: エラーがない場合、`token` オブジェクトの情報（`id`, `name`, `email`, `role`, `status`, `permissions`, `accessToken`, `accessTokenExpires` など）を `session.user` および `session.accessToken`, `session.expires` にマッピングして返します。この際、ロールの正規化などの処理も行われます。
+
+### 2.5 ログアウト
 
 1.  ユーザーがフロントエンドでログアウト操作を行います。
 2.  フロントエンドはバックエンドの `/api/v1/auth/logout` エンドポイントに POST リクエストを送信します（通常、Refresh Token をリクエストボディや Cookie 経由で渡します）。
@@ -66,33 +83,40 @@
 
 ## 4. API エンドポイント (例)
 
-| Method | Path                           | 説明                     |
-| ------ | ------------------------------ | ------------------------ |
-| `POST` | `/api/v1/auth/signup`          | 新規ユーザー登録         |
-| `POST` | `/api/v1/auth/login`           | ログイン                 |
-| `POST` | `/api/v1/auth/refresh`         | Access Token の再発行    |
-| `POST` | `/api/v1/auth/logout`          | ログアウト (Refresh Token失効) |
-| `GET`  | `/api/v1/users/me`             | 認証済みユーザー情報取得 |
-| `POST` | `/api/v1/auth/change-password` | パスワード変更           |
-| `DELETE`| `/api/v1/auth/delete-account` | アカウント削除           |
+| Method | Path                           | 説明                                          |
+| ------ | ------------------------------ | --------------------------------------------- |
+| `POST` | `/api/v1/auth/signup`          | 新規ユーザー登録                              |
+| `POST` | `/api/v1/auth/login`           | ログイン (Form Data: `username`, `password`)    |
+| `POST` | `/api/v1/auth/refresh-token`   | Access Token の再発行 (JSON: `refresh_token`) |
+| `POST` | `/api/v1/auth/logout`          | ログアウト (Refresh Token失効)                  |
+| `GET`  | `/api/v1/users/me`             | 認証済みユーザー情報取得                      |
+| `POST` | `/api/v1/auth/change-password` | パスワード変更                                |
+| `DELETE`| `/api/v1/auth/delete-account` | アカウント削除                                |
 
 ## 5. トークン管理
 
-| 種類          | 保管場所 (フロントエンド)                                       | 期限 (例) | 特徴                                                                 |
-| ------------- | ------------------------------------------------------------- | -------- | -------------------------------------------------------------------- |
-| **Access Token** | **NextAuth.js セッション内** (デフォルト、推奨)。メモリに保持され、必要に応じてフロントエンドの API リクエストに使用されます。NextAuth.js が自動的に Authorization ヘッダーに追加します。代替として `HttpOnly` Cookie (`SameSite=Lax`/`Strict`) も設定可能ですが、後述の CSRF 対策が必要です。 | 15 分    | API リクエスト時に `Authorization: Bearer <token>` ヘッダーで送信される |
-| **Refresh Token**| **`HttpOnly`, `Secure`, `SameSite=Strict` Cookie** (NextAuth.js が管理) | 30 日    | Access Token 再発行専用。フロントエンドの JavaScript からはアクセス不可。バックエンドで失効リスト管理 (`jti` クレーム使用) |
+NextAuth.js では、`jwt` コールバックで管理される `token` オブジェクトが認証状態の中心となります。この `token` オブジェクトには以下の情報が含まれます。
 
-**Access Token の保管場所に関する補足:**
+*   **`accessToken`**: バックエンド API へのアクセスに使用される短命トークン。
+*   **`refreshToken`**: アクセストークンのリフレッシュに使用される長命トークン。
+*   **`accessTokenExpires`**: アクセストークンの有効期限 (秒単位のUNIXタイムスタンプ)。
+*   **ユーザー情報**: ID, 名前, メール, ロール, ステータス, 権限など。
+*   **エラー情報**: `error` (`RefreshAccessTokenError`), `errorDetail` (エラー詳細メッセージ)。
 
-*   **NextAuth.js セッション (メモリ内):**
-    *   **メリット:** XSS (クロスサイトスクリプティング) のリスクが低い。JavaScript から直接トークンにアクセスできないため。
-    *   **デメリット:** ブラウザタブを閉じるとセッションが消える場合がある (NextAuth.js の設定による)。ページ遷移ごとにセッション状態を再確認する必要がある。
-*   **HttpOnly Cookie:**
-    *   **メリット:** ブラウザを閉じてもセッションを維持できる (Cookie の有効期限による)。
-    *   **デメリット:** CSRF (クロスサイトリクエストフォージェリ) 攻撃のリスクがあるため、追加の対策が必要 (後述)。
+| 種類          | 保管場所                                                    | 期限 (例) | 特徴                                                                                                |
+| ------------- | ----------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
+| **JWT Token (`token` オブジェクト)** | NextAuth.js によって Cookie に暗号化されて保存される        | セッション設定 (`maxAge`) | 内部的に Access/Refresh Token やユーザー情報を含む。`jwt` コールバックで更新・リフレッシュされる。         |
+| **Access Token** | JWT Token (`token` オブジェクト) 内に保持                  | 15 分    | `session` コールバック経由で `session.accessToken` としてフロントエンドに公開され、API リクエストに使用される。 |
+| **Refresh Token**| JWT Token (`token` オブジェクト) 内に保持。バックエンドも別途 Cookie (`HttpOnly` など) で管理する場合がある。 | 30 日    | `jwt` コールバック内で Access Token 再発行に使用される。                                               |
 
-本システムでは、NextAuth.js のデフォルトであるセッション内保管を採用し、Refresh Token のみを HttpOnly Cookie で管理することで、セキュリティと利便性のバランスを取っています。
+**フロントエンドでの利用 (`session` オブジェクト):**
+
+`useSession()` や `getSession()` で取得できる `session` オブジェクトは、`session` コールバックによって `token` オブジェクトから生成されます。フロントエンドアプリケーションは、この `session` オブジェクトを通じて以下の情報を利用します。
+
+*   `session.user`: ユーザー情報 (ID, 名前, ロール, 権限など)
+*   `session.accessToken`: 現在有効なアクセストークン
+*   `session.expires`: セッションの有効期限 (ISO 8601 形式)
+*   `session.error`, `session.errorDetail`: トークンリフレッシュエラーが発生した場合の情報
 
 ## 6. セキュリティ考慮事項
 
@@ -158,3 +182,13 @@
 -   **権限の割り当て**:
     -   初期データ投入時 (`demo_data.py`) や管理者用 API を通じて、各ロールに必要な権限が割り当てられます。
     -   例えば、「生徒」ロールには `content_read`, `community_post_create` などが付与され、「管理者」ロールにはほぼ全ての権限が付与されます。
+
+## 8. 現状分析まとめ
+
+- フロントエンドは NextAuth.js の `CredentialsProvider` を利用し、メール/パスワードを FormData (`application/x-www-form-urlencoded`) で送信してログインを実装
+- `jwt` コールバックでは初回トークン初期化、有効期限の 60 秒前で自動リフレッシュ、リフレッシュ失敗時に `error`/`errorDetail` を保持
+- `session` コールバックが `token` 情報とエラー情報を含む `session` オブジェクトを生成し、フロントエンドで利用可能
+- `fetchWithAuth.ts` では 401 エラー検知時に `refreshToken()` → リトライするキュー機構を導入し、複数同時リクエストを安定処理
+- バックエンド (FastAPI) は `/api/v1/auth/` 系エンドポイントで JWT 発行・検証・リフレッシュ・失効リスト管理を実装
+- 現状、DB の `users.grade` カラム未存在によりトークンリフレッシュ処理で 500 エラー発生中 → Alembic マイグレーションでカラム追加が必要
+- 今後はログ出力と型定義のさらなる整備、フロント/バックエンド間のエラー検知・回復策を強化する
