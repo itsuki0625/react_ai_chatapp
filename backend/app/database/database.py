@@ -7,8 +7,10 @@ from sqlalchemy.engine import make_url
 import ssl
 import os                        # パス操作用に復活
 import logging                   # ★ 追加
+from sqlalchemy import event  # DB接続/プールイベント用
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG) # ★ DEBUGログ有効化
 # logger.setLevel(logging.DEBUG) # 必要に応じてデバッグレベルを設定 (main.py等で設定推奨)
 
 # --- グローバル変数としてSSLコンテキストを保持 ---
@@ -96,6 +98,15 @@ except Exception as e:
     # 必要ならここでアプリケーションを終了させるなどの処理を追加
     raise
 
+# --- DB接続イベントのログ設定 ---
+@event.listens_for(async_engine.sync_engine, "connect")
+def log_dbapi_connect(dbapi_connection, connection_record):
+    logger.debug(f"[DB CONNECT] New DBAPI connection: {connection_record}")
+
+@event.listens_for(async_engine.sync_engine.pool, "checkout")
+def log_dbapi_checkout(dbapi_connection, connection_record, connection_proxy):
+    logger.debug(f"[DB POOL CHECKOUT] Pool checkout: {connection_record}")
+
 # --- セッションファクトリ、Base、get_db, get_async_db, init_db は変更なし ---
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -140,7 +151,7 @@ def init_db() -> None:
     マイグレーション実行時やテスト時に使用
     """
     # この関数は同期エンジンを使用しているため、SSL設定の影響は限定的
-    from app.models.models import Base # モデルのインポートパス確認
+    from app.models.base import Base # モデルのインポートパス確認
     logger.info("Initializing database tables (if they don't exist)...")
     try:
         Base.metadata.create_all(bind=engine)
