@@ -4,13 +4,14 @@ import { NextResponse } from 'next/server';
 // NextAuthのミドルウェアをエクスポート
 export default auth((req) => {
   const { nextUrl, auth: authObj } = req;
-  const { pathname } = nextUrl;
+  const { pathname, searchParams } = nextUrl;
   const isLoggedIn = !!authObj?.user;
   const userStatus = authObj?.user?.status;
   const isAdmin = authObj?.user?.isAdmin;
+  const isLoggedOut = searchParams.get('status') === 'logged_out';
 
   // ログを強化
-  console.log(`[Middleware Start] Path: ${pathname}, Auth Status: ${isLoggedIn}, Status: ${userStatus}, IsAdmin: ${isAdmin}`);
+  console.log(`[Middleware Start] Path: ${pathname}, IsLoggedIn: ${isLoggedIn}, Status: ${userStatus}, IsAdmin: ${isAdmin}, IsLoggedOut: ${isLoggedOut}`);
 
   // --- アクセス制御対象ルートの定義 ---
   const protectedRoutes = [
@@ -90,6 +91,11 @@ export default auth((req) => {
 
     // 2f. 認証済みユーザーがログイン/サインアップページにアクセスした場合
     if (isAuthPage) {
+      if (pathname === '/login' && isLoggedOut) {
+          console.log(`[Middleware Allow 2f] Allowing access to /login immediately after logout.`);
+          return NextResponse.next();
+      }
+      
       const redirectUrl = isAdmin ? '/admin/dashboard' : '/dashboard';
       console.log(`[Middleware Redirect 2f] Authenticated user accessing auth page ${pathname}. Redirecting to ${redirectUrl}.`);
       return NextResponse.redirect(new URL(redirectUrl, nextUrl.origin));

@@ -33,7 +33,8 @@ declare module "next-auth" {
       // DefaultSession['user'] の他のプロパティ（name, email, image）も必要なら含める
     } & Pick<DefaultSession["user"], 'name' | 'email' | 'image'>; // 必要な標準プロパティのみ選択的に結合
     accessToken?: string; // sessionコールバックで追加される
-    error?: string;
+    error?: "RefreshAccessTokenError"; // トークンリフレッシュエラー用
+    errorDetail?: string; // エラー詳細を追加
     expires: string; // ISO 8601 date string
   }
 }
@@ -51,7 +52,8 @@ declare module "next-auth/jwt" {
     accessTokenExpires?: number;
     grade?: string;
     prefecture?: string;
-    error?: string;
+    error?: "RefreshAccessTokenError"; // トークンリフレッシュエラー用
+    errorDetail?: string; // エラー詳細を追加
     iat: number;
     exp: number;
     jti: string;

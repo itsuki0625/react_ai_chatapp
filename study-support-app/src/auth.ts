@@ -57,14 +57,21 @@ export const authConfig: NextAuthConfig = {
         if (!credentials?.email || !credentials?.password) {
           return null;
         }
-        const { email, password } = credentials;
+        // ★ 型アサーションを追加して email と password が string であることを保証
+        const email = credentials.email as string;
+        const password = credentials.password as string;
         console.debug('[Authorize] Attempting authorization for:', email); // DEBUG LOG
 
         try {
+          // データ形式を application/x-www-form-urlencoded に変更
+          const body = new URLSearchParams();
+          body.append('username', email);
+          body.append('password', password);
+
           const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/login`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: email, password }),
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, // ★ ヘッダーを変更
+            body: body, // ★ URLSearchParams オブジェクトを送信
           });
 
           if (!response.ok) {
@@ -130,28 +137,24 @@ export const authConfig: NextAuthConfig = {
             return token;
         }
 
-        // 初回ログイン時 (user オブジェクトが存在する場合)
+        // 1. 初回ログイン時 (user オブジェクトが存在する場合)
         if (user && (trigger === 'signIn' || trigger === 'signUp')) {
             console.debug(`JWT Callback: ${trigger} trigger (user object present)`, { userId: user.id });
-            // authorize コールバックからの User オブジェクトを想定
             const authUser = user as User;
-
-            // アクセストークンの有効期限を計算 (秒単位で)
             const defaultExpireMinutes = process.env.ACCESS_TOKEN_EXPIRE_MINUTES ? parseInt(process.env.ACCESS_TOKEN_EXPIRE_MINUTES) : 15;
             const expiresAt = authUser.accessTokenExpires
                 ? Math.floor(authUser.accessTokenExpires / 1000)
                 : Math.floor(Date.now() / 1000) + defaultExpireMinutes * 60;
 
-            // token オブジェクトを拡張
             const extendedToken: JWT = {
                 ...token,
                 id: String(authUser.id),
                 name: authUser.name,
                 email: authUser.email,
                 picture: authUser.image,
-                role: authUser.role, // authorizeから渡されたrole (string | string[] の可能性あり)
+                role: authUser.role,
                 status: authUser.status,
-                permissions: token.permissions || authUser.permissions, // 維持 or マージ
+                permissions: token.permissions || authUser.permissions,
                 isTeacher: authUser.isTeacher,
                 grade: authUser.grade,
                 prefecture: authUser.prefecture,
@@ -159,77 +162,103 @@ export const authConfig: NextAuthConfig = {
                 refreshToken: authUser.refreshToken,
                 accessTokenExpires: expiresAt,
                 iat: Math.floor(Date.now() / 1000),
-                exp: expiresAt,
+                exp: expiresAt, // Use the same expiration as accessTokenExpires for simplicity
                 jti: crypto.randomUUID()
             };
-            console.debug("JWT Callback: Initial token population", { token: extendedToken });
+            console.debug("JWT Callback: Initial token population", { userId: extendedToken.id });
             return extendedToken;
         }
 
-        // アクセストークンの有効期限チェック
-        if (token.accessTokenExpires && Date.now() < token.accessTokenExpires * 1000) {
-            console.debug("JWT Callback: Access token is valid", { tokenId: token.jti });
+        // 2. トークンがまだ有効な場合 (リフレッシュ不要)
+        if (token.accessTokenExpires && Date.now() < (token.accessTokenExpires * 1000 - 60 * 1000)) {
+            // 有効期限の60秒前までは何もしない
+            console.debug("JWT Callback: Access token is still valid", { tokenId: token.jti });
             return token;
         }
 
-        // アクセストークンが無効、または期限切れの場合：リフレッシュ
-        console.info("JWT Callback: Access token expired or invalid, attempting refresh", { tokenId: token.jti });
+        // 3. トークンが無効または有効期限が近い場合 (リフレッシュ実行)
+        console.info("JWT Callback: Access token expired or nearing expiry, attempting refresh", { tokenId: token.jti });
         if (!token.refreshToken) {
             console.error("JWT Callback: No refresh token available, cannot refresh. Returning error.", { tokenId: token.jti });
             return { ...token, error: "RefreshAccessTokenError" };
         }
 
         try {
+            console.debug("JWT Callback: Sending request to refresh token endpoint...");
             const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/refresh-token`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
+                // リフレッシュトークンをボディで送信
                 body: JSON.stringify({ refresh_token: token.refreshToken }),
+                // Cookieはcredentials: 'include'で送られる想定 (fetchWithAuthの実装と合わせる)
+                 credentials: 'include',
             });
 
             const refreshedTokens = await response.json();
 
             if (!response.ok) {
                 console.error("JWT Callback: Failed to refresh token from API", { status: response.status, error: refreshedTokens });
+                // バックエンドからのエラー詳細を保持
                 const errorDetail = refreshedTokens?.detail || "Refresh token failed";
-                throw new Error(errorDetail);
+                // バックエンド起因のエラーであることを明確にするため、エラーメッセージを保持するのも良い
+                return { ...token, error: "RefreshAccessTokenError", errorDetail: errorDetail };
             }
+
+            // リフレッシュ成功
             const defaultExpireMinutesOnRefresh = process.env.ACCESS_TOKEN_EXPIRE_MINUTES ? parseInt(process.env.ACCESS_TOKEN_EXPIRE_MINUTES) : 15;
-            const newExpiresAt = Math.floor(Date.now() / 1000) + (refreshedTokens.expires_in || defaultExpireMinutesOnRefresh * 60);
+            // バックエンドからexpires_inが返ってくる想定、なければデフォルト値
+            const newExpiresInSeconds = refreshedTokens.expires_in || defaultExpireMinutesOnRefresh * 60;
+            const newExpiresAt = Math.floor(Date.now() / 1000) + newExpiresInSeconds;
+
             const refreshedTokenData: JWT = {
-                ...token,
+                ...token, // Keep existing properties like id, name, email, role etc.
                 accessToken: refreshedTokens.access_token,
+                // バックエンドが新しいリフレッシュトークンを返せば更新、そうでなければ既存のものを維持
                 refreshToken: refreshedTokens.refresh_token ?? token.refreshToken,
                 accessTokenExpires: newExpiresAt,
                 iat: Math.floor(Date.now() / 1000),
-                exp: newExpiresAt,
-                jti: crypto.randomUUID(),
-                error: undefined,
-                grade: token.grade, // 維持
-                prefecture: token.prefecture, // 維持
+                exp: newExpiresAt, // Update JWT expiration as well
+                jti: crypto.randomUUID(), // Generate a new JTI for the refreshed token
+                error: undefined, // Clear any previous error
+                errorDetail: undefined, // Clear previous error detail
             };
 
             console.info("JWT Callback: Token refreshed successfully", { newTokenId: refreshedTokenData.jti });
             return refreshedTokenData;
+
         } catch (error: any) {
-            console.error("JWT Callback: Error refreshing access token", {
+            console.error("JWT Callback: Catch block error during refresh token fetch", {
                 errorMessage: error.message,
                 errorDetails: error,
                 refreshTokenUsed: token.refreshToken?.substring(0, 10) + '...'
             });
+            // fetch 自体の失敗などの場合
             return {
                 ...token,
                 error: "RefreshAccessTokenError",
+                errorDetail: error.message || "Network error or failed to parse response",
             };
         }
+
+        // 4. 上記のいずれにも該当しない場合 (念のため)
+        console.warn("JWT Callback: Reached end of callback without returning, returning original token", { tokenId: token.jti });
+        return token;
     },
     async session({ session, token }: { session: Session; token: JWT }): Promise<Session> {
       console.debug("Session Callback: Start", { userId: token?.id, tokenJti: token?.jti });
-      // エラーがあればセッションにエラー情報をセット
+
+      // エラーがあればセッションにエラー情報をセット (エラー詳細も)
       if (token.error) {
         session.error = token.error;
-        console.warn("Session Callback: Token error detected, returning session with error", { error: token.error, sessionId: session?.user?.id });
-        // エラー時はユーザー情報をクリアするなど検討
-        // session.user = { id: '', name: null, email: null }; // 例
+        session.errorDetail = token.errorDetail; // Pass error detail to session
+        console.warn("Session Callback: Token error detected, returning session with error", {
+            error: token.error,
+            errorDetail: token.errorDetail,
+            sessionId: session?.user?.id,
+            tokenJti: token?.jti
+        });
+        // 必要に応じてユーザー情報をクリア
+        // session.user = { ...session.user, name: null, email: null }; // Example
         return session;
       }
 
@@ -270,14 +299,15 @@ export const authConfig: NextAuthConfig = {
         prefecture: token.prefecture,
       };
       session.accessToken = token.accessToken ?? ''; // ★ token.accessToken が undefined の場合は空文字
-      // session.expires は token.exp があれば設定
-      if (token.exp) {
-          session.expires = new Date(token.exp * 1000).toISOString();
+      // session.expires は token.accessTokenExpires を使うのがより正確
+      if (token.accessTokenExpires) {
+          session.expires = new Date(token.accessTokenExpires * 1000).toISOString();
       } else {
-          // token.exp がない場合、デフォルトの有効期限を設定するか、エラー処理
-          console.warn("Session Callback: token.exp not found, session.expires may be inaccurate.");
-          // session.expires = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 例: 15分後
+          console.warn("Session Callback: token.accessTokenExpires not found, session.expires may be inaccurate.");
       }
+      // Clear potential error fields if token is valid
+      session.error = undefined;
+      session.errorDetail = undefined;
 
       console.debug("Session Callback: Session data populated", { userId: session.user.id, role: session.user.role });
 
