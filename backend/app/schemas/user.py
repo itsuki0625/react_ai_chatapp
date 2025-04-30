@@ -22,7 +22,7 @@ class UserBase(BaseModel):
     email: EmailStr
     # name: str # computed_field で生成するのでコメントアウトまたは削除
     # grade, class_number, student_number はOptionalのまま残すか、必要なら削除
-    grade: Optional[int] = None
+    # grade: Optional[int] = None # ★ 下の UserUpdate で定義するので削除
     class_number: Optional[str] = None
     student_number: Optional[str] = None
     profile_image_url: Optional[str] = None
@@ -35,12 +35,20 @@ class UserCreate(UserBase):
     status: UserStatus = UserStatus.PENDING # 作成時のデフォルトステータス
     # role: UserRole = UserRole.STUDENT # 作成時にロールを指定できるようにする (デフォルトはSTUDENT)
     role: str = "生徒" # 型を str に変更し、デフォルト値を文字列で設定
+    # ★ UserCreate 時にも grade, prefecture を受け付ける場合はここに追加
+    # grade: Optional[str] = None
+    # prefecture: Optional[str] = None
 
     @validator('password')
     def password_strength(cls, v):
         if len(v) < 8:
             raise ValueError('パスワードは8文字以上である必要があります')
-        # 他の強度チェックも追加可能
+        if not any(c.islower() for c in v):
+            raise ValueError('パスワードには小文字を含める必要があります')
+        if not any(c.isupper() for c in v):
+            raise ValueError('パスワードには大文字を含める必要があります')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('パスワードには数字を含める必要があります')
         return v
 
 class UserUpdate(BaseModel):
@@ -48,7 +56,8 @@ class UserUpdate(BaseModel):
     # name ではなく full_name を更新対象に
     full_name: Optional[str] = None # full_name を追加
     password: Optional[str] = None # パスワード変更用
-    grade: Optional[int] = None
+    grade: Optional[str] = None # Integer から String に変更
+    prefecture: Optional[str] = None # prefecture を追加
     class_number: Optional[str] = None
     student_number: Optional[str] = None
     profile_image_url: Optional[str] = None
@@ -85,6 +94,8 @@ class UserResponse(TimestampMixin):
     user_roles: List[Any] = []
     status: UserStatus # status を直接含める
     login_info: Optional[Any] = None # 型は UserLoginInfo だが、循環参照を避けるため Any も可
+    grade: Optional[str] = None # grade を追加 (モデルに合わせて Optional[str])
+    prefecture: Optional[str] = None # prefecture を追加 (モデルに合わせて Optional[str])
     # --- End source fields ---
 
     # --- computed fields (these will be in the final JSON) ---
@@ -225,6 +236,9 @@ class UserRoleAssignment(BaseModel):
 class UserSettingsResponse(BaseModel):
     email: EmailStr
     full_name: str
+    # ★ 必要であればここにも grade, prefecture を追加する
+    # grade: Optional[str] = None
+    # prefecture: Optional[str] = None
     email_notifications: bool = True
     browser_notifications: bool = False
     theme: str = "light"

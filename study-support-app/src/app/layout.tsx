@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import { Providers } from './providers'
 
 export const metadata: Metadata = {
-  title: 'Study Support App',
+  title: 'SmartAo',
   description: 'AIを活用した学習支援アプリケーション',
 }
 

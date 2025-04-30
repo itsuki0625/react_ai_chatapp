@@ -1,6 +1,6 @@
-import axios, { AxiosError, } from 'axios';
+import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import { CampaignCode } from '@/types/subscription';
-import { getApiBaseUrl, getAxiosConfig } from './api';
+import { getApiBaseUrl } from './api';
 import { AdminUser } from '@/types/user';
 
 // APIのベースURLを取得
@@ -83,7 +83,6 @@ export const getUsers = async (params?: {
   role?: string;
   status?: string;
 }): Promise<AdminUserListResponse> => {
-  const config = await getAxiosConfig(true);
   const query = new URLSearchParams();
   if (params) {
     Object.entries(params).forEach(([key, val]) => {
@@ -91,26 +90,59 @@ export const getUsers = async (params?: {
     });
   }
   const url = `${API_URL}/api/v1/admin/users?${query.toString()}`;
-  const response = await axios.get<AdminUserListResponse>(url, config);
-  return response.data;
+  try {
+    const response = await fetchWithAuth(url);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('getUsers error:', error);
+    throw error;
+  }
 };
 
 /**
  * 新しいユーザーを作成します
  */
 export const createUser = async (userData: UserCreatePayload): Promise<UserDetailsResponse> => {
-  const config = await getAxiosConfig(true);
-  const response = await axios.post<UserDetailsResponse>(`${API_URL}/api/v1/admin/users`, userData, config);
-  return response.data;
+  const url = `${API_URL}/api/v1/admin/users`;
+  try {
+    const response = await fetchWithAuth(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(userData),
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('createUser error:', error);
+    throw error;
+  }
 };
 
 /**
  * 特定のユーザーの詳細を取得します
  */
 export const getUserDetails = async (userId: string): Promise<UserDetailsResponse> => {
-  const config = await getAxiosConfig(true);
-  const response = await axios.get<UserDetailsResponse>(`${API_URL}/api/v1/admin/users/${userId}`, config);
-  return response.data;
+  const url = `${API_URL}/api/v1/admin/users/${userId}`;
+  try {
+    const response = await fetchWithAuth(url);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('getUserDetails error:', error);
+    throw error;
+  }
 };
 
 // エラー詳細の型定義
@@ -129,64 +161,43 @@ type BackendErrorDetail = ValidationErrorDetail[] | string | Record<string, unkn
  * @returns 更新後のユーザー詳細情報
  */
 export const updateUser = async (userId: string, userData: UserUpdatePayload): Promise<UserDetailsResponse> => {
-  console.log(`Updating user ${userId} at: ${API_URL}/api/v1/admin/users/${userId} with data:`, userData);
+  console.log(`Updating user ${userId} with data:`, userData);
+  const url = `${API_URL}/api/v1/admin/users/${userId}`;
   try {
-    const config = await getAxiosConfig(true);
-    const response = await axios.put<UserDetailsResponse>(`${API_URL}/api/v1/admin/users/${userId}`, userData, config);
-    console.log('Updated user:', response.data);
-    return response.data; // 成功時はデータを返す
-  } catch (error) {
-    console.error('Error during user update request:', error); // エラー全体を出力
-
-    if (axios.isAxiosError(error)) {
-      const axiosError = error as AxiosError<{ detail?: BackendErrorDetail }>;
-      if (axiosError.response) {
-        // サーバーからのレスポンスがある場合 (4xx, 5xx エラー)
-        console.error('Failed to update user - Status:', axiosError.response.status);
-        console.error('Failed to update user - Raw Response Body:', axiosError.response.data); // 生のレスポンスボディを出力
-
-        // --- 修正: detail配列の内容を展開して表示 ---
-        const detail = axiosError.response.data?.detail;
-        let errorMessage = `ユーザー更新に失敗しました (ステータス: ${axiosError.response.status})`;
+    const response = await fetchWithAuth(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(userData),
+    });
+    
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        let errorMessage = `ユーザー更新に失敗しました (ステータス: ${response.status})`;
+        const detail = errorData?.detail;
         if (detail) {
-          if (Array.isArray(detail)) {
-            // 配列の場合は、各エラーの詳細を展開して表示
-            const errorDetails = detail.map(err => {
-              const loc = err.loc ? err.loc.join(' > ') : 'N/A';
-              const msg = err.msg || 'Unknown error';
-              const type = err.type || 'N/A';
-              return `Field: ${loc}, Message: ${msg}, Type: ${type}`;
-            }).join('\n');
-            console.error('Validation Errors:\n', errorDetails);
-            errorMessage = `入力内容にエラーがあります:\n${errorDetails}`; // より詳細なエラーメッセージ
-          } else if (typeof detail === 'string') {
-            // 文字列の場合はそのまま表示
-            console.error('Error Detail:', detail);
-            errorMessage = detail;
-          } else {
-             // その他の形式の場合 (オブジェクトなど)
-             console.error('Error Detail (Object):', detail);
-             errorMessage = JSON.stringify(detail); // JSON文字列として表示試行
-          }
+            if (Array.isArray(detail)) {
+                const errorDetails = detail.map((err: any) => {
+                    const loc = err.loc ? err.loc.join(' > ') : 'N/A';
+                    const msg = err.msg || 'Unknown error';
+                    return `Field: ${loc}, Message: ${msg}`;
+                }).join('\n');
+                errorMessage = `入力内容にエラーがあります:\n${errorDetails}`;
+            } else if (typeof detail === 'string') {
+                errorMessage = detail;
+            }
         }
-        // ------------------------------------------
+        console.error('Update User Error:', errorMessage, errorData);
         throw new Error(errorMessage);
-
-      } else if (axiosError.request) {
-        // リクエストは送信されたが、レスポンスがない場合
-        console.error('Failed to update user - No response received:', axiosError.request);
-        throw new Error('サーバーから応答がありません。');
-      } else {
-        // リクエスト設定時のエラーなど
-        console.error('Failed to update user - Request Setup Error:', axiosError.message);
-        throw new Error(`リクエストエラー: ${axiosError.message}`);
-      }
-    } else {
-      // Axios 以外のエラー
-      console.error('Failed to update user - Non-Axios Error:', error);
-      throw new Error('予期せぬエラーが発生しました。');
     }
-    // throw error; // 元のエラーをそのまま投げてもよい
+    
+    const updatedUser = await response.json();
+    console.log('Updated user:', updatedUser);
+    return updatedUser;
+  } catch (error) {
+    console.error('updateUser error (caught):', error);
+    throw error;
   }
 };
 
@@ -196,8 +207,19 @@ export const updateUser = async (userId: string, userData: UserUpdatePayload): P
  * @returns Promise<void>
  */
 export const deleteUser = async (userId: string): Promise<void> => {
-  const config = await getAxiosConfig(true);
-  await axios.delete(`${API_URL}/api/v1/admin/users/${userId}`, config);
+  const url = `${API_URL}/api/v1/admin/users/${userId}`;
+  try {
+    const response = await fetchWithAuth(url, {
+      method: 'DELETE',
+    });
+    if (!response.ok && response.status !== 204) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    }
+  } catch (error) {
+      console.error('deleteUser error:', error);
+      throw error;
+  }
 };
 
 // StripeAPIエラーレスポンスの型
@@ -214,44 +236,25 @@ export const adminService = {
   // Stripe商品一覧取得
   getProducts: async (): Promise<StripeProduct[]> => {
     try {
-      // 認証情報付きのaxios設定を取得
-      const config = await getAxiosConfig(true);
-      console.log('APIリクエスト用の設定:', config);
+      const response = await fetchWithAuth(`${API_URL}/api/v1/admin/products`);
       
-      const response = await axios.get<StripeProduct[]>(`${API_URL}/api/v1/admin/products`, config);
-      
-      // データが存在し、配列であるか確認
-      if (response.data && Array.isArray(response.data)) {
-        return response.data;
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          return data;
+        } else {
+          console.error('商品データが配列形式ではありません:', data);
+          return [];
+        }
       } else {
-        console.error('商品データが配列形式ではありません:', response.data);
-        // 配列でない場合は空配列を返す
-        return [];
+        console.error('商品の取得に失敗しました');
+        throw new Error('商品の取得に失敗しました');
       }
     } catch (error) {
-      // Stripeエラーメッセージを確認して詳細なエラーメッセージを作成
       let errorMessage = '商品の取得に失敗しました';
       
-      if (axios.isAxiosError(error)) {
-        // サーバーからのレスポンスがある場合
-        const axiosError = error as AxiosError<StripeErrorResponse>;
-        if (axiosError.response) {
-          const status = axiosError.response.status;
-          const responseData = axiosError.response.data;
-          
-          if (status === 401) {
-            errorMessage = '認証エラー: APIへのアクセス権限がありません';
-          } else if (status === 400) {
-            errorMessage = 'リクエストエラー: ' + (responseData.detail || '不正なリクエストです');
-          } else if (status === 500) {
-            errorMessage = 'サーバーエラー: ' + (responseData.detail || 'サーバー内部エラーが発生しました');
-          }
-          
-          // Stripeエラーの詳細を確認
-          if (responseData && responseData.error && responseData.error.message) {
-            errorMessage += ` (Stripe: ${responseData.error.message})`;
-          }
-        }
+      if (error instanceof Error) {
+        errorMessage = error.message;
       }
       
       console.error(errorMessage, error);
@@ -265,64 +268,56 @@ export const adminService = {
     description?: string;
     active?: boolean;
   }): Promise<StripeProduct> => {
-    const config = await getAxiosConfig(true);
-    const response = await axios.post<StripeProduct>(`${API_URL}/api/v1/admin/products`, productData, config);
-    return response.data;
+    const response = await fetchWithAuth(`${API_URL}/api/v1/admin/products`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(productData),
+    });
+    if (response.ok) {
+      return await response.json();
+    } else {
+      console.error('商品の作成に失敗しました');
+      throw new Error('商品の作成に失敗しました');
+    }
   },
 
   // Stripe商品削除
   deleteProduct: async (productId: string): Promise<void> => {
-    const config = await getAxiosConfig(true);
-    await axios.delete(`${API_URL}/api/v1/admin/products/${productId}`, config);
+    const response = await fetchWithAuth(`${API_URL}/api/v1/admin/products/${productId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      console.error('商品の削除に失敗しました');
+      throw new Error('商品の削除に失敗しました');
+    }
   },
 
   // Stripe価格一覧取得
   getPrices: async (): Promise<StripePrice[]> => {
     try {
-      const config = await getAxiosConfig(true);
-      const response = await axios.get<StripePrice[] | { data: StripePrice[] }>(`${API_URL}/api/v1/admin/prices`, config);
+      const response = await fetchWithAuth(`${API_URL}/api/v1/admin/prices`);
       
-      // データ構造を確認
-      if (response.data) {
-        // レスポンスが { data: [...] } 形式の場合
-        if (typeof response.data === 'object' && 'data' in response.data && Array.isArray(response.data.data)) {
-          return response.data.data;
-        }
-        // レスポンスが直接配列の場合
-        else if (Array.isArray(response.data)) {
-          return response.data;
+      if (response.ok) {
+        const data = await response.json();
+        if (typeof data === 'object' && 'data' in data && Array.isArray(data.data)) {
+          return data.data;
+        } else if (Array.isArray(data)) {
+          return data;
         } else {
-          console.error('価格データが予期せぬ形式です:', response.data);
+          console.error('価格データが予期せぬ形式です:', data);
           return [];
         }
       } else {
-        console.error('価格データが存在しません');
-        return [];
+        console.error('価格の取得に失敗しました');
+        throw new Error('価格の取得に失敗しました');
       }
     } catch (error) {
-      // Stripeエラーメッセージを確認して詳細なエラーメッセージを作成
       let errorMessage = '価格の取得に失敗しました';
       
-      if (axios.isAxiosError(error)) {
-        // サーバーからのレスポンスがある場合
-        const axiosError = error as AxiosError<StripeErrorResponse>;
-        if (axiosError.response) {
-          const status = axiosError.response.status;
-          const responseData = axiosError.response.data;
-          
-          if (status === 401) {
-            errorMessage = '認証エラー: APIへのアクセス権限がありません';
-          } else if (status === 400) {
-            errorMessage = 'リクエストエラー: ' + (responseData.detail || '不正なリクエストです');
-          } else if (status === 500) {
-            errorMessage = 'サーバーエラー: ' + (responseData.detail || 'サーバー内部エラーが発生しました');
-          }
-          
-          // Stripeエラーの詳細を確認
-          if (responseData && responseData.error && responseData.error.message) {
-            errorMessage += ` (Stripe: ${responseData.error.message})`;
-          }
-        }
+      if (error instanceof Error) {
+        errorMessage = error.message;
       }
       
       console.error(errorMessage, error);
@@ -340,15 +335,30 @@ export const adminService = {
       interval_count: number;
     };
   }): Promise<StripePrice> => {
-    const config = await getAxiosConfig(true);
-    const response = await axios.post<StripePrice>(`${API_URL}/api/v1/admin/prices`, priceData, config);
-    return response.data;
+    const response = await fetchWithAuth(`${API_URL}/api/v1/admin/prices`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(priceData),
+    });
+    if (response.ok) {
+      return await response.json();
+    } else {
+      console.error('価格の作成に失敗しました');
+      throw new Error('価格の作成に失敗しました');
+    }
   },
 
   // Stripe価格削除
   deletePrice: async (priceId: string): Promise<void> => {
-    const config = await getAxiosConfig(true);
-    await axios.delete(`${API_URL}/api/v1/admin/prices/${priceId}`, config);
+    const response = await fetchWithAuth(`${API_URL}/api/v1/admin/prices/${priceId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      console.error('価格の削除に失敗しました');
+      throw new Error('価格の削除に失敗しました');
+    }
   },
 
   // キャンペーンコード一覧取得
@@ -356,11 +366,8 @@ export const adminService = {
     const params: Record<string, string | number> = { skip, limit };
     if (ownerId) params.owner_id = ownerId;
     
-    const config = await getAxiosConfig(true);
-    config.params = params;
-    
-    const response = await axios.get<CampaignCode[]>(`${API_URL}/api/v1/admin/campaign-codes`, config);
-    return response.data;
+    const response = await fetchWithAuth(`${API_URL}/api/v1/admin/campaign-codes?${new URLSearchParams(params).toString()}`);
+    return response.ok ? await response.json() : [];
   },
 
   // キャンペーンコード作成
@@ -375,14 +382,29 @@ export const adminService = {
     valid_until?: string;
     is_active?: boolean;
   }): Promise<CampaignCode> => {
-    const config = await getAxiosConfig(true);
-    const response = await axios.post<CampaignCode>(`${API_URL}/api/v1/admin/campaign-codes`, campaignCode, config);
-    return response.data;
+    const response = await fetchWithAuth(`${API_URL}/api/v1/admin/campaign-codes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(campaignCode),
+    });
+    if (response.ok) {
+      return await response.json();
+    } else {
+      console.error('キャンペーンコードの作成に失敗しました');
+      throw new Error('キャンペーンコードの作成に失敗しました');
+    }
   },
 
   // キャンペーンコード削除
   deleteCampaignCode: async (campaignCodeId: string): Promise<void> => {
-    const config = await getAxiosConfig(true);
-    await axios.delete(`${API_URL}/api/v1/admin/campaign-codes/${campaignCodeId}`, config);
+    const response = await fetchWithAuth(`${API_URL}/api/v1/admin/campaign-codes/${campaignCodeId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      console.error('キャンペーンコードの削除に失敗しました');
+      throw new Error('キャンペーンコードの削除に失敗しました');
+    }
   }
 }; 

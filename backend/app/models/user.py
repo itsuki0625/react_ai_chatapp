@@ -1,9 +1,10 @@
 from sqlalchemy import Column, String, UUID, Boolean, DateTime, Integer, ForeignKey, Enum as SQLAlchemyEnum, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from datetime import datetime
 import uuid
 from .base import Base, TimestampMixin
 from .enums import AccountLockReason, TokenBlacklistReason, RoleType, UserStatus
+from typing import Optional
 
 class Role(Base, TimestampMixin):
     __tablename__ = 'roles'
@@ -59,7 +60,7 @@ class User(Base, TimestampMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    full_name = Column(String, nullable=False)
+    full_name: Mapped[str] = mapped_column(String(100))
     is_active = Column(Boolean, default=True)  # Active status for user
     school_id = Column(UUID(as_uuid=True), ForeignKey('schools.id'))
     status = Column(SQLAlchemyEnum(UserStatus), nullable=False, default=UserStatus.PENDING)
@@ -68,6 +69,11 @@ class User(Base, TimestampMixin):
     is_verified = Column(Boolean, default=False)  # メール検証が完了しているか
     is_2fa_enabled = Column(Boolean, default=False)  # 二要素認証が有効か
     totp_secret = Column(String, nullable=True)  # TOTPシークレット
+
+    # Profile information
+    grade: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    prefecture: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    profile_image_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     # Relationships
     profile = relationship("UserProfile", back_populates="user", uselist=False)

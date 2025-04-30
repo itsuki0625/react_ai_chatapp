@@ -9,7 +9,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = React.useState(() => new QueryClient());
 
   return (
-    <SessionProvider>
+    <SessionProvider refetchOnWindowFocus={true}>
       <QueryClientProvider client={queryClient}>
         <Toaster position="top-center" />
         {children}

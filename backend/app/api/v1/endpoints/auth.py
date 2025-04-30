@@ -147,7 +147,9 @@ async def login(
             "email": user.email,
             "full_name": user.full_name,
             "role": primary_user_role.role.name, # ロール名を返す
-            "status": user.status.value if user.status else None # status を追加 (Enum の場合は .value)
+            "status": user.status.value if user.status else None, # status を追加 (Enum の場合は .value)
+            "grade": user.grade, # ★ grade を追加
+            "prefecture": user.prefecture # ★ prefecture を追加
         }
 
         return LoginResponse(
@@ -439,14 +441,25 @@ async def update_user_settings(
         if "full_name" in settings_data:
             user.full_name = settings_data["full_name"]
         
+        # ★ grade の更新を追加 ★
+        if "grade" in settings_data:
+            user.grade = settings_data["grade"]
+        
+        # ★ prefecture の更新を追加 ★
+        if "prefecture" in settings_data:
+            user.prefecture = settings_data["prefecture"]
+        
         # TODO: 他の設定（通知設定など）は別テーブルで管理することを検討
         
         await db.commit()
         
+        # レスポンスに更新後の情報を反映（任意）
         return {
             "message": "設定を更新しました",
             "email": user.email,
-            "full_name": user.full_name
+            "full_name": user.full_name,
+            "grade": user.grade, # レスポンスに追加
+            "prefecture": user.prefecture # レスポンスに追加
         }
     except Exception as e:
         db.rollback()

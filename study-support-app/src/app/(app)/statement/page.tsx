@@ -1,8 +1,10 @@
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { signOut } from 'next-auth/react';
 import { PersonalStatementResponse } from '@/types/personal_statement';
 import { getStatements, deleteStatement } from '@/services/statementService';
 import { Button } from '@/components/ui/button';
@@ -11,16 +13,36 @@ import { Badge } from '@/components/ui/badge';
 import { PlusCircle, Edit, Trash2, FileText } from 'lucide-react';
 import { useAuthHelpers } from '@/lib/authUtils';
 import { formatDate } from '@/lib/utils';
+import { toast } from 'sonner';
 
 const StatementListPage: React.FC = () => {
     const queryClient = useQueryClient();
     const { hasPermission, isLoading: isAuthLoading } = useAuthHelpers();
+    const router = useRouter();
 
-    const { data: statements = [], isLoading: isLoadingStatements, error } = useQuery<PersonalStatementResponse[], Error>({ 
-        queryKey: ['statements'], 
-        queryFn: getStatements, 
+    const { data: statements, isLoading: isLoadingStatements, error } = useQuery<PersonalStatementResponse[], Error>({
+        queryKey: ['statements'],
+        queryFn: getStatements,
         enabled: !isAuthLoading && hasPermission('statement_manage_own'),
+        retry: false,
     });
+
+    useEffect(() => {
+        const handleAuthError = async () => {
+            toast.error('認証エラーが発生しました。ログインページに遷移します。');
+            await signOut({ redirect: false });
+            router.push('/login?status=logged_out');
+        };
+
+        if (error) {
+            console.error("Error fetching statements:", error);
+            if (error.message === 'Unauthorized (401)' || error.message === 'Authentication required.') {
+                handleAuthError();
+            } else {
+                toast.error(`データの取得にエラーが発生しました: ${error.message}`);
+            }
+        }
+    }, [error, router]);
 
     const deleteMutation = useMutation<void, Error, string>({ 
         mutationFn: deleteStatement, 
@@ -47,9 +69,11 @@ const StatementListPage: React.FC = () => {
         return <div className="text-center p-4 text-red-600">このページにアクセスする権限がありません。</div>;
     }
 
-    if (error) {
-        return <div className="text-center p-4 text-red-600">エラーが発生しました: {error.message}</div>;
+    if (error && error.message !== 'Unauthorized (401)' && error.message !== 'Authentication required.') {
+        return <div className="text-center p-4 text-red-600">データの取得にエラーが発生しました。</div>;
     }
+
+    const validStatements = Array.isArray(statements) ? statements : [];
 
     return (
         <div className="container mx-auto p-4 md:p-6 lg:p-8">
@@ -64,7 +88,7 @@ const StatementListPage: React.FC = () => {
                  )}
             </div>
 
-            {statements.length === 0 ? (
+            {validStatements.length === 0 ? (
                 <Card className="text-center py-10">
                     <CardHeader>
                         <FileText className="mx-auto h-12 w-12 text-gray-400" />
@@ -81,7 +105,7 @@ const StatementListPage: React.FC = () => {
                 </Card>
             ) : (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {statements.map((statement) => (
+                    {validStatements.map((statement) => (
                         <Card key={statement.id} className="flex flex-col">
                             <CardHeader>
                                 <CardTitle className="truncate">{statement.university_name || '大学未定'}</CardTitle>
