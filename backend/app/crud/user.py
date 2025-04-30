@@ -127,7 +127,7 @@ async def create_user(db: AsyncSession, *, user_in: UserCreate) -> User:
         db.add(email_verification)
         db.add(login_info)
         await db.commit()
-        await db.refresh(db_user, attribute_names=['user_roles', 'user_roles.role'])
+        await db.refresh(db_user, attribute_names=['user_roles'])
     except Exception as e:
         await db.rollback()
         logger.error(f"Error creating user and related records for {user_in.email}: {e}")
