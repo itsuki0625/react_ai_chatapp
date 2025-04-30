@@ -85,8 +85,9 @@ app.add_middleware(
         "http://host.docker.internal:3000",  # Docker -> ホスト接続
         "http://host.docker.internal:5050",  # Docker -> ホスト接続
         "https://yourdomain.com",  # 本番環境（必要に応じて変更）
-        # すべてのオリジンを許可 - 開発時のみ使用
-        "*"
+        "https://stg.smartao.jp", # ステージング環境フロントエンド
+        "https://api.smartao.jp", # 本番環境API
+        "https://smartao.jp", # 本番環境フロントエンド
     ],
     allow_credentials=True,  # 認証情報を許可
     allow_methods=["*"],  # すべてのHTTPメソッドを許可
