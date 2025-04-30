@@ -25,9 +25,6 @@ module "vpc" {
   enable_dns_hostnames = true
   manage_default_network_acl = false
 
-  # Re-adding the apparently correct parameter
-  enable_s3_endpoint = true
-
   tags = { Environment = var.environment }
 }
 
@@ -295,7 +292,7 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
 }
 
 # The following S3 Gateway VPC Endpoint block is removed as it's now managed by the VPC module
-/*
+# Restore the external definition
 # S3 Gateway VPC Endpoint
 resource "aws_vpc_endpoint" "s3_gateway" {
   vpc_id       = module.vpc.vpc_id
@@ -303,12 +300,11 @@ resource "aws_vpc_endpoint" "s3_gateway" {
   vpc_endpoint_type = "Gateway"
 
   # プライベートサブネットのルートテーブルに関連付ける
-  # 注: モジュールが private_route_table_ids を出力しているか確認
+  # Use the module's output for private route table IDs
   route_table_ids = module.vpc.private_route_table_ids
 
   tags = {
     Name        = "${var.environment}-s3-gateway-vpce"
     Environment = var.environment
   }
-}
-*/ 
+} 
