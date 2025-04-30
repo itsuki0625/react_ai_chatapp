@@ -10,54 +10,8 @@ import logging                   # ★ 追加
 from sqlalchemy import event  # DB接続/プールイベント用
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG) # ★ DEBUGログ有効化
+# logger.setLevel(logging.DEBUG) # ★ DEBUGログ有効化 (main.py で設定される想定)
 # logger.setLevel(logging.DEBUG) # 必要に応じてデバッグレベルを設定 (main.py等で設定推奨)
-
-# --- グローバル変数としてSSLコンテキストを保持 ---
-_global_ssl_context = None
-
-def get_ssl_context() -> ssl.SSLContext | None:
-    """SSLコンテキストを取得または初期化する"""
-    global _global_ssl_context
-    logger.debug("get_ssl_context called.") # ★ デバッグログ追加
-    # デバッグ: ENVIRONMENT と certs ディレクトリを確認
-    logger.debug(f"ENVIRONMENT in get_ssl_context: {settings.ENVIRONMENT}")
-    certs_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "certs"))
-    try:
-        logger.debug(f"Certificates directory listing: {os.listdir(certs_dir)}")
-    except Exception as e:
-        logger.error(f"Failed to list certs directory {certs_dir}: {e}")
-    if _global_ssl_context is None:
-        logger.info("SSL context is None, initializing from local cert.")
-        # 環境ごとに証明書ファイルを切り替え
-        cert_filename = f"rds-ca-{settings.ENVIRONMENT}-bundle.pem"
-        # プロジェクトルートの certs ディレクトリを参照
-        cert_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "..", "certs", cert_filename)
-        )
-        logger.debug(f"Computed cert_path: {cert_path}")
-        if os.path.exists(cert_path):
-            try:
-                logger.info(f"Creating SSL context using local CA cert: {cert_path}")
-                _global_ssl_context = ssl.create_default_context(cafile=cert_path)
-                logger.info("SSL context created successfully.")
-                # デバッグ: 読み込んだCAリストを確認
-                try:
-                    ca_list = _global_ssl_context.get_ca_certs()
-                    logger.debug(f"Loaded CA certs count: {len(ca_list)}")
-                    subjects = [cert.get('subject') for cert in ca_list]
-                    logger.debug(f"Loaded CA cert subjects: {subjects}")
-                except Exception as e:
-                    logger.error(f"Failed to get CA certs from SSLContext: {e}")
-            except ssl.SSLError as e:
-                logger.error(f"SSL Error creating SSL context from {cert_path}", exc_info=True)
-            except Exception:
-                logger.exception("Unexpected error during SSL context creation")
-        else:
-            logger.warning(f"Local CA cert not found at {cert_path}, SSL context cannot be created.")
-    else:
-        logger.debug("Returning existing SSL context.") # ★ デバッグログ追加
-    return _global_ssl_context
 
 # --- SQLAlchemyエンジンの作成 ---
 
@@ -74,20 +28,30 @@ logger.info(f"Async engine base URL object created: {url_obj}") # ★ INFOログ
 
 # 非同期エンジンを作成 (connect_argsでSSLContextを指定)
 logger.info("Determining SSL context for async engine...")
-# 常に SSL コンテキストを取得
-logger.info("Initializing SSL context...")
-db_ssl_context = get_ssl_context()
-logger.info(f"Result of get_ssl_context: {'SSLContext object' if db_ssl_context else 'None'}")
 
 async_engine_kwargs = {
     "echo": settings.ENVIRONMENT != "production",
 }
-logger.debug(f"db_ssl_context before engine kwargs: {db_ssl_context}")
-if db_ssl_context:
-    async_engine_kwargs["connect_args"] = {"ssl": db_ssl_context}
-    logger.info("SSL context obtained. Adding 'ssl' to async_engine connect_args.") # ★ INFOログ追加
+
+# 環境に応じてSSL設定を決定
+if settings.ENVIRONMENT in ("stg", "production"):
+    cert_filename = f"rds-ca-{settings.ENVIRONMENT}-bundle.pem"
+    # コンテナ内の絶対パスを指定
+    cert_path = f"/app/certs/{cert_filename}"
+    if os.path.exists(cert_path):
+        logger.info(f"Using SSL certificate for DB connection: {cert_path}")
+        async_engine_kwargs["connect_args"] = {
+            "ssl": {
+                "sslmode": "verify-full", # RDS推奨
+                "sslrootcert": cert_path
+            }
+        }
+    else:
+        logger.error(f"Required SSL certificate not found at {cert_path}. Cannot configure SSL for DB.")
+        # ここでエラーにするか、SSLなしで続行するかは要件による
+        # raise FileNotFoundError(f"Required SSL certificate not found: {cert_path}")
 else:
-    logger.warning("SSL context not available. Async engine will be created without specific SSL connect_args.") # ★ ログレベル変更
+    logger.info(f"Skipping SSL for DB connection in environment: {settings.ENVIRONMENT}")
 
 logger.debug(f"Final async_engine_kwargs: {async_engine_kwargs}")
 logger.info(f"Creating async engine with URL: {url_obj} and kwargs: {async_engine_kwargs}") # ★ INFOログ追加 (kwargs全体を出力)
