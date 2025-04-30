@@ -21,7 +21,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # アプリケーションのソースコードをコピー
-COPY certs/rds-ca-production-bundle.pem /app/certs/rds-ca-production-bundle.pem
 COPY . .
 
 ENV PYTHONPATH=/app

@@ -18,7 +18,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # アプリケーションコード・環境変数をコピー
-COPY certs/rds-ca-stg-bundle.pem /app/certs/rds-ca-stg-bundle.pem
 COPY . ./
 
 # アプリケーションパスを設定
