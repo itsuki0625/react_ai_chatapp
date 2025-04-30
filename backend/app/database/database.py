@@ -13,40 +13,6 @@ logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG) # ★ DEBUGログ有効化 (main.py で設定される想定)
 # logger.setLevel(logging.DEBUG) # 必要に応じてデバッグレベルを設定 (main.py等で設定推奨)
 
-# --- SSLContext を生成する関数 ---
-def get_ssl_context() -> ssl.SSLContext | None:
-    """環境に応じたSSLContextインスタンスを生成して返す"""
-    if settings.ENVIRONMENT in ("stg", "production"):
-        cert_filename = f"rds-ca-{settings.ENVIRONMENT}-bundle.pem"
-        # コンテナ内の絶対パス
-        cert_path = f"/app/certs/{cert_filename}"
-
-        if os.path.exists(cert_path):
-            try:
-                logger.info(f"Creating SSL context using CA file: {cert_path}")
-                ssl_ctx = ssl.create_default_context(cafile=cert_path)
-                ssl_ctx.verify_mode = ssl.CERT_REQUIRED  # サーバー証明書検証を強制
-                ssl_ctx.check_hostname = True         # ホスト名検証を有効化
-                logger.info("SSLContext created successfully with CERT_REQUIRED and check_hostname=True.")
-                # デバッグ: CAリスト確認
-                try:
-                    ca_list = ssl_ctx.get_ca_certs()
-                    logger.debug(f"Loaded CA certs count: {len(ca_list)}")
-                except Exception as e:
-                    logger.error(f"Failed to get CA certs from SSLContext: {e}")
-                return ssl_ctx
-            except ssl.SSLError as e:
-                logger.error(f"SSL Error creating SSL context from {cert_path}", exc_info=True)
-            except Exception:
-                logger.exception("Unexpected error during SSL context creation")
-                return None
-        else:
-            logger.error(f"Required CA certificate file not found at {cert_path}. Cannot create SSLContext.")
-            return None
-    else:
-        logger.info(f"Skipping SSLContext creation in environment: {settings.ENVIRONMENT}")
-        return None
-
 # --- SQLAlchemyエンジンの作成 ---
 
 logger.info("Configuring database engines...") # ★ INFOログ追加
@@ -64,19 +30,20 @@ logger.info(f"Async engine base URL object created: {url_obj}") # ★ INFOログ
 logger.info("Determining SSL context for async engine...")
 
 # SSLContextを取得
-db_ssl_context = get_ssl_context()
-logger.info(f"Result of get_ssl_context: {'SSLContext object' if db_ssl_context else 'None'}")
+# db_ssl_context = get_ssl_context() # SSL検証無効化のためコメントアウト
+# logger.info(f"Result of get_ssl_context: {'SSLContext object' if db_ssl_context else 'None'}")
 
 async_engine_kwargs = {
     "echo": settings.ENVIRONMENT != "production",
 }
 
 # SSLContext があれば connect_args に設定
-if db_ssl_context:
-    async_engine_kwargs["connect_args"] = {"ssl": db_ssl_context}
-    logger.info("SSLContext obtained. Adding it to async_engine connect_args.")
-else:
-    logger.info(f"SSLContext not available or not required for environment {settings.ENVIRONMENT}. Creating engine without explicit SSL context.")
+# if db_ssl_context: # SSL検証無効化のためコメントアウト
+#     async_engine_kwargs["connect_args"] = {"ssl": db_ssl_context}
+#     logger.info("SSLContext obtained. Adding it to async_engine connect_args.")
+# else:
+#     logger.info(f"SSLContext not available or not required for environment {settings.ENVIRONMENT}. Creating engine without explicit SSL context.")
+logger.warning("Skipping SSL context/verification for DB connection based on current configuration.")
 
 logger.debug(f"Final async_engine_kwargs: {async_engine_kwargs}")
 logger.info(f"Creating async engine with URL: {url_obj} and kwargs: {async_engine_kwargs}") # ★ INFOログ追加 (kwargs全体を出力)

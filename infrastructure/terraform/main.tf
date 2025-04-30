@@ -198,38 +198,4 @@ resource "random_id" "secret_suffix" {
 resource "aws_secretsmanager_secret" "backend_env" {
   name                         = "${var.environment}/api/env-${random_id.secret_suffix.hex}"
   recovery_window_in_days      = 0
-}
-
-# RDS CA 証明書バンドルのダウンロード URL を取得
-data "http" "rds_ca_bundle" {
-  url = "https://truststore.pki.rds.amazonaws.com/rds-combined-ca-bundle.pem" # 公式の最新結合バンドルURL
-}
-
-# ★ 追加: CA証明書保存用のS3バケット
-# (既存バケットを使う場合は、このリソースは不要で、下の aws_s3_object の bucket を既存バケット名にする)
-resource "aws_s3_bucket" "ca_certs" {
-  bucket = "${var.environment}-rds-ca-certs-${data.aws_caller_identity.current.account_id}" # グローバルに一意な名前
-  # 必要に応じてバージョニングや暗号化などを設定
-  tags = {
-    Environment = var.environment
-    Name        = "${var.environment}-rds-ca-certs"
-  }
-}
-
-# ★ 変更: ダウンロードした証明書バンドルをS3オブジェクトとして保存
-resource "aws_s3_object" "rds_ca_bundle_pem" {
-  bucket  = aws_s3_bucket.ca_certs.id # ★ 作成したバケットID (または既存バケット名)
-  key     = "certs/rds-ca-${var.environment}-bundle.pem" # S3内のオブジェクトキー
-  content = data.http.rds_ca_bundle.response_body
-  # content_type は text/plain が適切か？ pemファイルなのでそれでも良いか。
-  content_type = "application/x-pem-file" # または text/plain
-
-  # RDSインスタンスの作成後に実行されるようにする
-  depends_on = [aws_db_instance.rds, aws_s3_bucket.ca_certs]
-}
-
-# ★ デバッグ用: ダウンロードした内容を出力
-output "debug_downloaded_ca_bundle_content" {
-  value     = data.http.rds_ca_bundle.response_body
-  sensitive = true # 中身が証明書データの可能性があるので sensitive にする
 } 
