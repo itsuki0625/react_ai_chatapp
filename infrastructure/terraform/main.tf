@@ -25,11 +25,6 @@ module "vpc" {
   enable_dns_hostnames = true
   manage_default_network_acl = false
 
-  # Add this block to configure gateway endpoints within the module
-  gateway_endpoints = {
-    s3 = true
-  }
-
   tags = { Environment = var.environment }
 }
 
@@ -296,8 +291,24 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
   }
 }
 
+# CloudWatch Logs VPC Endpoint
+resource "aws_vpc_endpoint" "logs" {
+  vpc_id            = module.vpc.vpc_id
+  service_name      = "com.amazonaws.${var.aws_region}.logs"
+  vpc_endpoint_type = "Interface"
+
+  subnet_ids         = module.vpc.private_subnets # プライベートサブネットを指定
+  security_group_ids = [aws_security_group.vpc_endpoint.id] # 既存のSGを再利用
+  private_dns_enabled = true
+
+  tags = {
+    Name        = "${var.environment}-logs-vpce"
+    Environment = var.environment
+  }
+}
+
 # The following S3 Gateway VPC Endpoint block is removed as it's now managed by the VPC module
-/*
+# Restore the external definition
 # S3 Gateway VPC Endpoint
 resource "aws_vpc_endpoint" "s3_gateway" {
   vpc_id       = module.vpc.vpc_id
@@ -305,12 +316,11 @@ resource "aws_vpc_endpoint" "s3_gateway" {
   vpc_endpoint_type = "Gateway"
 
   # プライベートサブネットのルートテーブルに関連付ける
-  # 注: モジュールが private_route_table_ids を出力しているか確認
+  # Use the module's output for private route table IDs
   route_table_ids = module.vpc.private_route_table_ids
 
   tags = {
     Name        = "${var.environment}-s3-gateway-vpce"
     Environment = var.environment
   }
-}
-*/ 
+} 
