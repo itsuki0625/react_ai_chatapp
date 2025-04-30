@@ -5,55 +5,11 @@ from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 from sqlalchemy.engine import make_url
 import ssl
-import boto3                     # ★ 追加
-import os                        # ★ 追加
+import os                        # パス操作用に復活
 import logging                   # ★ 追加
-from botocore.exceptions import NoCredentialsError, ClientError # ★ 追加
 
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG) # 必要に応じてデバッグレベルを設定 (main.py等で設定推奨)
-
-# --- S3からの証明書ダウンロード関数 ---
-def download_ca_cert_from_s3() -> str | None:
-    """S3からCA証明書をダウンロードし、ローカル一時ファイルのパスを返す"""
-    # 環境変数からアカウントIDを取得 (ECSタスク定義で設定が必要)
-    aws_account_id = os.getenv("AWS_ACCOUNT_ID")
-    if not aws_account_id:
-        logger.error("AWS_ACCOUNT_ID environment variable is not set.")
-        return None
-    logger.debug(f"Using AWS_ACCOUNT_ID: {aws_account_id}") # ★ デバッグログ追加
-
-    s3_bucket_name = f"{settings.ENVIRONMENT}-rds-ca-certs-{aws_account_id}"
-    s3_object_key = f"certs/rds-ca-{settings.ENVIRONMENT}-bundle.pem"
-    local_cert_path = "/tmp/rds-ca-bundle.pem"
-
-    logger.info(f"Attempting to download CA cert from s3://{s3_bucket_name}/{s3_object_key} to {local_cert_path}")
-
-    if os.path.exists(local_cert_path):
-        logger.info(f"CA cert already exists locally at {local_cert_path}, reusing.")
-        return local_cert_path
-
-    try:
-        s3 = boto3.client('s3')
-        logger.debug("S3 client created.") # ★ デバッグログ追加
-        s3.download_file(s3_bucket_name, s3_object_key, local_cert_path)
-        logger.info(f"Successfully downloaded CA cert to {local_cert_path}")
-        return local_cert_path
-    except NoCredentialsError:
-        logger.error("AWS credentials not found...", exc_info=True) # ★ exc_info追加
-        return None
-    except ClientError as e:
-        logger.error(f"S3 ClientError downloading CA cert...", exc_info=True) # ★ exc_info追加
-        if e.response['Error']['Code'] == '404':
-             logger.error(f"CA cert object not found in S3: s3://{s3_bucket_name}/{s3_object_key}")
-        elif e.response['Error']['Code'] == '403':
-              logger.error(f"Access denied when trying to download CA cert from S3. Check permissions for s3://{s3_bucket_name}/{s3_object_key}")
-        else:
-             logger.error(f"Error downloading CA cert from S3: {e}")
-        return None
-    except Exception as e:
-         logger.exception(f"An unexpected error occurred during CA cert download.") # ★ メッセージ調整
-         return None
 
 # --- グローバル変数としてSSLコンテキストを保持 ---
 _global_ssl_context = None
@@ -99,9 +55,15 @@ url_obj = url_obj.set(drivername="postgresql+asyncpg")
 logger.info(f"Async engine base URL object created: {url_obj}") # ★ INFOログ追加
 
 # 非同期エンジンを作成 (connect_argsでSSLContextを指定)
-logger.info("Attempting to get/initialize SSL context for async engine...") # ★ INFOログ追加
-db_ssl_context = get_ssl_context()
-logger.info(f"Result of get_ssl_context: {'SSLContext object' if db_ssl_context else 'None'}") # ★ INFOログ追加
+logger.info("Determining SSL context for async engine...")
+# ステージング／本番環境のみSSLコンテキストを使用
+if settings.ENVIRONMENT in ("stg", "production"):
+    logger.info("Initializing SSL context for environment: {settings.ENVIRONMENT}")
+    db_ssl_context = get_ssl_context()
+    logger.info(f"Result of get_ssl_context: {'SSLContext object' if db_ssl_context else 'None'}")
+else:
+    db_ssl_context = None
+    logger.info(f"Skipping SSL context in development environment: {settings.ENVIRONMENT}")
 
 async_engine_kwargs = {
     "echo": settings.ENVIRONMENT != "production",
