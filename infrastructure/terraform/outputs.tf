@@ -1,8 +1,8 @@
 # Terraform outputs for STG environment
 
 output "stg_subnets" {
-  description = "STG ECS タスク用 Public Subnets"
-  value       = module.vpc.public_subnets
+  description = "STG ECS タスク用 Private Subnets"
+  value       = module.vpc.private_subnets
 }
 
 output "stg_security_groups" {
