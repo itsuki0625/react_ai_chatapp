@@ -213,4 +213,48 @@ resource "random_id" "secret_suffix" {
 resource "aws_secretsmanager_secret" "backend_env" {
   name                         = "${var.environment}/api/env-${random_id.secret_suffix.hex}"
   recovery_window_in_days      = 0
+}
+
+# Secrets Manager VPC Endpoint
+resource "aws_vpc_endpoint" "secretsmanager" {
+  vpc_id            = module.vpc.vpc_id
+  service_name      = "com.amazonaws.${var.aws_region}.secretsmanager" # リージョンを適切に指定
+  vpc_endpoint_type = "Interface"
+
+  # タスクが実行されるプライベートサブネットを指定
+  subnet_ids = module.vpc.private_subnets
+
+  # VPCエンドポイント用のセキュリティグループ (インバウンドHTTPSを許可)
+  security_group_ids = [aws_security_group.vpc_endpoint.id] # 新しく作成するSGを指定
+
+  private_dns_enabled = true # これにより、タスクは通常のエンドポイント名でアクセス可能
+
+  tags = {
+    Name        = "${var.environment}-secretsmanager-vpce"
+    Environment = var.environment
+  }
+}
+
+# VPCエンドポイント用のセキュリティグループ
+resource "aws_security_group" "vpc_endpoint" {
+  name        = "${var.environment}-vpce-sg"
+  description = "Allow HTTPS from App SG for VPC Endpoint"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    # タスクが使用するappセキュリティグループからのアクセスを許可
+    security_groups = [aws_security_group.app.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = { Environment = var.environment }
 } 
