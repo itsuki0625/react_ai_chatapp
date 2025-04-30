@@ -18,6 +18,13 @@ def get_ssl_context() -> ssl.SSLContext | None:
     """SSLコンテキストを取得または初期化する"""
     global _global_ssl_context
     logger.debug("get_ssl_context called.") # ★ デバッグログ追加
+    # デバッグ: ENVIRONMENT と certs ディレクトリを確認
+    logger.debug(f"ENVIRONMENT in get_ssl_context: {settings.ENVIRONMENT}")
+    certs_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "certs"))
+    try:
+        logger.debug(f"Certificates directory listing: {os.listdir(certs_dir)}")
+    except Exception as e:
+        logger.error(f"Failed to list certs directory {certs_dir}: {e}")
     if _global_ssl_context is None:
         logger.info("SSL context is None, initializing from local cert.")
         # 環境ごとに証明書ファイルを切り替え
@@ -26,6 +33,7 @@ def get_ssl_context() -> ssl.SSLContext | None:
         cert_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "certs", cert_filename)
         )
+        logger.debug(f"Computed cert_path: {cert_path}")
         if os.path.exists(cert_path):
             try:
                 logger.info(f"Creating SSL context using local CA cert: {cert_path}")
@@ -68,12 +76,14 @@ else:
 async_engine_kwargs = {
     "echo": settings.ENVIRONMENT != "production",
 }
+logger.debug(f"db_ssl_context before engine kwargs: {db_ssl_context}")
 if db_ssl_context:
     async_engine_kwargs["connect_args"] = {"ssl": db_ssl_context}
     logger.info("SSL context obtained. Adding 'ssl' to async_engine connect_args.") # ★ INFOログ追加
 else:
     logger.warning("SSL context not available. Async engine will be created without specific SSL connect_args.") # ★ ログレベル変更
 
+logger.debug(f"Final async_engine_kwargs: {async_engine_kwargs}")
 logger.info(f"Creating async engine with URL: {url_obj} and kwargs: {async_engine_kwargs}") # ★ INFOログ追加 (kwargs全体を出力)
 try:
     async_engine = create_async_engine(
