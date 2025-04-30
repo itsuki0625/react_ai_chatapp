@@ -257,4 +257,52 @@ resource "aws_security_group" "vpc_endpoint" {
   }
 
   tags = { Environment = var.environment }
+}
+
+# ECR API VPC Endpoint
+resource "aws_vpc_endpoint" "ecr_api" {
+  vpc_id            = module.vpc.vpc_id
+  service_name      = "com.amazonaws.${var.aws_region}.ecr.api"
+  vpc_endpoint_type = "Interface"
+
+  subnet_ids         = module.vpc.private_subnets # プライベートサブネットを指定
+  security_group_ids = [aws_security_group.vpc_endpoint.id] # Secrets Managerと同じSGを再利用可能
+  private_dns_enabled = true
+
+  tags = {
+    Name        = "${var.environment}-ecr-api-vpce"
+    Environment = var.environment
+  }
+}
+
+# ECR DKR VPC Endpoint
+resource "aws_vpc_endpoint" "ecr_dkr" {
+  vpc_id            = module.vpc.vpc_id
+  service_name      = "com.amazonaws.${var.aws_region}.ecr.dkr"
+  vpc_endpoint_type = "Interface"
+
+  subnet_ids         = module.vpc.private_subnets # プライベートサブネットを指定
+  security_group_ids = [aws_security_group.vpc_endpoint.id] # Secrets Managerと同じSGを再利用可能
+  private_dns_enabled = true
+
+  tags = {
+    Name        = "${var.environment}-ecr-dkr-vpce"
+    Environment = var.environment
+  }
+}
+
+# S3 Gateway VPC Endpoint
+resource "aws_vpc_endpoint" "s3_gateway" {
+  vpc_id       = module.vpc.vpc_id
+  service_name = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+
+  # プライベートサブネットのルートテーブルに関連付ける
+  # 注: モジュールが private_route_table_ids を出力しているか確認
+  route_table_ids = module.vpc.private_route_table_ids
+
+  tags = {
+    Name        = "${var.environment}-s3-gateway-vpce"
+    Environment = var.environment
+  }
 } 
