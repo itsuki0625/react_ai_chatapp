@@ -163,10 +163,31 @@ resource "aws_ecs_cluster" "frontend" {
   name = "${var.environment}-front"
 }
 
+# ★ 追加: カスタムDBパラメータグループ
+resource "aws_db_parameter_group" "custom_rds_pg" {
+  name   = "${var.environment}-custom-rds-pg"
+  # ★ 注意: RDSのPostgreSQLバージョンに合わせてfamilyを修正してください (例: postgres14, postgres15)
+  family = "postgres17"
+
+  parameter {
+    name         = "rds.force_ssl"
+    value        = "0"         # SSL強制を無効化
+    apply_method = "immediate" # 即時適用 (再起動が必要な場合あり)
+  }
+
+  tags = { Environment = var.environment }
+}
+
 # RDS (PostgreSQL)
 resource "aws_db_subnet_group" "rds" {
   name       = "${var.environment}-rds-subnet-group"
   subnet_ids = module.vpc.private_subnets
+  db_name                 = var.db_name
+  db_subnet_group_name    = aws_db_subnet_group.rds.name
+  vpc_security_group_ids  = [aws_security_group.rds.id]
+  skip_final_snapshot     = true
+  publicly_accessible     = false
+  parameter_group_name = aws_db_parameter_group.custom_rds_pg.name # ★ 作成したパラメータグループを指定
   tags = { Environment = var.environment }
 }
 resource "aws_db_instance" "rds" {
@@ -181,6 +202,7 @@ resource "aws_db_instance" "rds" {
   vpc_security_group_ids  = [aws_security_group.rds.id]
   skip_final_snapshot     = true
   publicly_accessible     = false
+  parameter_group_name = aws_db_parameter_group.custom_rds_pg.name # ★ 作成したパラメータグループを指定
   tags = { Environment = var.environment }
 }
 
