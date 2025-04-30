@@ -137,7 +137,13 @@
               "rds:CreateDBInstance",
               "rds:DeleteDBInstance",
               "rds:DescribeDBInstances",
-              "rds:ListTagsForResource"
+              "rds:ListTagsForResource",
+              "rds:CreateDBParameterGroup",
+              "rds:ModifyDBInstance",
+              "rds:DeleteDBParameterGroup",
+              "rds:DescribeDBParameterGroups",
+              "rds:DescribeDBParameters",
+              "rds:ModifyDBParameterGroup"
             ],
             "Resource": "*"
         },
