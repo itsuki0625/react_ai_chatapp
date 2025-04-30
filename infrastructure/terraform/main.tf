@@ -202,7 +202,7 @@ resource "aws_secretsmanager_secret" "backend_env" {
 
 # RDS CA 証明書バンドルのダウンロード URL を取得
 data "http" "rds_ca_bundle" {
-  url = "https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem" # 結合バンドルのURL (最新か要確認)
+  url = "https://truststore.pki.rds.amazonaws.com/rds-combined-ca-bundle.pem" # 公式の最新結合バンドルURL
 }
 
 # ★ 追加: CA証明書保存用のS3バケット
