@@ -24,6 +24,7 @@ module "vpc" {
   enable_nat_gateway   = false
   enable_dns_hostnames = true
   manage_default_network_acl = false
+  enable_s3_endpoint = true
 
   tags = { Environment = var.environment }
 }
@@ -291,6 +292,8 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
   }
 }
 
+# The following S3 Gateway VPC Endpoint block is removed as it's now managed by the VPC module
+/*
 # S3 Gateway VPC Endpoint
 resource "aws_vpc_endpoint" "s3_gateway" {
   vpc_id       = module.vpc.vpc_id
@@ -305,4 +308,5 @@ resource "aws_vpc_endpoint" "s3_gateway" {
     Name        = "${var.environment}-s3-gateway-vpce"
     Environment = var.environment
   }
-} 
+}
+*/ 
