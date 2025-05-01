@@ -27,8 +27,8 @@ module "vpc" {
   single_nat_gateway = true # コスト削減のため (必要なら false に変更)
 
   # Disable default ACL and route table creation to satisfy module requirements
-  create_default_network_acl = false
-  create_default_route_table = false
+  manage_default_network_acl = false
+  manage_default_route_table = false
 
   # VPC Flow Logs (オプション)
   # enable_flow_log                      = true
