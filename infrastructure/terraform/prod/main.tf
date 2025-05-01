@@ -33,7 +33,7 @@ module "vpc" {
 
   # --- VPC Endpoints ---
   # Gateway Endpoints
-  create_gateway_endpoint = true
+  create_gateway_endpoints = true
   gateway_endpoints = {
     s3 = {
       tags = { Name = "${var.environment}-s3-gateway-vpce" }
@@ -41,7 +41,7 @@ module "vpc" {
   }
 
   # Interface Endpoints
-  create_interface_endpoint = true
+  create_interface_endpoints = true
   interface_endpoints = {
     secretsmanager = {
       tags = { Name = "${var.environment}-secretsmanager-vpce" }
