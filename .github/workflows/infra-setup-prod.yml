@@ -39,6 +39,23 @@ jobs:
           TF_VAR_environment:   "prod" # <- 環境名を明示的に指定
         run: terraform plan -input=false -out=tfplan
 
+      - name: Terraform State MV (Temporary for VPC migration)
+        if: steps.plan.outcome == 'success' # planが成功した場合のみ実行
+        working-directory: infrastructure/terraform/prod
+        run: |
+          echo "Executing terraform state mv commands..."
+          terraform state mv 'aws_lb_target_group.backend' 'aws_lb_target_group.backend'
+          terraform state mv 'aws_lb_target_group.frontend' 'aws_lb_target_group.frontend'
+          terraform state mv 'aws_security_group.app' 'aws_security_group.app'
+          terraform state mv 'aws_security_group.rds' 'aws_security_group.rds'
+          terraform state mv 'aws_security_group.vpc_endpoint' 'aws_security_group.vpc_endpoint'
+          terraform state mv 'aws_vpc_endpoint.ecr_api' 'aws_vpc_endpoint.ecr_api'
+          terraform state mv 'aws_vpc_endpoint.ecr_dkr' 'aws_vpc_endpoint.ecr_dkr'
+          terraform state mv 'aws_vpc_endpoint.logs' 'aws_vpc_endpoint.logs'
+          terraform state mv 'aws_vpc_endpoint.s3_gateway' 'aws_vpc_endpoint.s3_gateway'
+          terraform state mv 'aws_vpc_endpoint.secretsmanager' 'aws_vpc_endpoint.secretsmanager'
+          echo "State MV commands completed."
+
       - name: Terraform Apply (Requires manual approval)
         working-directory: infrastructure/terraform/prod
         env:
