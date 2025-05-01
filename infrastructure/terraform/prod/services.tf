@@ -42,7 +42,7 @@ resource "aws_ecs_service" "backend" {
   launch_type     = "FARGATE"
   platform_version = "LATEST"
   network_configuration {
-    subnets         = module.vpc.public_subnets
+    subnets         = data.terraform_remote_state.stg.outputs.public_subnets
     security_groups = [aws_security_group.app.id]
     assign_public_ip = true
   }
@@ -101,7 +101,7 @@ resource "aws_ecs_service" "frontend" {
   launch_type     = "FARGATE"
   platform_version = "LATEST"
   network_configuration {
-    subnets         = module.vpc.public_subnets
+    subnets         = data.terraform_remote_state.stg.outputs.public_subnets
     security_groups = [aws_security_group.app.id]
     assign_public_ip = true
   }
