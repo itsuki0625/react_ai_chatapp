@@ -32,29 +32,31 @@ module "vpc" {
   # create_flow_log_cloudwatch_iam_role  = true
 
   # --- VPC Endpoints ---
-  enable_s3_endpoint       = true # S3 Gateway Endpoint
+  # Gateway Endpoints
+  create_gateway_endpoint = true
+  gateway_endpoints = {
+    s3 = {
+      tags = { Name = "${var.environment}-s3-gateway-vpce" }
+    }
+  }
 
-  # Interface Endpoints (Mapで定義)
+  # Interface Endpoints
+  create_interface_endpoint = true
   interface_endpoints = {
     secretsmanager = {
-      service_name = "com.amazonaws.${var.aws_region}.secretsmanager"
-      tags         = { Name = "${var.environment}-secretsmanager-vpce" }
+      tags = { Name = "${var.environment}-secretsmanager-vpce" }
     },
     ecs = {
-      service_name = "com.amazonaws.${var.aws_region}.ecs"
-      tags         = { Name = "${var.environment}-ecs-vpce" }
+      tags = { Name = "${var.environment}-ecs-vpce" }
     },
-    ecr_api = {
-      service_name = "com.amazonaws.${var.aws_region}.ecr.api"
-      tags         = { Name = "${var.environment}-ecr-api-vpce" }
+    "ecr.api" = { # Need quotes for keys with dots
+      tags = { Name = "${var.environment}-ecr-api-vpce" }
     },
-    ecr_dkr = {
-      service_name = "com.amazonaws.${var.aws_region}.ecr.dkr"
-      tags         = { Name = "${var.environment}-ecr-dkr-vpce" }
+    "ecr.dkr" = {
+      tags = { Name = "${var.environment}-ecr-dkr-vpce" }
     },
     logs = {
-      service_name = "com.amazonaws.${var.aws_region}.logs"
-      tags         = { Name = "${var.environment}-logs-vpce" }
+      tags = { Name = "${var.environment}-logs-vpce" }
     }
   }
 
