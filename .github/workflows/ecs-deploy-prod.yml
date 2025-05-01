@@ -1,0 +1,140 @@
+name: Build, Push, and Deploy PROD
+
+on:
+  workflow_dispatch: # 手動実行
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: ${{ secrets.AWS_ECR_REGISTRY }}
+
+jobs:
+  # ─────────────────────────────────────────────────
+  # 1) AWS 認証 & ECR にログイン (本番環境)
+  # ─────────────────────────────────────────────────
+  ecr-login:
+    environment: Production
+    runs-on: ubuntu-latest
+    outputs:
+      login: ${{ steps.login-ecr.outcome }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+  # ─────────────────────────────────────────────────
+  # 2) Backend イメージのビルド & Push (本番環境)
+  # ─────────────────────────────────────────────────
+  build-push-backend:
+    environment: Production
+    needs: ecr-login
+    runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.build-image.outputs.image_uri }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build backend image with commit SHA tag
+        id: build-image
+        run: |
+          IMAGE_TAG=$(echo $GITHUB_SHA | head -c7)
+          IMAGE_URI="${{ env.ECR_REGISTRY }}/backend:$IMAGE_TAG"
+          echo "Building and tagging image as: $IMAGE_URI"
+          docker build \
+            --file backend/Dockerfile \
+            --tag  $IMAGE_URI \
+            backend
+          echo "::set-output name=image_uri::$IMAGE_URI"
+
+      - name: Push backend to ECR
+        run: docker push ${{ steps.build-image.outputs.image_uri }}
+
+  # ─────────────────────────────────────────────────
+  # 3) Frontend イメージのビルド & Push (本番環境)
+  # ─────────────────────────────────────────────────
+  build-push-frontend:
+    environment: Production
+    needs: ecr-login
+    runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.build-image.outputs.image_uri }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build frontend image with commit SHA tag
+        id: build-image
+        run: |
+          IMAGE_TAG=$(echo $GITHUB_SHA | head -c7)
+          IMAGE_URI="${{ env.ECR_REGISTRY }}/front:$IMAGE_TAG"
+          echo "Building and tagging image as: $IMAGE_URI"
+          docker build \
+            --file study-support-app/Dockerfile \
+            --tag  $IMAGE_URI \
+            study-support-app
+          echo "::set-output name=image_uri::$IMAGE_URI"
+
+      - name: Push frontend to ECR
+        run: docker push ${{ steps.build-image.outputs.image_uri }}
+
+  # ─────────────────────────────────────────────────
+  # 4) Backend を ECS にデプロイ (本番環境)
+  # ─────────────────────────────────────────────────
+  deploy-backend-prod:
+    environment: Production
+    needs: build-push-backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+      - name: Deploy Backend to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          cluster: prod-api
+          service: prod-api-service
+          task-definition: AWS/backend-task-def-prod.json
+          container-name: backend
+          image: ${{ needs.build-push-backend.outputs.image_uri }}
+          wait-for-service-stability: true
+
+  # ─────────────────────────────────────────────────
+  # 5) Frontend を ECS にデプロイ (本番環境)
+  # ─────────────────────────────────────────────────
+  deploy-frontend-prod:
+    environment: Production
+    needs: build-push-frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+      - name: Deploy Frontend to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          cluster: prod-front
+          service: prod-front-service
+          task-definition: AWS/frontend-task-def-prod.json
+          container-name: frontend
+          image: ${{ needs.build-push-frontend.outputs.image_uri }}
+          wait-for-service-stability: true 
