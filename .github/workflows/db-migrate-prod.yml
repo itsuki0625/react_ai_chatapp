@@ -1,0 +1,41 @@
+name: Run PROD DB Migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: >
+          Run DB migrations on PROD? (Type 'yes' to confirm)
+        required: true
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  run-db-migrations-prod:
+    name: Run DB Migrations on PROD
+    if: github.event.inputs.confirm == 'yes'
+    environment: Production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Run DB migrations on ECS
+        run: |
+          echo "Running DB migrations on PROD environment..."
+          aws ecs run-task \
+            --cluster prod-api \
+            --launch-type FARGATE \
+            --task-definition backend-prod-migration \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ secrets.PROD_SUBNETS }}],securityGroups=[${{ secrets.PROD_SECURITY_GROUPS }}],assignPublicIp=DISABLED}" \
+            --overrides '{"containerOverrides":[{"name":"backend","command":["alembic","upgrade","head"]}]}' \
+            --output json | cat
+          echo "DB migration task started for PROD. Check ECS console for status." 
