@@ -79,7 +79,7 @@ jobs:
           IMAGE_URI="${{ env.ECR_REGISTRY }}/prod-frontend:$IMAGE_TAG"
           echo "Building and tagging image as: $IMAGE_URI"
           docker build \
-            --file frontend/Dockerfile \
+            --file study-support-app/Dockerfile \
             --tag  $IMAGE_URI \
             study-support-app
           echo "::set-output name=image_uri::$IMAGE_URI"
