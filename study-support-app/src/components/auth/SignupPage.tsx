@@ -24,7 +24,7 @@ const SignupPage = () => {
     if (password.length < 8) return 'パスワードは8文字以上である必要があります。';
     if (!/(?=.*[a-z])/.test(password)) return 'パスワードには小文字を含める必要があります。';
     if (!/(?=.*[A-Z])/.test(password)) return 'パスワードには大文字を含める必要があります。';
-    if (!/(?=.*\\d)/.test(password)) return 'パスワードには数字を含める必要があります。';
+    if (!/(?=.*\d)/.test(password)) return 'パスワードには数字を含める必要があります。';
     return 'strong';
   };
 
@@ -69,8 +69,11 @@ const SignupPage = () => {
 
     setIsLoading(true);
 
+    const signupApiUrl = `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/signup`;
+    console.log('>>> [SignupPage] Attempting to fetch signup API:', signupApiUrl);
+
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/signup`, {
+      const response = await fetch(signupApiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -79,13 +82,25 @@ const SignupPage = () => {
         body: JSON.stringify({
           email: formData.email,
           password: formData.password,
-          name: formData.name
+          full_name: formData.name
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        setError(errorData.detail || 'アカウントの作成に失敗しました。もう一度お試しください。');
+        let errorMessage = 'アカウントの作成に失敗しました。もう一度お試しください。';
+        if (typeof errorData?.detail === 'string') {
+          errorMessage = errorData.detail;
+        } else if (Array.isArray(errorData?.detail)) {
+          const firstError = errorData.detail[0];
+          if (typeof firstError?.msg === 'string') {
+            errorMessage = firstError.msg;
+          }
+        } else if (typeof errorData?.message === 'string') {
+          errorMessage = errorData.message;
+        }
+        console.error('Signup API Error:', errorData);
+        setError(errorMessage);
         setIsLoading(false);
         return;
       }
@@ -108,6 +123,9 @@ const SignupPage = () => {
 
     } catch (err) {
       console.error("Signup error:", err);
+      if (err instanceof Error && 'cause' in err) {
+           console.error("Signup error cause:", (err as any).cause);
+      }
       setError('アカウントの作成に失敗しました。もう一度お試しください。');
     } finally {
       setIsLoading(false);

@@ -34,7 +34,7 @@ class UserCreate(UserBase):
     password: str
     status: UserStatus = UserStatus.PENDING # 作成時のデフォルトステータス
     # role: UserRole = UserRole.STUDENT # 作成時にロールを指定できるようにする (デフォルトはSTUDENT)
-    role: str = "生徒" # 型を str に変更し、デフォルト値を文字列で設定
+    role: str = "フリー" # 型を str に変更し、デフォルト値を文字列で設定 (生徒からフリーへ変更)
     # ★ UserCreate 時にも grade, prefecture を受け付ける場合はここに追加
     # grade: Optional[str] = None
     # prefecture: Optional[str] = None

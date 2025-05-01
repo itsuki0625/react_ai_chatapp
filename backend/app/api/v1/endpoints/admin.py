@@ -524,7 +524,7 @@ async def admin_get_discount_types(
     current_user: UserModel = Depends(require_permission('admin_access', 'discount_type_read')),
 ):
     """割引タイプ一覧を取得します。"""
-    discount_types = get_all_discount_types(db, skip=skip, limit=limit)
+    discount_types = await get_all_discount_types(db, skip=skip, limit=limit)
     return discount_types
 
 @router.post("/discount-types", response_model=DiscountTypeResponse, status_code=status.HTTP_201_CREATED)
@@ -535,7 +535,7 @@ async def admin_create_discount_type(
 ):
     """新しい割引タイプを作成します。"""
     try:
-        return create_discount_type(db=db, discount_type=discount_type_in)
+        return await create_discount_type(db=db, discount_type=discount_type_in)
     except HTTPException as e: # 重複エラーなどをキャッチ
         raise e
     except Exception as e:
@@ -551,7 +551,7 @@ async def admin_update_discount_type(
 ):
     """割引タイプを更新します。"""
     try:
-        updated_discount_type = update_discount_type(db, discount_type_id, discount_type_in)
+        updated_discount_type = await update_discount_type(db, discount_type_id, discount_type_in)
         if not updated_discount_type:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Discount type not found")
         return updated_discount_type
@@ -568,7 +568,7 @@ async def admin_delete_discount_type(
     current_user: UserModel = Depends(require_permission('admin_access', 'discount_type_write')),
 ):
     """割引タイプを削除します。"""
-    deleted = delete_discount_type(db, discount_type_id)
+    deleted = await delete_discount_type(db, discount_type_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Discount type not found")
     return None 
