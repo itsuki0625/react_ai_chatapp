@@ -44,6 +44,7 @@ resource "aws_ecs_service" "backend" {
   network_configuration {
     security_groups = [aws_security_group.app.id]
     subnets         = module.vpc.public_subnets
+    assign_public_ip = true
   }
   load_balancer {
     target_group_arn = aws_lb_target_group.backend.arn
@@ -102,6 +103,7 @@ resource "aws_ecs_service" "frontend" {
   network_configuration {
     security_groups = [aws_security_group.app.id]
     subnets         = module.vpc.public_subnets
+    assign_public_ip = true
   }
   load_balancer {
     target_group_arn = aws_lb_target_group.frontend.arn
