@@ -131,6 +131,19 @@
             "Resource": "*"
         },
         {
+            "Sid": "ECRPush",
+            "Effect": "Allow",
+            "Action": [
+                "ecr:GetAuthorizationToken",
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:CompleteLayerUpload",
+                "ecr:InitiateLayerUpload",
+                "ecr:PutImage",
+                "ecr:UploadLayerPart"
+            ],
+            "Resource": "*"
+        },
+        {
             "Sid": "RDS",
             "Effect": "Allow",
             "Action": [
