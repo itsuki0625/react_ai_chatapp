@@ -193,10 +193,14 @@ export const LoginForm: React.FC = () => {
         </div>
       )}
       
-      {/* 簡易ヘルプ - メールとパスワードのヒント */}
-      <div className="mt-4 text-xs text-gray-500">
-        <p>テストユーザー: test@example.com / password</p>
-        <p>管理者ユーザー: admin@example.com / admin123</p>
+      {/* サインアップへの案内 */}
+      <div className="mt-6 text-center">
+        <p className="text-sm text-gray-600">
+          アカウントをお持ちでないですか？{' '}
+          <a href="/signup" className="font-medium text-blue-600 hover:text-blue-500">
+            新規登録はこちら
+          </a>
+        </p>
       </div>
     </form>
   );

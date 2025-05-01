@@ -363,10 +363,16 @@ export const adminService = {
 
   // キャンペーンコード一覧取得
   getCampaignCodes: async (skip = 0, limit = 20, ownerId?: string): Promise<CampaignCode[]> => {
-    const params: Record<string, string | number> = { skip, limit };
-    if (ownerId) params.owner_id = ownerId;
-    
-    const response = await fetchWithAuth(`${API_URL}/api/v1/admin/campaign-codes?${new URLSearchParams(params).toString()}`);
+    // URLSearchParams は文字列のみサポートするため、数値を文字列に変換して設定します
+    const searchParams = new URLSearchParams();
+    searchParams.append('skip', skip.toString());
+    searchParams.append('limit', limit.toString());
+    if (ownerId) {
+      searchParams.append('owner_id', ownerId);
+    }
+    const response = await fetchWithAuth(
+      `${API_URL}/api/v1/admin/campaign-codes?${searchParams.toString()}`
+    );
     return response.ok ? await response.json() : [];
   },
 

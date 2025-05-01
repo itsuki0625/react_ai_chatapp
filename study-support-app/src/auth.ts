@@ -3,7 +3,6 @@ import { JWT } from 'next-auth/jwt';
 import { AdapterUser } from "next-auth/adapters";
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { Session } from "next-auth";
-import { JWT as NextAuthJWT } from "next-auth/jwt";
 import { API_BASE_URL } from "@/lib/config";
 import { jwtDecode } from "jwt-decode";
 
@@ -62,13 +61,18 @@ export const authConfig: NextAuthConfig = {
         const password = credentials.password as string;
         console.debug('[Authorize] Attempting authorization for:', email); // DEBUG LOG
 
+        // ★ サーバーサイド用の内部API URLを使用
+        const apiUrl = `${process.env.INTERNAL_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/login`;
+        // (INTERNAL_API_BASE_URL が未定義の場合のフォールバックとして NEXT_PUBLIC も残しておく)
+        console.log('>>> [Authorize] Attempting to fetch internal API:', apiUrl); // ログも修正
+
         try {
           // データ形式を application/x-www-form-urlencoded に変更
           const body = new URLSearchParams();
           body.append('username', email);
           body.append('password', password);
 
-          const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/login`, {
+          const response = await fetch(apiUrl, { // ★ apiUrl を使用
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, // ★ ヘッダーを変更
             body: body, // ★ URLSearchParams オブジェクトを送信
@@ -107,8 +111,12 @@ export const authConfig: NextAuthConfig = {
           };
           console.debug("Authorize Callback: User object created", { userId: user.id, role: user.role, grade: user.grade }); // ★ logger を console.debug に変更
           return user;
-        } catch (error) {
+        } catch (error: any) { // ★ エラーの型を any にして詳細をログ出力
           console.error("[Authorize] Error in authorize callback:", error);
+          // ★ エラーの原因 (cause) もログ出力してみる
+          if (error.cause) {
+            console.error("[Authorize] Error Cause:", error.cause);
+          }
           return null;
         }
       }
@@ -141,6 +149,25 @@ export const authConfig: NextAuthConfig = {
         if (user && (trigger === 'signIn' || trigger === 'signUp')) {
             console.debug(`JWT Callback: ${trigger} trigger (user object present)`, { userId: user.id });
             const authUser = user as User;
+
+            // --- アクセストークンをデコードして情報を取得 ---
+            let decodedAccessToken: DecodedToken = {};
+            let tokenPermissions: string[] | undefined = undefined;
+            let tokenRoles: string[] | undefined = undefined; // <<< roles を配列で受け取る準備
+
+            try {
+              if(authUser.accessToken) {
+                decodedAccessToken = jwtDecode<DecodedToken>(authUser.accessToken);
+                tokenPermissions = decodedAccessToken.permissions;
+                tokenRoles = decodedAccessToken.roles; // <<< デコード結果から roles を取得
+                console.debug("JWT Callback: Decoded access token", { roles: tokenRoles, permissions: tokenPermissions });
+              }
+            } catch (e) {
+              console.error("JWT Callback: Failed to decode access token", e);
+              // デコード失敗しても処理は続ける（一部情報が欠ける可能性あり）
+            }
+            // --- ここまで追加 ---
+
             const defaultExpireMinutes = process.env.ACCESS_TOKEN_EXPIRE_MINUTES ? parseInt(process.env.ACCESS_TOKEN_EXPIRE_MINUTES) : 15;
             const expiresAt = authUser.accessTokenExpires
                 ? Math.floor(authUser.accessTokenExpires / 1000)
@@ -152,20 +179,22 @@ export const authConfig: NextAuthConfig = {
                 name: authUser.name,
                 email: authUser.email,
                 picture: authUser.image,
-                role: authUser.role,
+                // --- role と permissions をデコード結果から設定 ---
+                role: tokenRoles || authUser.role, // デコードした roles (配列) を優先、なければ authorize の role
+                permissions: tokenPermissions,      // デコードした permissions を設定
+                // --- ここまで修正 ---
                 status: authUser.status,
-                permissions: token.permissions || authUser.permissions,
-                isTeacher: authUser.isTeacher,
+                isTeacher: authUser.isTeacher, // isTeacherは authorize で設定したもので良いか要検討
                 grade: authUser.grade,
                 prefecture: authUser.prefecture,
                 accessToken: authUser.accessToken,
                 refreshToken: authUser.refreshToken,
                 accessTokenExpires: expiresAt,
                 iat: Math.floor(Date.now() / 1000),
-                exp: expiresAt, // Use the same expiration as accessTokenExpires for simplicity
+                exp: expiresAt,
                 jti: crypto.randomUUID()
             };
-            console.debug("JWT Callback: Initial token population", { userId: extendedToken.id });
+            console.debug("JWT Callback: Initial token population", { userId: extendedToken.id, role: extendedToken.role }); // role のログも確認
             return extendedToken;
         }
 
@@ -173,7 +202,7 @@ export const authConfig: NextAuthConfig = {
         if (token.accessTokenExpires && Date.now() < (token.accessTokenExpires * 1000 - 60 * 1000)) {
             // 有効期限の60秒前までは何もしない
             console.debug("JWT Callback: Access token is still valid", { tokenId: token.jti });
-            return token;
+            return token; // Return early if valid
         }
 
         // 3. トークンが無効または有効期限が近い場合 (リフレッシュ実行)
@@ -188,34 +217,46 @@ export const authConfig: NextAuthConfig = {
             const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/refresh-token`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                // リフレッシュトークンをボディで送信
                 body: JSON.stringify({ refresh_token: token.refreshToken }),
-                // Cookieはcredentials: 'include'で送られる想定 (fetchWithAuthの実装と合わせる)
-                 credentials: 'include',
+                credentials: 'include',
             });
 
             const refreshedTokens = await response.json();
 
             if (!response.ok) {
-                console.error("JWT Callback: Failed to refresh token from API", { status: response.status, error: refreshedTokens });
-                // バックエンドからのエラー詳細を保持
-                const errorDetail = refreshedTokens?.detail || "Refresh token failed";
-                // バックエンド起因のエラーであることを明確にするため、エラーメッセージを保持するのも良い
-                return { ...token, error: "RefreshAccessTokenError", errorDetail: errorDetail };
+                 console.error("JWT Callback: Failed to refresh token from API", { status: response.status, error: refreshedTokens });
+                 const errorDetail = refreshedTokens?.detail || "Refresh token failed";
+                 return { ...token, error: "RefreshAccessTokenError", errorDetail: errorDetail };
             }
 
             // リフレッシュ成功
+            // --- リフレッシュ後のトークンもデコード ---
+            let refreshedDecoded: DecodedToken = {};
+            let refreshedRoles: string[] | undefined = undefined;
+            let refreshedPermissions: string[] | undefined = undefined;
+            try {
+               refreshedDecoded = jwtDecode<DecodedToken>(refreshedTokens.access_token);
+               refreshedRoles = refreshedDecoded.roles;
+               refreshedPermissions = refreshedDecoded.permissions;
+               console.debug("JWT Callback: Decoded refreshed token", { roles: refreshedRoles, permissions: refreshedPermissions });
+            } catch(e) {
+                console.error("JWT Callback: Failed to decode refreshed access token", e);
+            }
+            // --- ここまで追加 ---
+
             const defaultExpireMinutesOnRefresh = process.env.ACCESS_TOKEN_EXPIRE_MINUTES ? parseInt(process.env.ACCESS_TOKEN_EXPIRE_MINUTES) : 15;
-            // バックエンドからexpires_inが返ってくる想定、なければデフォルト値
             const newExpiresInSeconds = refreshedTokens.expires_in || defaultExpireMinutesOnRefresh * 60;
             const newExpiresAt = Math.floor(Date.now() / 1000) + newExpiresInSeconds;
 
             const refreshedTokenData: JWT = {
-                ...token, // Keep existing properties like id, name, email, role etc.
+                ...token, // Keep existing properties like id, name, email etc.
                 accessToken: refreshedTokens.access_token,
-                // バックエンドが新しいリフレッシュトークンを返せば更新、そうでなければ既存のものを維持
                 refreshToken: refreshedTokens.refresh_token ?? token.refreshToken,
                 accessTokenExpires: newExpiresAt,
+                // --- デコード結果を反映 ---
+                role: refreshedRoles || token.role, // デコードした roles (配列) を優先、なければ以前の role
+                permissions: refreshedPermissions || token.permissions, // デコードした permissions を優先
+                // --- ここまで修正 ---
                 iat: Math.floor(Date.now() / 1000),
                 exp: newExpiresAt, // Update JWT expiration as well
                 jti: crypto.randomUUID(), // Generate a new JTI for the refreshed token
@@ -223,7 +264,7 @@ export const authConfig: NextAuthConfig = {
                 errorDetail: undefined, // Clear previous error detail
             };
 
-            console.info("JWT Callback: Token refreshed successfully", { newTokenId: refreshedTokenData.jti });
+            console.info("JWT Callback: Token refreshed successfully", { newTokenId: refreshedTokenData.jti, newRole: refreshedTokenData.role });
             return refreshedTokenData;
 
         } catch (error: any) {
@@ -232,85 +273,96 @@ export const authConfig: NextAuthConfig = {
                 errorDetails: error,
                 refreshTokenUsed: token.refreshToken?.substring(0, 10) + '...'
             });
-            // fetch 自体の失敗などの場合
             return {
                 ...token,
                 error: "RefreshAccessTokenError",
                 errorDetail: error.message || "Network error or failed to parse response",
             };
         }
-
-        // 4. 上記のいずれにも該当しない場合 (念のため)
-        console.warn("JWT Callback: Reached end of callback without returning, returning original token", { tokenId: token.jti });
-        return token;
     },
     async session({ session, token }: { session: Session; token: JWT }): Promise<Session> {
-      console.debug("Session Callback: Start", { userId: token?.id, tokenJti: token?.jti });
+      console.debug("Session Callback: Start", { userId: token?.id, tokenJti: token?.jti, tokenRole: token.role }); // token.role をログに追加
 
       // エラーがあればセッションにエラー情報をセット (エラー詳細も)
       if (token.error) {
+        console.error("Session Callback: Token contains error, propagating to session", { error: token.error, errorDetail: token.errorDetail });
         session.error = token.error;
-        session.errorDetail = token.errorDetail; // Pass error detail to session
-        console.warn("Session Callback: Token error detected, returning session with error", {
-            error: token.error,
-            errorDetail: token.errorDetail,
-            sessionId: session?.user?.id,
-            tokenJti: token?.jti
-        });
-        // 必要に応じてユーザー情報をクリア
-        // session.user = { ...session.user, name: null, email: null }; // Example
+        // @ts-ignore // 拡張エラー情報をセッションに追加
+        session.errorDetail = token.errorDetail;
+        // ★ エラー時は必須プロパティにデフォルト値を設定したオブジェクトにする
+        session.user = {
+          id: String(token.id ?? ''),
+          name: null,
+          email: null,
+          image: null,
+          role: '不明', // または適切なデフォルトロール
+          status: 'error', // エラー状態を示すステータス
+          isAdmin: false,
+          isTeacher: false,
+          isStudent: false,
+          permissions: [],
+          grade: undefined,
+          prefecture: undefined,
+        };
         return session;
       }
 
-      // token から session.user に必要な情報を移す
-      // Roleの正規化や追加の処理を行う
-      const normalizeRole = (roleInput: string | string[] | undefined): string => {
-        let roleName: string | undefined;
-        if (Array.isArray(roleInput)) {
-            roleName = roleInput[0]; // 配列の場合は最初の要素を使用 (必要に応じてロジック変更)
-        } else {
-            roleName = roleInput;
-        }
-        const lowerCaseRole = roleName?.toLowerCase();
-        if (lowerCaseRole === 'admin' || lowerCaseRole === '管理者') return '管理者';
-        if (lowerCaseRole === 'teacher' || lowerCaseRole === '教師') return '教師';
-        return '生徒'; // デフォルト
-      };
+      // トークンからセッションに情報をコピー
+      if (token && session.user) {
+        session.user.id = typeof token.id === 'string' ? token.id : String(token.id ?? ''); 
+        session.user.name = token.name ?? null; 
+        session.user.email = token.email ?? null; 
+        session.user.image = token.picture ?? null; 
 
-      const userRole = normalizeRole(token.role);
-      // ★ 新しい役割判定ロジック ★
-      const isAdmin = userRole === '管理者';
-      const isTeacher = userRole === '教師';
-      const isStudent = !isAdmin && !isTeacher; // 管理者でも教師でもなければ生徒
+        // --- ロール正規化処理 ---
+        const normalizeRole = (roleInput: string | string[] | undefined): string => {
+          if (Array.isArray(roleInput) && roleInput.length > 0) {
+            return roleInput[0];
+          } else if (typeof roleInput === 'string') {
+            return roleInput;
+          }
+          return '生徒'; // デフォルトロール
+        };
+        const userRole = normalizeRole(token.role); // 正規化されたロールを取得
+        session.user.role = userRole;
+        // --- ここまで ---
 
-      // セッションオブジェクトを構築 (next-auth.d.ts の Session['user'] に合わせる)
-      session.user = {
-        id: token.id ?? '',
-        name: token.name,
-        email: token.email,
-        image: token.picture,
-        role: userRole, // 正規化されたロール (表示用などに)
-        status: token.status ?? 'pending',
-        permissions: token.permissions,
-        isAdmin: isAdmin, // 計算結果を代入
-        isTeacher: isTeacher, // 計算結果を代入
-        isStudent: isStudent, // 計算結果を代入
-        grade: token.grade,
-        prefecture: token.prefecture,
-      };
-      session.accessToken = token.accessToken ?? ''; // ★ token.accessToken が undefined の場合は空文字
-      // session.expires は token.accessTokenExpires を使うのがより正確
-      if (token.accessTokenExpires) {
-          session.expires = new Date(token.accessTokenExpires * 1000).toISOString();
+        // --- isAdmin, isTeacher, isStudent の計算を追加 --- 
+        session.user.isAdmin = userRole === '管理者';
+        session.user.isTeacher = userRole === '教師';
+        session.user.isStudent = userRole !== '管理者' && userRole !== '教師';
+        // --- ここまで追加 ---
+
+        session.user.status = token.status ?? 'pending'; 
+        session.user.permissions = token.permissions as string[] | undefined;
+        // isTeacher は上で計算済みなので不要
+        // session.user.isTeacher = (token.isTeacher as boolean | undefined) ?? false;
+        session.user.grade = token.grade as string | undefined; 
+        session.user.prefecture = token.prefecture as string | undefined; 
+        session.accessToken = token.accessToken as string | undefined; 
+        // session.accessTokenExpires = token.accessTokenExpires as number | undefined; 
       } else {
-          console.warn("Session Callback: token.accessTokenExpires not found, session.expires may be inaccurate.");
+        console.warn("Session Callback: Token or session.user is missing, cannot populate session user data.");
+        // ★ エラー時と同様にデフォルト値を持つ user オブジェクトを設定
+        if (!session.user) {
+             session.user = {
+                id: String(token?.id ?? ''),
+                name: null,
+                email: null,
+                image: null,
+                role: '不明',
+                status: 'error',
+                isAdmin: false,
+                isTeacher: false,
+                isStudent: false,
+                permissions: [],
+                grade: undefined,
+                prefecture: undefined,
+            };
+        }
       }
-      // Clear potential error fields if token is valid
-      session.error = undefined;
-      session.errorDetail = undefined;
 
-      console.debug("Session Callback: Session data populated", { userId: session.user.id, role: session.user.role });
-
+      console.debug("Session Callback: Session data populated", { userId: session.user?.id, role: session.user?.role }); // 最終的なロールを確認
       return session;
     },
     // authorized コールバックはミドルウェアに移行したため、ここでは不要な場合がある

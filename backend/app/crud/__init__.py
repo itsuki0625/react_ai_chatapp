@@ -9,6 +9,9 @@ from . import token # 例: 他のモジュール
 # ★ user.py モジュールを crud_user という名前でインポート可能にする
 from . import user as crud_user
 
+# ★ desired_school.py モジュールをインポート
+from . import desired_school
+
 # 特定の関数を直接エクスポートしたい場合は以下のように書くこともできる
 # from .user import (
 #     get_user,
