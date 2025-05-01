@@ -30,7 +30,8 @@ jobs:
         run: terraform init -upgrade -input=false
 
       - name: Terraform Destroy PROD (!!!WARNING: Destroys PROD Infra!!!)
-        working-directory: infrastructure/terraform/prod # Target PROD directory
+        working-directory: infrastructure/terraform/prod
+        # Target PROD directory
         env:
           TF_VAR_db_password:   ${{ secrets.DB_PASSWORD }}   # Use PROD Secrets
           TF_VAR_api_base_url:  ${{ secrets.API_BASE_URL }}   # Use PROD Secrets
