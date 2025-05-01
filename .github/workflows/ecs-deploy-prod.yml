@@ -100,13 +100,11 @@ jobs:
         id: build-image
         run: |
           IMAGE_TAG=$(echo $GITHUB_SHA | head -c7)
-          IMAGE_URI="${{ env.ECR_REGISTRY }}/prod-frontend:$IMAGE_TAG"
-          LATEST_URI="${{ env.ECR_REGISTRY }}/prod-frontend:latest"
-          echo "Building and tagging images: $IMAGE_URI and $LATEST_URI"
+          IMAGE_URI="${{ env.ECR_REGISTRY }}/prod-frontend:latest"
+          echo "Building and tagging images: $IMAGE_URI"
           docker build \
-            --file study-support-app/Dockerfile \
+            --file study-support-app/Dockerfile.prod \
             --tag  $IMAGE_URI \
-            --tag  $LATEST_URI \
             study-support-app
           echo "::set-output name=image_uri::$IMAGE_URI"
 
@@ -132,7 +130,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
       - name: Deploy Backend to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           cluster: prod-api
           service: prod-api-service
@@ -158,7 +156,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
       - name: Deploy Frontend to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           cluster: prod-front
           service: prod-front-service
