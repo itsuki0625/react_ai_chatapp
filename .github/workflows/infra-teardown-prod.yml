@@ -1,0 +1,39 @@
+name: PROD Terraform Infra Teardown
+on:
+  workflow_dispatch: # Manual trigger only
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  terraform-destroy-prod: # Changed job name for clarity
+    runs-on: ubuntu-latest
+    environment: Production # Target Production environment
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }} # Use PROD Credentials
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }} # Use PROD Credentials
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_version: '1.5.0' # Specify Terraform version
+
+      - name: Terraform Init (PROD)
+        working-directory: infrastructure/terraform/prod # Target PROD directory
+        run: terraform init -upgrade -input=false
+
+      - name: Terraform Destroy PROD (!!!WARNING: Destroys PROD Infra!!!)
+        working-directory: infrastructure/terraform/prod # Target PROD directory
+        env:
+          TF_VAR_db_password:   ${{ secrets.DB_PASSWORD }}   # Use PROD Secrets
+          TF_VAR_api_base_url:  ${{ secrets.API_BASE_URL }}   # Use PROD Secrets
+          TF_VAR_environment:   "prod" # Explicitly set environment to prod
+        # -auto-approve is VERY DANGEROUS. Ensure protection rules are set.
+        run: terraform destroy -input=false -auto-approve 

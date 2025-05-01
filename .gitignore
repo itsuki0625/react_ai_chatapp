@@ -11,3 +11,6 @@ htmlcov/
 secret/
 secret/*
 AWS/*policy.json
+.terraform/
+*.tfstate
+*.tfstate.*
