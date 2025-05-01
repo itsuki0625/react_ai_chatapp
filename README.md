@@ -5,12 +5,7 @@
    ```
    docker-compose up -d
    ```
-
-2. マイグレーションファイルを作成する
-   ```
-   docker-compose exec backend alembic revision --autogenerate -m "説明を入力"
-   ```
-
+   
 3. マイグレーションを適用する
    ```
    docker-compose exec backend alembic upgrade head

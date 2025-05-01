@@ -1,4 +1,68 @@
-import { getSession } from 'next-auth/react'; // Assuming you use NextAuth.js
+import { getSession, signOut } from 'next-auth/react';
+// import { useRouter } from 'next/navigation'; // useRouter はここでは使わない
+
+// --- 401 Retry Logic --- //
+let isRefreshing = false;
+let failedQueue: ((token: string | null) => void)[] = [];
+
+const processQueue = (error: Error | null, token: string | null = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom(null); // エラー時は null を渡して reject させる
+    } else {
+      prom(token);
+    }
+  });
+  failedQueue = [];
+};
+
+async function refreshToken() {
+  try {
+    // 環境変数からAPIベースURLを取得
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+    if (!baseUrl) {
+      throw new Error('API base URL is not configured.');
+    }
+
+    // リフレッシュAPIを叩く
+    const response = await fetch(`${baseUrl}/api/v1/auth/refresh-token`, {
+      method: 'POST',
+      // Credentials Provider を使っているので Cookie は不要なはずだが、念のため include
+      // NextAuth が HttpOnly Cookie で Refresh Token を管理している前提
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      // ボディはバックエンドの仕様に合わせる（ここでは空を想定）
+      // もしリフレッシュトークンをボディで送る仕様なら修正が必要
+      // body: JSON.stringify({ refresh_token: currentRefreshToken }), // 必要なら
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("refreshToken: Failed to refresh token", { status: response.status, detail: errorData?.detail });
+        throw new Error(errorData?.detail || 'Failed to refresh token');
+    }
+
+    // リフレッシュ成功後、新しいセッション（=新しいアクセストークンを含む）を取得
+    // getSession() は内部で jwt コールバックをトリガーし、新しいトークンを返すはず
+    const newSession = await getSession();
+    // Fix: Cast to unknown first to resolve TS error
+    const newAccessToken = ((newSession as unknown) as SessionWithToken)?.accessToken || ((newSession as unknown) as SessionWithToken)?.user?.accessToken;
+
+    if (!newAccessToken) {
+        console.error("refreshToken: New access token not found after refresh.");
+        throw new Error('Could not get new access token after refresh');
+    }
+    console.info("refreshToken: Token refreshed successfully.");
+    return newAccessToken;
+  } catch (error) {
+    console.error("refreshToken: Error during token refresh:", error);
+    // リフレッシュ失敗時は null を返す
+    return null;
+  }
+}
+// --- End 401 Retry Logic --- //
 
 // 型定義を追加
 interface SessionWithToken {
@@ -22,35 +86,34 @@ interface SessionWithToken {
  */
 export const fetchWithAuth = async (
   input: RequestInfo | URL,
-  init?: RequestInit
+  init?: RequestInit,
+  isRetry = false // ★ リトライフラグを追加
 ): Promise<Response> => {
+  // const router = useRouter();
+
   const session = await getSession(); // Get the current session
 
   // Try to access accessToken property safely
   const sessionWithToken = session as SessionWithToken | null;
   const accessToken = sessionWithToken?.accessToken || sessionWithToken?.user?.accessToken;
 
-  if (!session || !accessToken) {
-    // Handle cases where the user is not authenticated or token is missing
-    console.error('fetchWithAuth: No session or access token found.');
-    // Option 1: Throw an error to stop the request
-    // throw new Error('Authentication required.');
-
-    // Option 2: Proceed without Authorization header (if some APIs allow it)
-    // It's generally safer to require authentication for backend interaction
-    console.warn('fetchWithAuth: No session or access token found. Making request without Authorization header.');
-    // Depending on backend setup, this might fail or return limited data.
-    // If authentication is always required, throwing an error is better.
-    // return fetch(input, init);
-    // For now, let's throw an error as backend likely requires auth for POST/PUT/DELETE
-     throw new Error('Authentication token is missing.');
+  // ★ リトライでない初回リクエスト時にトークンがない場合のみエラー
+  if (!isRetry && (!session || !accessToken)) {
+    console.error('fetchWithAuth: No session or access token found on initial request.');
+    throw new Error('Authentication required.');
   }
 
   // Initialize headers, preserving existing ones
   const headers = new Headers(init?.headers);
 
-  // Add the Authorization header
-  headers.set('Authorization', `Bearer ${accessToken}`);
+  // Add the Authorization header if token exists
+  // ★ リトライ時など、リフレッシュ直後でトークンがない場合を考慮
+  if (accessToken) {
+      headers.set('Authorization', `Bearer ${accessToken}`);
+  } else if (!isRetry) {
+      // 初回リクエストでトークンがないのは上の if で捕捉されるはずだが念のため
+      console.warn('fetchWithAuth: Access token is missing, request might fail.');
+  }
 
   // Ensure Content-Type is set for methods that typically have a body,
   // if not already provided.
@@ -65,25 +128,67 @@ export const fetchWithAuth = async (
 
   // Perform the fetch request with the modified headers
   try {
-      const response = await fetch(input, {
-        ...init,
-        headers,
-      });
+    const response = await fetch(input, {
+      ...init,
+      headers,
+    });
 
-      // Optional: Handle 401 Unauthorized globally (e.g., redirect to login)
-      if (response.status === 401) {
-        console.error('fetchWithAuth: Received 401 Unauthorized. Session might be expired or invalid.');
-        // Consider triggering sign-out or redirect
-        // import { signOut } from 'next-auth/react';
-        // await signOut({ callbackUrl: '/login' });
-        // Throw a specific error to be caught by React Query's onError
-        throw new Error('Unauthorized (401)');
+    // Handle 401 Unauthorized globally with retry logic
+    if (response.status === 401 && !isRetry) {
+      console.warn('fetchWithAuth: Received 401 Unauthorized. Attempting token refresh...');
+
+      if (isRefreshing) {
+        // 他のリクエストがリフレッシュ中の場合、キューに追加して待機
+        return new Promise((resolve, reject) => {
+          failedQueue.push((newAccessToken: string | null) => {
+            if (newAccessToken) {
+              console.debug('fetchWithAuth: Token refreshed by another request, retrying with new token.');
+              // 新しいトークンでリクエストを再試行
+              const retryHeaders = new Headers(init?.headers);
+              retryHeaders.set('Authorization', `Bearer ${newAccessToken}`);
+              fetch(input, { ...init, headers: retryHeaders })
+                .then(resolve)
+                .catch(reject);
+            } else {
+              // リフレッシュに失敗した場合は signout してエラーを reject
+              console.error('fetchWithAuth: Token refresh failed by another request. Signing out.');
+              signOut();
+              reject(new Error('Token refresh failed and signed out.'));
+            }
+          });
+        });
+      } else {
+        // 最初の 401 リクエストがリフレッシュ処理を開始
+        isRefreshing = true;
+        const newAccessToken = await refreshToken();
+        isRefreshing = false;
+
+        if (newAccessToken) {
+          console.info('fetchWithAuth: Token refreshed successfully. Retrying original request.');
+          // キュー内の待機中リクエストを処理
+          processQueue(null, newAccessToken);
+          // 元のリクエストを新しいトークンで再試行
+          const retryHeaders = new Headers(init?.headers);
+          retryHeaders.set('Authorization', `Bearer ${newAccessToken}`);
+          return fetch(input, { ...init, headers: retryHeaders }); // ★ return する
+        } else {
+          console.error('fetchWithAuth: Token refresh failed. Signing out.');
+          // キュー内の待機中リクエストに失敗を通知
+          processQueue(new Error('Token refresh failed'));
+          signOut();
+          // ★ エラーをスローするか、特定のレスポンスを返すか検討
+          // ここではエラーをスローする
+          throw new Error('Failed to refresh token and signed out.');
+        }
       }
+    }
 
-      return response;
+    // 401 以外のレスポンス、またはリトライ成功時のレスポンス
+    return response;
+
   } catch (error) {
-      console.error('fetchWithAuth: Network or other fetch error:', error);
-      // Re-throw the error so it can be caught by the calling function / React Query
-      throw error;
+    console.error('fetchWithAuth: Fetch error:', error);
+    // Re-throw the error so it can be caught by the calling function
+    throw error;
   }
 }; 

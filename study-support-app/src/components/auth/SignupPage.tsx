@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, FormEvent } from 'react';
+import React, { useState, FormEvent, useEffect } from 'react';
 import { Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
@@ -16,6 +16,26 @@ const SignupPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [passwordStrength, setPasswordStrength] = useState<string>('');
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+
+  const validatePassword = (password: string): string => {
+    if (!password) return '';
+    if (password.length < 8) return 'パスワードは8文字以上である必要があります。';
+    if (!/(?=.*[a-z])/.test(password)) return 'パスワードには小文字を含める必要があります。';
+    if (!/(?=.*[A-Z])/.test(password)) return 'パスワードには大文字を含める必要があります。';
+    if (!/(?=.*\d)/.test(password)) return 'パスワードには数字を含める必要があります。';
+    return 'strong';
+  };
+
+  useEffect(() => {
+    const strength = validatePassword(formData.password);
+    if (strength === 'strong') {
+      setPasswordStrength('');
+    } else {
+      setPasswordStrength(strength);
+    }
+  }, [formData.password]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -28,18 +48,32 @@ const SignupPage = () => {
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
-    setIsLoading(true);
 
-    // パスワード一致チェック
+    if (!agreedToTerms) {
+      setError('利用規約とプライバシーポリシーに同意する必要があります。');
+      return;
+    }
+
     if (formData.password !== formData.confirmPassword) {
       setError('パスワードが一致しません');
       setIsLoading(false);
       return;
     }
 
+    const strength = validatePassword(formData.password);
+    if (strength !== 'strong') {
+      setError(strength || 'パスワードが要件を満たしていません。');
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+
+    const signupApiUrl = `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/signup`;
+    console.log('>>> [SignupPage] Attempting to fetch signup API:', signupApiUrl);
+
     try {
-      // サインアップAPI呼び出し
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/signup`, {
+      const response = await fetch(signupApiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -48,39 +82,50 @@ const SignupPage = () => {
         body: JSON.stringify({
           email: formData.email,
           password: formData.password,
-          name: formData.name
+          full_name: formData.name
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        setError(errorData.detail || 'アカウントの作成に失敗しました。もう一度お試しください。');
+        let errorMessage = 'アカウントの作成に失敗しました。もう一度お試しください。';
+        if (typeof errorData?.detail === 'string') {
+          errorMessage = errorData.detail;
+        } else if (Array.isArray(errorData?.detail)) {
+          const firstError = errorData.detail[0];
+          if (typeof firstError?.msg === 'string') {
+            errorMessage = firstError.msg;
+          }
+        } else if (typeof errorData?.message === 'string') {
+          errorMessage = errorData.message;
+        }
+        console.error('Signup API Error:', errorData);
+        setError(errorMessage);
         setIsLoading(false);
         return;
       }
       
-      // サインアップ成功後、NextAuthを使用して自動ログイン
       const signInResult = await signIn('credentials', {
         email: formData.email,
         password: formData.password,
         redirect: false,
-        callbackUrl: '/dashboard'
+        callbackUrl: '/profile/setup'
       });
 
       if (signInResult?.error) {
-        // ログインに失敗した場合は、ログインページにリダイレクト
         router.push('/login');
         return;
       }
 
-      // ログイン成功後、NextAuthのコールバックがユーザー情報を設定するまで少し待機
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // ダッシュボードにリダイレクト
-      router.push('/dashboard');
+      router.push('/profile/setup');
 
     } catch (err) {
       console.error("Signup error:", err);
+      if (err instanceof Error && 'cause' in err) {
+           console.error("Signup error cause:", (err as any).cause);
+      }
       setError('アカウントの作成に失敗しました。もう一度お試しください。');
     } finally {
       setIsLoading(false);
@@ -90,7 +135,6 @@ const SignupPage = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-lg shadow-md">
-        {/* ヘッダー */}
         <div className="text-center">
           <h2 className="text-3xl font-bold text-gray-900">
             アカウント作成
@@ -103,7 +147,6 @@ const SignupPage = () => {
           </p>
         </div>
 
-        {/* フォーム */}
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           {error && (
             <div className="p-3 rounded bg-red-50 text-red-500 text-sm">
@@ -111,7 +154,6 @@ const SignupPage = () => {
             </div>
           )}
 
-          {/* 名前入力 */}
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
               お名前
@@ -133,7 +175,6 @@ const SignupPage = () => {
             </div>
           </div>
 
-          {/* メールアドレス入力 */}
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
               メールアドレス
@@ -155,7 +196,6 @@ const SignupPage = () => {
             </div>
           </div>
 
-          {/* パスワード入力 */}
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
               パスワード
@@ -186,9 +226,11 @@ const SignupPage = () => {
                 )}
               </button>
             </div>
+            {passwordStrength && formData.password && (
+              <p className="mt-1 text-xs text-red-600">{passwordStrength}</p>
+            )}
           </div>
 
-          {/* パスワード確認入力 */}
           <div>
             <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
               パスワード（確認）
@@ -210,23 +252,24 @@ const SignupPage = () => {
             </div>
           </div>
 
-          {/* プライバシーポリシー同意 */}
           <div className="flex items-center">
             <input
               id="agree-terms"
               name="agree-terms"
               type="checkbox"
               required
+              checked={agreedToTerms}
+              onChange={(e) => setAgreedToTerms(e.target.checked)}
               className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
             />
             <label htmlFor="agree-terms" className="ml-2 block text-sm text-gray-900">
-              <a href="/terms" className="font-medium text-blue-600 hover:text-blue-500">利用規約</a>と
-              <a href="/privacy" className="font-medium text-blue-600 hover:text-blue-500">プライバシーポリシー</a>
+              <a href="https://lp.smartao.jp/terms" target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:text-blue-500">利用規約</a>、
+              <a href="https://lp.smartao.jp/privacy-policy" target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:text-blue-500">プライバシーポリシー</a>、
+              <a href="https://lp.smartao.jp/tokushoho" target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:text-blue-500">特定商取引法に基づく表記</a>
               に同意します
             </label>
           </div>
 
-          {/* サインアップボタン */}
           <div>
             <button
               type="submit"

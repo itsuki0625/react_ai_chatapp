@@ -1,6 +1,6 @@
 import { Content } from '@/types/content';
-import axios from 'axios';
 import { getSession } from 'next-auth/react';
+import { fetchWithAuth } from '@/lib/fetchWithAuth';
 
 // ブラウザ環境かサーバー環境かによって適切なAPIのベースURLを取得
 export const getApiBaseUrl = () => {
@@ -9,117 +9,128 @@ export const getApiBaseUrl = () => {
     : process.env.NEXT_PUBLIC_API_BASE_URL || 'http://backend:5050';
 };
 
-// 認証情報付きのaxios設定を取得
+// 認証付き・未認証リクエストの共通設定を取得します
 export const getAxiosConfig = async (requireAuth = true) => {
-  const config: {
-    withCredentials: boolean;
-    headers: Record<string, string>;
-    params?: Record<string, string | number | boolean>;
-  } = {
-    withCredentials: true, // クッキーを含める
+  const config: { withCredentials: boolean; headers: Record<string, string> } = {
+    withCredentials: true,
     headers: {}
   };
-
-  // 認証が必要な場合はセッションを取得
   if (requireAuth && typeof window !== 'undefined') {
     try {
-      const session = await getSession(); // NextAuth.js v4 or v5?
-      if (session?.accessToken) { // <-- session.accessToken を確認
-        config.headers['Authorization'] = `Bearer ${session.accessToken}`; // <-- Authorization ヘッダーを設定
-      } else if (session) {
-         // アクセストークンがないがセッションはある場合（古い形式やカスタム認証？）
-         // 必要に応じて X-Session-Token などのカスタムヘッダーを設定
-         config.headers['X-Session-Token'] = 'true';
-         if (typeof session.user?.email === 'string') {
-           config.headers['X-User-Email'] = session.user.email;
-         }
-         if (typeof session.user?.name === 'string') {
-           config.headers['X-User-Name'] = encodeURIComponent(session.user.name);
-         }
-         console.warn('Session found but no accessToken. Using custom headers.');
+      const session = await getSession();
+      if (session?.accessToken) {
+        config.headers['Authorization'] = `Bearer ${session.accessToken}`;
       } else {
-         console.warn('No active session found for authenticated request.');
+        console.warn('API Service: 認証トークンが見つかりません');
       }
     } catch (error) {
-      console.error('セッション取得エラー:', error);
+      console.error('API Service: セッション取得エラー', error);
     }
   }
-
   return config;
 };
 
 // 既存のコードに追加
 export const contentAPI = {
-  getContents: async (contentType?: string) => {
+  getContents: async (contentType?: string): Promise<Content[]> => {
     try {
       const params = contentType ? `?content_type=${contentType}` : '';
-      const config = await getAxiosConfig(true);
-      const response = await axios.get(
-        `${getApiBaseUrl()}/api/v1/contents/${params}`,
-        config
+      const response = await fetchWithAuth(
+        `${getApiBaseUrl()}/api/v1/contents/${params}`
       );
-      return response.data;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      if (!Array.isArray(data)) {
+        console.error('Invalid data format received for contents', data);
+        throw new Error('Invalid data format received');
+      }
+      return data as Content[];
     } catch (error) {
       console.error('コンテンツの取得に失敗しました:', error);
-      throw new Error('Failed to fetch contents');
+      throw error;
     }
   },
 
-  getContent: async (id: string) => {
+  getContent: async (id: string): Promise<Content> => {
     try {
-      const config = await getAxiosConfig(true);
-      const response = await axios.get(
-        `${getApiBaseUrl()}/api/v1/contents/${id}`,
-        config
+      const response = await fetchWithAuth(
+        `${getApiBaseUrl()}/api/v1/contents/${id}`
       );
-      return response.data;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+      return await response.json() as Content;
     } catch (error) {
       console.error(`コンテンツID: ${id} の取得に失敗しました:`, error);
-      throw new Error('Failed to fetch content');
+      throw error;
     }
   },
 
-  createContent: async (content: Omit<Content, 'id' | 'created_at' | 'updated_at'>) => {
+  createContent: async (content: Omit<Content, 'id' | 'created_at' | 'updated_at'>): Promise<Content> => {
     try {
-      const config = await getAxiosConfig(true);
-      const response = await axios.post(
+      const response = await fetchWithAuth(
         `${getApiBaseUrl()}/api/v1/contents/`,
-        content,
-        config
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(content),
+        }
       );
-      return response.data;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+      return await response.json() as Content;
     } catch (error) {
       console.error('コンテンツの作成に失敗しました:', error);
-      throw new Error('Failed to create content');
+      throw error;
     }
   },
 
-  updateContent: async (id: string, content: Partial<Content>) => {
+  updateContent: async (id: string, content: Partial<Content>): Promise<Content> => {
     try {
-      const config = await getAxiosConfig(true);
-      const response = await axios.put(
+      const response = await fetchWithAuth(
         `${getApiBaseUrl()}/api/v1/contents/${id}`,
-        content,
-        config
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(content),
+        }
       );
-      return response.data;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+      return await response.json() as Content;
     } catch (error) {
       console.error(`コンテンツID: ${id} の更新に失敗しました:`, error);
-      throw new Error('Failed to update content');
+      throw error;
     }
   },
 
-  deleteContent: async (id: string) => {
+  deleteContent: async (id: string): Promise<void> => {
     try {
-      const config = await getAxiosConfig(true);
-      const response = await axios.delete(
+      const response = await fetchWithAuth(
         `${getApiBaseUrl()}/api/v1/contents/${id}`,
-        config
+        {
+          method: 'DELETE',
+        }
       );
-      return response.data;
+      if (!response.ok && response.status !== 204) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
     } catch (error) {
       console.error(`コンテンツID: ${id} の削除に失敗しました:`, error);
-      throw new Error('Failed to delete content');
+      throw error;
     }
   },
 }; 

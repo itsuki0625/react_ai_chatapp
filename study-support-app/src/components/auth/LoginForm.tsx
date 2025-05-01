@@ -16,13 +16,19 @@ export const LoginForm: React.FC = () => {
   // セッション状態を監視
   useEffect(() => {
     console.log('セッション状態:', status, session);
-    if (status === 'authenticated' && session) {
-      console.log('認証済み:', session);
+    // ログアウト直後かどうかを確認
+    const isLoggedOut = searchParams?.get('status') === 'logged_out';
+
+    // ログアウト直後 *でない* 場合に、認証済みならリダイレクト
+    if (status === 'authenticated' && session && !isLoggedOut) {
+      console.log('認証済み (ログアウト直後ではない):', session);
       
       // ユーザーロールに基づいてリダイレクト先を決定
       const redirectUrl = searchParams?.get('redirect') || getDashboardByRole(session.user.role);
       console.log('遷移先:', redirectUrl);
       router.push(redirectUrl);
+    } else if (isLoggedOut) {
+        console.log('ログインページ表示 (ログアウト直後のためリダイレクト抑制)');
     }
   }, [session, status, router, searchParams]);
   
@@ -187,10 +193,14 @@ export const LoginForm: React.FC = () => {
         </div>
       )}
       
-      {/* 簡易ヘルプ - メールとパスワードのヒント */}
-      <div className="mt-4 text-xs text-gray-500">
-        <p>テストユーザー: test@example.com / password</p>
-        <p>管理者ユーザー: admin@example.com / admin123</p>
+      {/* サインアップへの案内 */}
+      <div className="mt-6 text-center">
+        <p className="text-sm text-gray-600">
+          アカウントをお持ちでないですか？{' '}
+          <a href="/signup" className="font-medium text-blue-600 hover:text-blue-500">
+            新規登録はこちら
+          </a>
+        </p>
       </div>
     </form>
   );

@@ -8,6 +8,8 @@ declare module "next-auth" {
     status?: string;
     permissions?: string[];
     isTeacher?: boolean; // authorizeで設定されていれば含める
+    grade?: string;
+    prefecture?: string;
     // accessToken?: string; // authorizeの返り値には含めず、jwtコールバックでtokenに追加される想定
     refreshToken?: string;
     accessTokenExpires?: number;
@@ -17,16 +19,23 @@ declare module "next-auth" {
   interface Session extends DefaultSession {
     user: {
       id: string;
+      name?: string | null;
+      email?: string | null;
+      image?: string | null;
       role: string; // sessionコールバックで単一文字列に正規化される
       status: string;
       isAdmin: boolean; // sessionコールバックで追加される
       isTeacher: boolean; // sessionコールバックで追加される
       isStudent: boolean; // sessionコールバックで追加される
       permissions?: string[];
+      grade?: string;
+      prefecture?: string;
       // DefaultSession['user'] の他のプロパティ（name, email, image）も必要なら含める
     } & Pick<DefaultSession["user"], 'name' | 'email' | 'image'>; // 必要な標準プロパティのみ選択的に結合
     accessToken?: string; // sessionコールバックで追加される
-    error?: string;
+    error?: "RefreshAccessTokenError"; // トークンリフレッシュエラー用
+    errorDetail?: string; // エラー詳細を追加
+    expires: string; // ISO 8601 date string
   }
 }
 
@@ -41,6 +50,12 @@ declare module "next-auth/jwt" {
     accessToken?: string;
     refreshToken?: string;
     accessTokenExpires?: number;
-    error?: string;
+    grade?: string;
+    prefecture?: string;
+    error?: "RefreshAccessTokenError"; // トークンリフレッシュエラー用
+    errorDetail?: string; // エラー詳細を追加
+    iat: number;
+    exp: number;
+    jti: string;
   }
 } 

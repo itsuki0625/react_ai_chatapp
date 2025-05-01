@@ -24,10 +24,7 @@ async def get_admission_methods(
     print("Fetched admission methods:", methods)
     
     response_data = [
-        AdmissionMethodResponse(
-            id=method.id,
-            name=method.name
-        )
+        AdmissionMethodResponse.model_validate(method)
         for method in methods
     ]
     

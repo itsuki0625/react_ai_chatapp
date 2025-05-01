@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { signOut } from 'next-auth/react';
 import { AdminNavBar } from '@/components/common/AdminNavBar';
 import { User, UserRole } from '@/types/user';
 import { Plus, Search, Edit, Trash2 } from 'lucide-react';
@@ -20,8 +22,10 @@ import UserDetailsModal from '@/components/admin/users/UserDetailsModal';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import RoleManagementTab from '@/components/admin/roles/RoleManagementTab';
 import PermissionManagementTab from '@/components/admin/permissions/PermissionManagementTab';
+import { toast } from 'react-hot-toast';
 
 const AdminUsersPage = () => {
+  const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [availableRoles, setAvailableRoles] = useState<RoleRead[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -94,12 +98,19 @@ const AdminUsersPage = () => {
       console.log("Mapped Users (before setState):", mappedUsers);
 
       setUsers(mappedUsers);
-    } catch (error) {
+    } catch (error: any) {
       console.error('ユーザー取得エラー:', error);
+      if (error.message === 'Unauthorized (401)' || error.message === 'Authentication required.') {
+        toast.error('認証エラーが発生しました。ログインページに遷移します。');
+        await signOut({ redirect: false });
+        router.push('/login?status=logged_out');
+      } else {
+        toast.error('ユーザー情報の取得に失敗しました。');
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [searchTerm, filterRole, filterStatus]);
+  }, [searchTerm, filterRole, filterStatus, router]);
 
   // --- ロール一覧を取得する useEffect ---
   useEffect(() => {
@@ -107,23 +118,28 @@ const AdminUsersPage = () => {
       setIsLoadingRoles(true);
       try {
         const rolesData = await getRoles();
-        // 必要に応じてソートやフィルタリング
-        setAvailableRoles(rolesData.filter(role => role.is_active)); // アクティブなロールのみ表示する場合
+        setAvailableRoles(rolesData.filter(role => role.is_active));
         console.log("Fetched Roles:", rolesData);
-      } catch (error) {
+      } catch (error: any) {
         console.error('ロール取得エラー:', error);
-        // エラーハンドリング (例: トースト表示)
+        if (error.message === 'Unauthorized (401)' || error.message === 'Authentication required.') {
+          toast.error('認証エラーが発生しました。ログインページに遷移します。');
+          await signOut({ redirect: false });
+          router.push('/login?status=logged_out');
+        } else {
+          toast.error('ロール情報の取得に失敗しました。');
+        }
       } finally {
         setIsLoadingRoles(false);
       }
     };
     fetchRoles();
-  }, []); // コンポーネントマウント時に1回だけ実行
+  }, [router]);
   // --- ここまで ---
 
   useEffect(() => {
     fetchUsers();
-  }, [searchTerm, filterRole, filterStatus, fetchUsers]);
+  }, [fetchUsers]);
 
   // ロール表示用のヘルパー (キーを日本語に変更)
   const roleDisplayMap: Record<string, string> = { // 型を Record<string, string> に変更

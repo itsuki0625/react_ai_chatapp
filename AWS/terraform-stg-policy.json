@@ -11,8 +11,7 @@
               "s3:DeleteObject"
             ],
             "Resource": [
-              "arn:aws:s3:::smartao-stg-terraform-state",
-              "arn:aws:s3:::smartao-stg-terraform-state/*"
+              "*"
             ]
         },
         {
@@ -25,7 +24,7 @@
               "dynamodb:DeleteItem",
               "dynamodb:UpdateItem"
             ],
-            "Resource": "arn:aws:dynamodb:ap-northeast-1:354918390375:table/smartao-stg-terraform-lock"
+            "Resource": "*"
         },
         {
             "Sid": "VPCNetwork",
@@ -160,7 +159,7 @@
               "ssm:GetParameter",
               "ssm:DescribeParameters"
             ],
-            "Resource": "arn:aws:ssm:ap-northeast-1:354918390375:parameter/stg/*"
+            "Resource": "*"
         },
         {
             "Sid": "SecretsManager",
@@ -172,7 +171,7 @@
               "secretsmanager:PutSecretValue",
               "secretsmanager:ListSecrets"
             ],
-            "Resource": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/*"
+            "Resource": "*"
         },
         {
             "Sid": "IAMForECSRolesAndPolicies",
@@ -196,9 +195,7 @@
               "iam:TagRole"
             ],
             "Resource": [
-              "arn:aws:iam::354918390375:role/stg-*",
-              "arn:aws:iam::354918390375:role/*ecs-task-exec-role*",
-              "arn:aws:iam::354918390375:policy/stg-*"
+              "*"
             ]
         },
         {
@@ -248,8 +245,7 @@
                 "s3:*"
             ],
             "Resource": [
-                "arn:aws:s3:::stg-rds-ca-certs-354918390375",
-                "arn:aws:s3:::stg-rds-ca-certs-354918390375/*"
+              "*"
             ]
         }
     ]

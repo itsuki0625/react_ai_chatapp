@@ -102,8 +102,8 @@ async def create_user(db: AsyncSession, *, user_in: UserCreate) -> User:
         email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
         full_name=user_in.full_name,
-        status=user_in.status,
-        is_verified=False,
+        status=SchemaUserStatus.ACTIVE,
+        is_verified=True,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
@@ -127,13 +127,19 @@ async def create_user(db: AsyncSession, *, user_in: UserCreate) -> User:
         db.add(email_verification)
         db.add(login_info)
         await db.commit()
-        await db.refresh(db_user, attribute_names=['user_roles', 'user_roles.role'])
+        
+        # コミット後に関連情報を含めてユーザーを再取得して返す
+        loaded_user = await get_user(db, db_user.id)
+        if not loaded_user:
+             # 通常ここには到達しないはずだが、念のためエラーハンドリング
+             logger.error(f"Failed to reload user {db_user.id} after creation.")
+             raise ValueError(f"Failed to reload user {db_user.id} after creation.")
+        return loaded_user
+
     except Exception as e:
         await db.rollback()
         logger.error(f"Error creating user and related records for {user_in.email}: {e}")
         raise e
-
-    return db_user
 
 async def update_user(
     db: AsyncSession,

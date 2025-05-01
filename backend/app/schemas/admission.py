@@ -71,6 +71,21 @@ class DepartmentDetailResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class AdmissionMethodResponse(BaseModel):
+class AdmissionMethodBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    is_active: bool = True
+
+class AdmissionMethodCreate(AdmissionMethodBase):
+    pass
+
+class AdmissionMethodUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class AdmissionMethodResponse(AdmissionMethodBase, TimestampMixin):
     id: UUID
-    name: str 
+    
+    class Config:
+        from_attributes = True 

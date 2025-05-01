@@ -24,7 +24,7 @@ import base64
 from fastapi.responses import JSONResponse
 import logging
 from datetime import datetime, timedelta
-from app.schemas.user import UserResponse, UserSettingsResponse
+from app.schemas.user import UserResponse, UserSettingsResponse, UserCreate
 from app.crud import subscription as crud_subscription
 from app.models.subscription import Subscription
 from app.schemas.subscription import SubscriptionResponse
@@ -51,7 +51,18 @@ async def login(
         
         # ユーザー認証 (get_user_by_email はリレーションをロードしない)
         authenticated_user = await crud_user.get_user_by_email(db, email=form_data.username)
-        if not authenticated_user or not verify_password(form_data.password, authenticated_user.hashed_password):
+        
+        # --- デバッグログ追加 ---
+        if authenticated_user:
+            logger.debug(f"ユーザー発見: {authenticated_user.email}, DBハッシュ: {authenticated_user.hashed_password}")
+            password_match = verify_password(form_data.password, authenticated_user.hashed_password)
+            logger.debug(f"パスワード検証結果 (verify_password): {password_match}")
+        else:
+            logger.debug(f"ユーザーが見つかりません: {form_data.username}")
+            password_match = False # ユーザーがいなければ検証は False
+        # --- デバッグログ追加ここまで ---
+            
+        if not authenticated_user or not password_match: # デバッグ用に検証結果変数を使用
             logger.warning(f"認証失敗: {form_data.username}")
             if authenticated_user: # ユーザーが存在する場合のみ失敗を記録
                  await crud_user.record_login_attempt(db=db, user_id=authenticated_user.id, success=False)
@@ -147,7 +158,9 @@ async def login(
             "email": user.email,
             "full_name": user.full_name,
             "role": primary_user_role.role.name, # ロール名を返す
-            "status": user.status.value if user.status else None # status を追加 (Enum の場合は .value)
+            "status": user.status.value if user.status else None, # status を追加 (Enum の場合は .value)
+            "grade": user.grade, # ★ grade を追加
+            "prefecture": user.prefecture # ★ prefecture を追加
         }
 
         return LoginResponse(
@@ -311,19 +324,37 @@ async def signup(
         # パスワードのハッシュ化
         hashed_password = get_password_hash(user_data.password)
         
-        # ユーザーの作成
+        # ユーザーの作成 (UserCreate スキーマを使用して呼び出し)
+        user_create_schema = UserCreate(
+            email=user_data.email,
+            password=user_data.password, # ハッシュ化前のパスワードを渡す (create_user内でハッシュ化されるため)
+            full_name=user_data.full_name
+            # 必要に応じて role や status も設定 (UserCreate の定義による)
+            # role=user_data.role, 
+            # status=user_data.status,
+        )
         user = await crud_user.create_user(
             db=db,
-            email=user_data.email,
-            password=hashed_password,
-            full_name=user_data.name,
+            user_in=user_create_schema # UserCreate オブジェクトを渡す
         )
         print("user : ", user)
         
         # セッションにユーザー情報を保存
         request.session["user_id"] = str(user.id)
         request.session["email"] = user.email
-        request.session["role"] = user.role.permissions
+        # 正しくロールと権限を取得する
+        primary_user_role = next((ur for ur in user.user_roles if ur.is_primary), None)
+        role_permissions = []
+        role_name = "不明" # デフォルト
+        if primary_user_role and primary_user_role.role:
+            role_name = primary_user_role.role.name
+            # role_permissions 属性は Role モデルで定義されている関連プロパティを想定
+            if hasattr(primary_user_role.role, 'role_permissions'): 
+                role_permissions = [rp.permission.name for rp in primary_user_role.role.role_permissions if rp.is_granted]
+            else:
+                 logger.warning(f"Role object for {role_name} does not have expected 'role_permissions' attribute.")
+
+        request.session["role"] = role_permissions # セッションには権限リストを保存
         print("request.session : ", request.session)
         
         return {
@@ -331,7 +362,7 @@ async def signup(
             "user": {
                 "email": user.email,
                 "full_name": user.full_name,
-                "role": user.role.permissions
+                "role": role_name # レスポンスにはロール名を返す
             }
         }
     except Exception as e:
@@ -414,21 +445,15 @@ async def get_user_settings(
 async def update_user_settings(
     request: Request,
     settings_data: dict,
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
 ) -> Any:
     """
     ユーザー設定を更新
     """
     try:
-        if "user_id" not in request.session:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="認証が必要です"
-            )
-        
-        user_id = request.session["user_id"]
-        user = await crud_user.get_user(db, user_id)
-        
+        user = current_user
+
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -439,17 +464,28 @@ async def update_user_settings(
         if "full_name" in settings_data:
             user.full_name = settings_data["full_name"]
         
+        # ★ grade の更新を追加 ★
+        if "grade" in settings_data:
+            user.grade = settings_data["grade"]
+        
+        # ★ prefecture の更新を追加 ★
+        if "prefecture" in settings_data:
+            user.prefecture = settings_data["prefecture"]
+        
         # TODO: 他の設定（通知設定など）は別テーブルで管理することを検討
         
         await db.commit()
         
+        # レスポンスに更新後の情報を反映（任意）
         return {
             "message": "設定を更新しました",
             "email": user.email,
-            "full_name": user.full_name
+            "full_name": user.full_name,
+            "grade": user.grade, # レスポンスに追加
+            "prefecture": user.prefecture # レスポンスに追加
         }
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"ユーザー設定更新エラー: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
