@@ -33,32 +33,12 @@ module "vpc" {
 
   # --- VPC Endpoints ---
   # Gateway Endpoints
-  create_gateway_endpoints = true
-  gateway_endpoints = {
-    s3 = {
-      tags = { Name = "${var.environment}-s3-gateway-vpce" }
-    }
-  }
+  # create_gateway_endpoints = true # Removed
+  # gateway_endpoints = { ... } # Removed
 
   # Interface Endpoints
-  create_interface_endpoints = true
-  interface_endpoints = {
-    secretsmanager = {
-      tags = { Name = "${var.environment}-secretsmanager-vpce" }
-    },
-    ecs = {
-      tags = { Name = "${var.environment}-ecs-vpce" }
-    },
-    "ecr.api" = { # Need quotes for keys with dots
-      tags = { Name = "${var.environment}-ecr-api-vpce" }
-    },
-    "ecr.dkr" = {
-      tags = { Name = "${var.environment}-ecr-dkr-vpce" }
-    },
-    logs = {
-      tags = { Name = "${var.environment}-logs-vpce" }
-    }
-  }
+  # create_interface_endpoints = true # Removed
+  # interface_endpoints = { ... } # Removed
 
   tags = {
     Terraform   = "true"
@@ -253,26 +233,98 @@ resource "aws_secretsmanager_secret" "backend_env" {
   recovery_window_in_days      = 0
 }
 
-# --- VPC エンドポイント定義 (VPCモジュール内で作成されるため、個別の定義は削除) ---
-# # Secrets Manager VPC Endpoint
-# resource "aws_vpc_endpoint" "secretsmanager" { ... }
+# === VPC エンドポイント定義 (個別リソースとして定義) ===
 
-# # VPCエンドポイント用のセキュリティグループ
-# # VPCモジュールがエンドポイント用のSGを作成するため、個別定義は不要になる場合が多い
-# # 必要であれば、module.vpc.default_security_group_idなどを参照するか、
-# # module.vpc.endpoint_security_group_ids を利用する
-# resource "aws_security_group" "vpc_endpoint" { ... }
+# VPCエンドポイント用のセキュリティグループ
+resource "aws_security_group" "vpc_endpoint" {
+  name        = "${var.environment}-vpce-sg"
+  description = "Allow HTTPS from App SG for VPC Endpoint"
+  vpc_id      = module.vpc.vpc_id
 
-# # ECR API Endpoint
-# resource "aws_vpc_endpoint" "ecr_api" { ... }
+  ingress {
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    # タスクが使用するappセキュリティグループからのアクセスを許可
+    security_groups = [aws_security_group.app.id]
+  }
 
-# # ECR DKR Endpoint
-# resource "aws_vpc_endpoint" "ecr_dkr" { ... }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
-# # CloudWatch Logs Endpoint
-# resource "aws_vpc_endpoint" "logs" { ... }
+  tags = { Environment = var.environment }
+}
 
-# # S3 Gateway Endpoint
-# resource "aws_vpc_endpoint" "s3_gateway" { ... }
+# Secrets Manager VPC Endpoint
+resource "aws_vpc_endpoint" "secretsmanager" {
+  vpc_id            = module.vpc.vpc_id
+  service_name      = "com.amazonaws.${var.aws_region}.secretsmanager"
+  vpc_endpoint_type = "Interface"
+  subnet_ids         = module.vpc.private_subnets
+  security_group_ids = [aws_security_group.vpc_endpoint.id]
+  private_dns_enabled = true
+  tags = {
+    Name        = "${var.environment}-secretsmanager-vpce"
+    Environment = var.environment
+  }
+}
+
+# ECR API VPC Endpoint
+resource "aws_vpc_endpoint" "ecr_api" {
+  vpc_id            = module.vpc.vpc_id
+  service_name      = "com.amazonaws.${var.aws_region}.ecr.api"
+  vpc_endpoint_type = "Interface"
+  subnet_ids         = module.vpc.private_subnets
+  security_group_ids = [aws_security_group.vpc_endpoint.id]
+  private_dns_enabled = true
+  tags = {
+    Name        = "${var.environment}-ecr-api-vpce"
+    Environment = var.environment
+  }
+}
+
+# ECR DKR VPC Endpoint
+resource "aws_vpc_endpoint" "ecr_dkr" {
+  vpc_id            = module.vpc.vpc_id
+  service_name      = "com.amazonaws.${var.aws_region}.ecr.dkr"
+  vpc_endpoint_type = "Interface"
+  subnet_ids         = module.vpc.private_subnets
+  security_group_ids = [aws_security_group.vpc_endpoint.id]
+  private_dns_enabled = true
+  tags = {
+    Name        = "${var.environment}-ecr-dkr-vpce"
+    Environment = var.environment
+  }
+}
+
+# CloudWatch Logs VPC Endpoint
+resource "aws_vpc_endpoint" "logs" {
+  vpc_id            = module.vpc.vpc_id
+  service_name      = "com.amazonaws.${var.aws_region}.logs"
+  vpc_endpoint_type = "Interface"
+  subnet_ids         = module.vpc.private_subnets
+  security_group_ids = [aws_security_group.vpc_endpoint.id]
+  private_dns_enabled = true
+  tags = {
+    Name        = "${var.environment}-logs-vpce"
+    Environment = var.environment
+  }
+}
+
+# S3 Gateway VPC Endpoint
+resource "aws_vpc_endpoint" "s3_gateway" {
+  vpc_id       = module.vpc.vpc_id
+  service_name = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids = module.vpc.private_route_table_ids # Use module output for private route tables
+  tags = {
+    Name        = "${var.environment}-s3-gateway-vpce"
+    Environment = var.environment
+  }
+}
 
 # --- VPC エンドポイント定義 ここまで --- 
