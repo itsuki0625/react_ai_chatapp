@@ -48,7 +48,7 @@ jobs:
         id: build-image
         run: |
           IMAGE_TAG=$(echo $GITHUB_SHA | head -c7)
-          IMAGE_URI="${{ env.ECR_REGISTRY }}/backend:$IMAGE_TAG"
+          IMAGE_URI="${{ env.ECR_REGISTRY }}/prod-backend:$IMAGE_TAG"
           echo "Building and tagging image as: $IMAGE_URI"
           docker build \
             --file backend/Dockerfile \
@@ -76,10 +76,10 @@ jobs:
         id: build-image
         run: |
           IMAGE_TAG=$(echo $GITHUB_SHA | head -c7)
-          IMAGE_URI="${{ env.ECR_REGISTRY }}/front:$IMAGE_TAG"
+          IMAGE_URI="${{ env.ECR_REGISTRY }}/prod-frontend:$IMAGE_TAG"
           echo "Building and tagging image as: $IMAGE_URI"
           docker build \
-            --file study-support-app/Dockerfile \
+            --file frontend/Dockerfile \
             --tag  $IMAGE_URI \
             study-support-app
           echo "::set-output name=image_uri::$IMAGE_URI"
