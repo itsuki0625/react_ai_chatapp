@@ -145,65 +145,19 @@ export const StudentDashboard = () => {
   }
 
   return (
-    <div className="p-6">
-      <h1 className="text-3xl font-bold mb-8">ダッシュボード</h1>
-
-      {/* 学習進捗
-      <div className="bg-white p-6 rounded-xl shadow mb-8">
-        <div className="flex items-center mb-4">
-          <h2 className="text-xl font-semibold">学習進捗</h2>
-        </div>
-        <div className="space-y-6">
-          <div>
-            <div className="flex justify-between mb-1">
-              <span>全体の進捗</span>
-              <span>{data?.progress.completedTasks}/{data?.progress.totalTasks} タスク</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2.5">
-              <div
-                className="bg-blue-600 h-2.5 rounded-full"
-                style={{ width: `${(data?.progress.completedTasks || 0) / (data?.progress.totalTasks || 1) * 100}%` }}
-              ></div>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {data?.progress.courses.map(course => (
-              <div key={course.id} className="bg-gray-50 p-4 rounded-lg">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="font-medium">{course.title}</span>
-                  <span>{course.progress}%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-green-600 h-2 rounded-full"
-                    style={{ width: `${course.progress}%` }}
-                  ></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <button
-          onClick={() => router.push('/contents')}
-          className="mt-6 text-sm bg-blue-50 text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors whitespace-nowrap"
-        >
-          すべての学習コンテンツを確認する
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
-          </svg>
-        </button>
-      </div> */}
+    <div className="p-4 sm:p-6">
+      <h1 className="text-2xl sm:text-3xl font-bold mb-6 sm:mb-8">ダッシュボード</h1>
 
       {/* AIチャット分析 */}
-      <div className="bg-white p-6 rounded-xl shadow mb-8">
-        <div className="flex items-center justify-between mb-6">
+      <div className="bg-white p-4 sm:p-6 rounded-xl shadow mb-6 sm:mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
           <div>
-            <h2 className="text-xl font-semibold mb-2">AIチャット分析</h2>
+            <h2 className="text-lg sm:text-xl font-semibold mb-2">AIチャット分析</h2>
             <p className="text-sm text-gray-600">AIとの対話から分析されたあなたの特徴</p>
           </div>
           <button
             onClick={() => router.push('/chat')}
-            className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition flex items-center gap-2"
+            className="w-full sm:w-auto px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition flex items-center justify-center gap-2"
           >
             <span>AIチャットを開始</span>
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -211,7 +165,7 @@ export const StudentDashboard = () => {
             </svg>
           </button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           <div className="bg-orange-50 p-4 rounded-lg">
             <div className="flex items-center gap-2 mb-3">
               <h3 className="font-medium text-orange-800">あなたの強み</h3>
@@ -257,16 +211,16 @@ export const StudentDashboard = () => {
       </div>
 
       {/* 予定イベントと志望校状況 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
         {/* 予定イベント */}
-        <div className="bg-white p-6 rounded-xl shadow">
-          <div className="flex items-center justify-between mb-6">
+        <div className="bg-white p-4 sm:p-6 rounded-xl shadow">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
             <div>
-              <h2 className="text-xl font-semibold mb-2">予定イベント</h2>
+              <h2 className="text-lg sm:text-xl font-semibold mb-2">予定イベント</h2>
               <p className="text-sm text-gray-600">今後の予定を確認しましょう</p>
             </div>
             <button
-              className="text-sm bg-gray-50 text-gray-600 hover:bg-gray-100 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors whitespace-nowrap"
+              className="w-full sm:w-auto text-sm bg-gray-50 text-gray-600 hover:bg-gray-100 px-4 py-2 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors whitespace-nowrap"
             >
               すべての予定を確認する
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -274,9 +228,9 @@ export const StudentDashboard = () => {
               </svg>
             </button>
           </div>
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             {data?.events.map(event => (
-              <div key={event.id} className="flex items-start p-4 bg-gray-50 rounded-lg">
+              <div key={event.id} className="flex items-start p-3 sm:p-4 bg-gray-50 rounded-lg">
                 <div className="min-w-[100px]">
                   <p className="text-sm text-gray-600">{event.date}</p>
                   <p className="text-xs text-gray-500 mt-1">
@@ -296,15 +250,15 @@ export const StudentDashboard = () => {
         </div>
 
         {/* 志望校状況 */}
-        <div className="bg-white p-6 rounded-xl shadow">
-          <div className="flex items-center justify-between mb-6">
+        <div className="bg-white p-4 sm:p-6 rounded-xl shadow">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
             <div>
-              <h2 className="text-xl font-semibold mb-2">志望校状況</h2>
+              <h2 className="text-lg sm:text-xl font-semibold mb-2">志望校状況</h2>
               <p className="text-sm text-gray-600">志望校の出願状況を確認しましょう</p>
             </div>
             <button
               onClick={() => router.push('/application')}
-              className="text-sm bg-gray-50 text-gray-600 hover:bg-gray-100 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors whitespace-nowrap"
+              className="w-full sm:w-auto text-sm bg-gray-50 text-gray-600 hover:bg-gray-100 px-4 py-2 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors whitespace-nowrap"
             >
               志望校一覧を確認する
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -312,15 +266,15 @@ export const StudentDashboard = () => {
               </svg>
             </button>
           </div>
-          <div className="bg-gray-50 rounded-lg p-6 mb-6">
+          <div className="bg-gray-50 rounded-lg p-4 sm:p-6 mb-4 sm:mb-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <p className="text-sm text-gray-600">志望校数</p>
-                <p className="text-3xl font-semibold mt-1">{data?.applications.count}<span className="text-base ml-1 font-normal">校</span></p>
+                <p className="text-2xl sm:text-3xl font-semibold mt-1">{data?.applications.count}<span className="text-base ml-1 font-normal">校</span></p>
               </div>
               <div className="text-right">
                 <p className="text-sm text-gray-600">出願書類</p>
-                <p className="text-3xl font-semibold mt-1">0<span className="text-base ml-1 font-normal">件</span></p>
+                <p className="text-2xl sm:text-3xl font-semibold mt-1">0<span className="text-base ml-1 font-normal">件</span></p>
               </div>
             </div>
           </div>
@@ -344,17 +298,17 @@ export const StudentDashboard = () => {
       </div>
 
       {/* おすすめコンテンツと志望理由書 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
         {/* おすすめコンテンツ */}
-        <div className="bg-white p-6 rounded-xl shadow">
-          <div className="flex items-center justify-between mb-6">
+        <div className="bg-white p-4 sm:p-6 rounded-xl shadow">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
             <div>
-              <h2 className="text-xl font-semibold mb-2">おすすめコンテンツ</h2>
+              <h2 className="text-lg sm:text-xl font-semibold mb-2">おすすめコンテンツ</h2>
               <p className="text-sm text-gray-600">あなたに最適な学習コンテンツ</p>
             </div>
             <button
               onClick={() => router.push('/contents')}
-              className="text-sm bg-gray-50 text-gray-600 hover:bg-gray-100 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors whitespace-nowrap"
+              className="w-full sm:w-auto text-sm bg-gray-50 text-gray-600 hover:bg-gray-100 px-4 py-2 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors whitespace-nowrap"
             >
               すべてのコンテンツを確認する
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -362,9 +316,9 @@ export const StudentDashboard = () => {
               </svg>
             </button>
           </div>
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             {data?.recommendations.map(item => (
-              <div key={item.id} className="bg-gray-50 p-4 rounded-lg">
+              <div key={item.id} className="bg-gray-50 p-3 sm:p-4 rounded-lg">
                 <div className="flex items-center justify-between mb-2">
                   <p className="font-medium">{item.title}</p>
                   <span className="text-xs px-2 py-1 bg-gray-200 rounded-full">
@@ -383,22 +337,22 @@ export const StudentDashboard = () => {
         </div>
 
         {/* 志望理由書 */}
-        <div className="bg-white p-6 rounded-xl shadow">
-          <div className="flex items-center justify-between mb-6">
+        <div className="bg-white p-4 sm:p-6 rounded-xl shadow">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
             <div>
-              <h2 className="text-xl font-semibold mb-2">志望理由書作成状況</h2>
+              <h2 className="text-lg sm:text-xl font-semibold mb-2">志望理由書作成状況</h2>
               <p className="text-sm text-gray-600">AIアシスタントが作成プロセスをサポートします</p>
             </div>
           </div>
-          <div className="bg-gradient-to-r from-teal-50 to-blue-50 rounded-lg p-6 mb-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="bg-gradient-to-r from-teal-50 to-blue-50 rounded-lg p-4 sm:p-6 mb-4 sm:mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-2">
                 <h3 className="font-medium text-teal-800">自己分析と志望理由書の作成</h3>
                 <p className="text-sm text-gray-600">あなたの志望校合格への道筋を明確にしましょう</p>
               </div>
               <button
                 onClick={() => router.push('/statement')}
-                className="px-6 py-2.5 bg-gradient-to-r from-teal-500 to-teal-600 text-white rounded-lg hover:from-teal-600 hover:to-teal-700 transition shadow-sm flex items-center gap-2 whitespace-nowrap"
+                className="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-teal-500 to-teal-600 text-white rounded-lg hover:from-teal-600 hover:to-teal-700 transition shadow-sm flex items-center justify-center gap-2 whitespace-nowrap"
               >
                 <span>作成を開始</span>
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -407,22 +361,22 @@ export const StudentDashboard = () => {
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
             <div className="bg-gray-50 p-3 rounded-lg text-center">
               <p className="text-sm text-gray-600 mb-1">作成済み</p>
-              <p className="text-xl font-semibold text-gray-800">0</p>
+              <p className="text-lg sm:text-xl font-semibold text-gray-800">0</p>
             </div>
             <div className="bg-gray-50 p-3 rounded-lg text-center">
               <p className="text-sm text-gray-600 mb-1">下書き</p>
-              <p className="text-xl font-semibold text-gray-800">0</p>
+              <p className="text-lg sm:text-xl font-semibold text-gray-800">0</p>
             </div>
             <div className="bg-gray-50 p-3 rounded-lg text-center">
               <p className="text-sm text-gray-600 mb-1">添削待ち</p>
-              <p className="text-xl font-semibold text-gray-800">0</p>
+              <p className="text-lg sm:text-xl font-semibold text-gray-800">0</p>
             </div>
             <div className="bg-gray-50 p-3 rounded-lg text-center">
               <p className="text-sm text-gray-600 mb-1">完了</p>
-              <p className="text-xl font-semibold text-gray-800">0</p>
+              <p className="text-lg sm:text-xl font-semibold text-gray-800">0</p>
             </div>
           </div>
         </div>

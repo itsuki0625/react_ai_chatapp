@@ -8,7 +8,7 @@ import { apiClient } from '@/lib/api-client';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 // import { PlusCircle, Archive } from 'lucide-react'; // Archive は未使用
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 // import { cn } from "@/lib/utils"; // 未使用
 import { ChatType } from '@/types/chat';
 
@@ -32,6 +32,23 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ chatType, currentSessionId })
   // const [archivedSessions, setArchivedSessions] = useState<ChatSessionSummary[]>([]); // 必要ならアーカイブも取得
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isOpen, setIsOpen] = useState(true);
+
+  // 画面サイズに応じてサイドバーの初期状態を設定
+  useEffect(() => {
+    const checkScreenSize = () => {
+      setIsOpen(window.innerWidth >= 768); // 768px以上で開いた状態
+    };
+
+    // 初期表示時に実行
+    checkScreenSize();
+
+    // リサイズ時に実行
+    window.addEventListener('resize', checkScreenSize);
+
+    // クリーンアップ
+    return () => window.removeEventListener('resize', checkScreenSize);
+  }, []);
 
   const token = session?.accessToken;
 
@@ -77,49 +94,59 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ chatType, currentSessionId })
   };
 
   return (
-    <div className="w-64 border-r bg-card text-card-foreground flex flex-col h-full">
-      <div className="p-4 border-b">
-        <h2 className="text-lg font-semibold">{getChatTypeName(chatType)}</h2>
-      </div>
-      <div className="p-2">
-        <Button asChild variant="outline" className="w-full justify-start">
-          <Link href={`/chat/${chatType}`}>
-            <PlusCircle className="mr-2 h-4 w-4" />
-            新しいチャット
-          </Link>
-        </Button>
-      </div>
-      <ScrollArea className="flex-1 px-2">
-        <div className="space-y-1 py-2">
-          <h3 className="text-xs font-semibold text-muted-foreground px-2 mb-1">最近のチャット</h3>
-          {isLoading && <p className="text-xs text-muted-foreground px-2">読み込み中...</p>}
-          {error && <p className="text-xs text-destructive px-2">{error}</p>}
-          {!isLoading && activeSessions.length === 0 && !error && (
-            <p className="text-xs text-muted-foreground px-2">履歴はありません</p>
-          )}
-          {activeSessions.map((sess) => (
-            <Button
-              key={sess.id}
-              asChild
-              variant={currentSessionId === sess.id ? "secondary" : "ghost"}
-              className="w-full justify-start h-auto py-2 px-2 text-sm truncate"
-            >
-              <Link href={`/chat/${chatType}/${sess.id}`} title={sess.title || '無題のチャット'}>
-                {sess.title || '無題のチャット'}
-              </Link>
-            </Button>
-          ))}
+    <div className={`relative flex flex-col h-full transition-all duration-300 ${isOpen ? 'w-64' : 'w-12'}`}>
+      <div className={`border-r bg-card text-card-foreground flex flex-col h-full transition-all duration-300 ${isOpen ? 'w-64' : 'w-12'}`}>
+        <div className="p-4 border-b flex items-center">
+          {isOpen && <h2 className="text-lg font-semibold flex-1">{getChatTypeName(chatType)}</h2>}
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="p-1 hover:bg-accent rounded-md transition-colors"
+            style={{ marginLeft: isOpen ? '0.5rem' : '0' }}
+          >
+            {isOpen ? (
+              <ChevronLeft className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </button>
         </div>
-      </ScrollArea>
-      {/* アーカイブ表示が必要な場合はここに追加 */}
-      {/* <div className="p-2 border-t">
-        <Button variant="ghost" className="w-full justify-start">
-          <Archive className="mr-2 h-4 w-4" />
-          アーカイブ済み
-        </Button>
-      </div> */}
+        {isOpen && (
+          <>
+            <div className="p-2">
+              <Button asChild variant="outline" className="w-full justify-start">
+                <Link href={`/chat/${chatType}`}>
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  新しいチャット
+                </Link>
+              </Button>
+            </div>
+            <ScrollArea className="flex-1 px-2">
+              <div className="space-y-1 py-2">
+                <h3 className="text-xs font-semibold text-muted-foreground px-2 mb-1">最近のチャット</h3>
+                {isLoading && <p className="text-xs text-muted-foreground px-2">読み込み中...</p>}
+                {error && <p className="text-xs text-destructive px-2">{error}</p>}
+                {!isLoading && activeSessions.length === 0 && !error && (
+                  <p className="text-xs text-muted-foreground px-2">履歴はありません</p>
+                )}
+                {activeSessions.map((sess) => (
+                  <Button
+                    key={sess.id}
+                    asChild
+                    variant={currentSessionId === sess.id ? "secondary" : "ghost"}
+                    className="w-full justify-start h-auto py-2 px-2 text-sm truncate"
+                  >
+                    <Link href={`/chat/${chatType}/${sess.id}`} title={sess.title || '無題のチャット'}>
+                      {sess.title || '無題のチャット'}
+                    </Link>
+                  </Button>
+                ))}
+              </div>
+            </ScrollArea>
+          </>
+        )}
+      </div>
     </div>
   );
 };
 
-export default ChatSidebar; 
+export default ChatSidebar;

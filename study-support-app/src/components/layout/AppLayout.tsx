@@ -49,7 +49,7 @@ const studentNavigation: NavItem[] = [
   { name: '志望理由書', href: '/statement', icon: FileText },
   { name: 'コンテンツ', href: '/contents', icon: SquarePlay },
   { name: '設定', href: '/settings', icon: Settings },
-  { name: 'プラン', href: '/subscription/plans', icon: DollarSign },
+  { name: 'プラン', href: '/subscription', icon: DollarSign },
 ];
 
 const adminNavigation: NavItem[] = [
@@ -98,7 +98,7 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="lg:hidden fixed top-4 left-4 z-40">
+      <div className="lg:hidden fixed top-4 right-4 z-40">
         <button
           className="p-2 rounded-md bg-white shadow-sm"
           onClick={() => setSidebarOpen(!sidebarOpen)}
