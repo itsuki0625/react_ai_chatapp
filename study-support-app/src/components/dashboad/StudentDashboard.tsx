@@ -34,13 +34,13 @@ export const StudentDashboard = () => {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  useQuery<AxiosResponse<ApplicationDetailResponse[]>, Error, ApplicationDetailResponse[]>({ 
-    queryKey: ['applications'], 
+  useQuery<AxiosResponse<ApplicationDetailResponse[]>, Error, ApplicationDetailResponse[]>({
+    queryKey: ['applications'],
     queryFn: applicationApi.getApplications,
     select: (response) => response.data
   });
-  useQuery<Subscription | null>({ 
-    queryKey: ['subscription'], 
+  useQuery<Subscription | null>({
+    queryKey: ['subscription'],
     queryFn: subscriptionService.getUserSubscription
   });
 
@@ -50,10 +50,10 @@ export const StudentDashboard = () => {
         // バックエンドの実装に合わせてAPIを変更
         // Statement、Applicationなどの既存エンドポイントからデータを取得する
         const applicationsResponse = await applicationApi.getApplications();
-        
+
         // 取得したデータからダッシュボードデータを構築
         const applications = applicationsResponse.data || [];
-        
+
         // ダッシュボードデータを構築
         setData({
           progress: {
@@ -92,7 +92,7 @@ export const StudentDashboard = () => {
 
       } catch (error) {
         console.error('ダッシュボードデータの取得に失敗しました:', error);
-        
+
         // エラー時のフォールバックデータ
         setData({
           progress: {
@@ -147,199 +147,286 @@ export const StudentDashboard = () => {
   return (
     <div className="p-6">
       <h1 className="text-3xl font-bold mb-8">ダッシュボード</h1>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        {/* 学習進捗 */}
-        <div className="bg-white p-6 rounded-xl shadow">
-          <div className="flex items-center mb-4">
-            <BookOpen className="h-6 w-6 mr-2 text-blue-600" />
-            <h2 className="text-xl font-semibold">学習進捗</h2>
-          </div>
-          <div className="mb-4">
+
+      {/* 学習進捗
+      <div className="bg-white p-6 rounded-xl shadow mb-8">
+        <div className="flex items-center mb-4">
+          <h2 className="text-xl font-semibold">学習進捗</h2>
+        </div>
+        <div className="space-y-6">
+          <div>
             <div className="flex justify-between mb-1">
               <span>全体の進捗</span>
               <span>{data?.progress.completedTasks}/{data?.progress.totalTasks} タスク</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2.5">
-              <div 
-                className="bg-blue-600 h-2.5 rounded-full" 
+              <div
+                className="bg-blue-600 h-2.5 rounded-full"
                 style={{ width: `${(data?.progress.completedTasks || 0) / (data?.progress.totalTasks || 1) * 100}%` }}
               ></div>
             </div>
           </div>
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {data?.progress.courses.map(course => (
-              <div key={course.id}>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>{course.title}</span>
+              <div key={course.id} className="bg-gray-50 p-4 rounded-lg">
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="font-medium">{course.title}</span>
                   <span>{course.progress}%</span>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-1.5">
-                  <div 
-                    className="bg-green-600 h-1.5 rounded-full" 
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-green-600 h-2 rounded-full"
                     style={{ width: `${course.progress}%` }}
                   ></div>
                 </div>
               </div>
             ))}
           </div>
-          <button 
-            onClick={() => router.push('/contents')}
-            className="mt-4 text-sm text-blue-600 hover:text-blue-800"
+        </div>
+        <button
+          onClick={() => router.push('/contents')}
+          className="mt-6 text-sm bg-blue-50 text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors whitespace-nowrap"
+        >
+          すべての学習コンテンツを確認する
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
+          </svg>
+        </button>
+      </div> */}
+
+      {/* AIチャット分析 */}
+      <div className="bg-white p-6 rounded-xl shadow mb-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-xl font-semibold mb-2">AIチャット分析</h2>
+            <p className="text-sm text-gray-600">AIとの対話から分析されたあなたの特徴</p>
+          </div>
+          <button
+            onClick={() => router.push('/chat')}
+            className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition flex items-center gap-2"
           >
-            すべての学習コンテンツを見る →
+            <span>AIチャットを開始</span>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
           </button>
         </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-orange-50 p-4 rounded-lg">
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="font-medium text-orange-800">あなたの強み</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-3">AIとの対話から分析された、あなたの得意分野や特徴的な能力です。</p>
+            <div className="flex flex-wrap gap-2">
+              {data?.aiAnalysis.strengths.map((item, i) => (
+                <span key={i} className="bg-white text-orange-800 text-xs px-3 py-1.5 rounded-full border border-orange-200">
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
 
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="font-medium text-blue-800">興味分野</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-3">あなたが関心を持っている分野や、深く学びたいと考えている領域です。</p>
+            <div className="flex flex-wrap gap-2">
+              {data?.aiAnalysis.interests.map((item, i) => (
+                <span key={i} className="bg-white text-blue-800 text-xs px-3 py-1.5 rounded-full border border-blue-200">
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="font-medium text-gray-800">最近のトピック</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-3">最近のAIとの対話で話題になった、あなたの関心事や検討中のテーマです。</p>
+            <div className="flex flex-wrap gap-2">
+              {data?.aiAnalysis.recentTopics.map((item, i) => (
+                <span key={i} className="bg-white text-gray-800 text-xs px-3 py-1.5 rounded-full border border-gray-200">
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 予定イベントと志望校状況 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         {/* 予定イベント */}
         <div className="bg-white p-6 rounded-xl shadow">
-          <div className="flex items-center mb-4">
-            <Calendar className="h-6 w-6 mr-2 text-purple-600" />
-            <h2 className="text-xl font-semibold">予定イベント</h2>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-semibold mb-2">予定イベント</h2>
+              <p className="text-sm text-gray-600">今後の予定を確認しましょう</p>
+            </div>
+            <button
+              className="text-sm bg-gray-50 text-gray-600 hover:bg-gray-100 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors whitespace-nowrap"
+            >
+              すべての予定を確認する
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
           </div>
           <div className="space-y-4">
             {data?.events.map(event => (
-              <div key={event.id} className="flex items-start">
-                <div className={`
-                  min-w-10 h-10 flex items-center justify-center rounded-full mr-3
-                  ${event.type === 'deadline' ? 'bg-red-100 text-red-600' : 
-                    event.type === 'exam' ? 'bg-yellow-100 text-yellow-600' : 
-                    'bg-blue-100 text-blue-600'}
-                `}>
-                  {event.type === 'deadline' ? '期限' : event.type === 'exam' ? '試験' : 'イベ'}
-                </div>
-                <div>
-                  <p className="font-medium">{event.title}</p>
+              <div key={event.id} className="flex items-start p-4 bg-gray-50 rounded-lg">
+                <div className="min-w-[100px]">
                   <p className="text-sm text-gray-600">{event.date}</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {event.type === 'deadline' ? '提出期限' :
+                     event.type === 'exam' ? '試験' : 'イベント'}
+                  </p>
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium">{event.title}</p>
+                  {event.type === 'deadline' && (
+                    <p className="text-sm text-red-600 mt-1">提出期限が近づいています</p>
+                  )}
                 </div>
               </div>
             ))}
           </div>
-          <button 
-            className="mt-4 text-sm text-purple-600 hover:text-purple-800"
-          >
-            すべての予定を見る →
-          </button>
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         {/* 志望校状況 */}
         <div className="bg-white p-6 rounded-xl shadow">
-          <div className="flex items-center mb-4">
-            <GraduationCap className="h-6 w-6 mr-2 text-indigo-600" />
-            <h2 className="text-xl font-semibold">志望校状況</h2>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-semibold mb-2">志望校状況</h2>
+              <p className="text-sm text-gray-600">志望校の出願状況を確認しましょう</p>
+            </div>
+            <button
+              onClick={() => router.push('/application')}
+              className="text-sm bg-gray-50 text-gray-600 hover:bg-gray-100 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors whitespace-nowrap"
+            >
+              志望校一覧を確認する
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
           </div>
-          <p className="text-3xl font-bold mb-4">{data?.applications.count}<span className="text-base ml-1 font-normal">校</span></p>
-          
+          <div className="bg-gray-50 rounded-lg p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm text-gray-600">志望校数</p>
+                <p className="text-3xl font-semibold mt-1">{data?.applications.count}<span className="text-base ml-1 font-normal">校</span></p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-gray-600">出願書類</p>
+                <p className="text-3xl font-semibold mt-1">0<span className="text-base ml-1 font-normal">件</span></p>
+              </div>
+            </div>
+          </div>
           {data?.applications.nextDeadline ? (
-            <div className="border-t pt-4">
-              <p className="text-sm text-gray-600 mb-1">次の提出期限</p>
-              <p className="font-medium">{data.applications.nextDeadline.university}</p>
-              <p className="text-sm">{data.applications.nextDeadline.document}</p>
-              <p className="text-sm text-red-600">{data.applications.nextDeadline.date}まで</p>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-sm text-gray-600 mb-2">次の提出期限</p>
+              <div className="space-y-2">
+                <p className="font-medium">{data?.applications.nextDeadline?.university}</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm">{data?.applications.nextDeadline?.document}</p>
+                  <p className="text-sm text-red-600">{data?.applications.nextDeadline?.date}まで</p>
+                </div>
+              </div>
             </div>
           ) : (
-            <p className="text-sm text-gray-600">現在期限の近い提出書類はありません</p>
+            <div className="bg-gray-50 rounded-lg p-4 text-center">
+              <p className="text-sm text-gray-600">現在期限の近い提出書類はありません</p>
+            </div>
           )}
-          
-          <button 
-            onClick={() => router.push('/application')}
-            className="mt-4 text-sm text-indigo-600 hover:text-indigo-800"
-          >
-            志望校管理へ →
-          </button>
-        </div>
-
-        {/* おすすめコンテンツ */}
-        <div className="bg-white p-6 rounded-xl shadow">
-          <div className="flex items-center mb-4">
-            <BookOpen className="h-6 w-6 mr-2 text-emerald-600" />
-            <h2 className="text-xl font-semibold">おすすめコンテンツ</h2>
-          </div>
-          <div className="space-y-3">
-            {data?.recommendations.map(item => (
-              <div key={item.id} className="border-b pb-2 last:border-0">
-                <p className="font-medium">{item.title}</p>
-                <p className="text-xs text-gray-600">
-                  {item.type === 'content' ? 'コンテンツ' : 
-                   item.type === 'quiz' ? 'クイズ' : 'コース'}
-                </p>
-              </div>
-            ))}
-          </div>
-          <button 
-            onClick={() => router.push('/contents')}
-            className="mt-4 text-sm text-emerald-600 hover:text-emerald-800"
-          >
-            すべてのコンテンツを見る →
-          </button>
-        </div>
-
-        {/* AIチャット分析 */}
-        <div className="bg-white p-6 rounded-xl shadow">
-          <div className="flex items-center mb-4">
-            <BrainCircuit className="h-6 w-6 mr-2 text-orange-600" />
-            <h2 className="text-xl font-semibold">AIチャット分析</h2>
-          </div>
-          <div className="mb-4">
-            <p className="text-sm font-medium mb-1">あなたの強み</p>
-            <div className="flex flex-wrap gap-2">
-              {data?.aiAnalysis.strengths.map((item, i) => (
-                <span key={i} className="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full">
-                  {item}
-                </span>
-              ))}
-            </div>
-          </div>
-          <div className="mb-4">
-            <p className="text-sm font-medium mb-1">興味分野</p>
-            <div className="flex flex-wrap gap-2">
-              {data?.aiAnalysis.interests.map((item, i) => (
-                <span key={i} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
-                  {item}
-                </span>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="text-sm font-medium mb-1">最近のトピック</p>
-            <div className="flex flex-wrap gap-2">
-              {data?.aiAnalysis.recentTopics.map((item, i) => (
-                <span key={i} className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full">
-                  {item}
-                </span>
-              ))}
-            </div>
-          </div>
-          <button 
-            onClick={() => router.push('/chat')}
-            className="mt-4 text-sm text-orange-600 hover:text-orange-800"
-          >
-            AIチャットを開始する →
-          </button>
         </div>
       </div>
 
-      {/* 志望理由書 */}
-      <div className="bg-white p-6 rounded-xl shadow mb-8">
-        <div className="flex items-center mb-4">
-          <FileText className="h-6 w-6 mr-2 text-teal-600" />
-          <h2 className="text-xl font-semibold">志望理由書作成状況</h2>
-        </div>
-        <div className="flex flex-col md:flex-row md:items-center justify-between">
-          <div>
-            <p className="mb-2">自己分析と志望理由書の作成で、あなたの志望校合格への道筋を明確にしましょう。</p>
-            <p className="text-sm text-gray-600">AIアシスタントが作成プロセスをサポートします。</p>
+      {/* おすすめコンテンツと志望理由書 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        {/* おすすめコンテンツ */}
+        <div className="bg-white p-6 rounded-xl shadow">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-semibold mb-2">おすすめコンテンツ</h2>
+              <p className="text-sm text-gray-600">あなたに最適な学習コンテンツ</p>
+            </div>
+            <button
+              onClick={() => router.push('/contents')}
+              className="text-sm bg-gray-50 text-gray-600 hover:bg-gray-100 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors whitespace-nowrap"
+            >
+              すべてのコンテンツを確認する
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
           </div>
-          <button 
-            onClick={() => router.push('/statement')}
-            className="mt-4 md:mt-0 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition"
-          >
-            志望理由書を作成する
-          </button>
+          <div className="space-y-4">
+            {data?.recommendations.map(item => (
+              <div key={item.id} className="bg-gray-50 p-4 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-medium">{item.title}</p>
+                  <span className="text-xs px-2 py-1 bg-gray-200 rounded-full">
+                    {item.type === 'content' ? 'コンテンツ' :
+                     item.type === 'quiz' ? 'クイズ' : 'コース'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <span>所要時間: 30分</span>
+                  <span>•</span>
+                  <span>難易度: 中級</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 志望理由書 */}
+        <div className="bg-white p-6 rounded-xl shadow">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-semibold mb-2">志望理由書作成状況</h2>
+              <p className="text-sm text-gray-600">AIアシスタントが作成プロセスをサポートします</p>
+            </div>
+          </div>
+          <div className="bg-gradient-to-r from-teal-50 to-blue-50 rounded-lg p-6 mb-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-2">
+                <h3 className="font-medium text-teal-800">自己分析と志望理由書の作成</h3>
+                <p className="text-sm text-gray-600">あなたの志望校合格への道筋を明確にしましょう</p>
+              </div>
+              <button
+                onClick={() => router.push('/statement')}
+                className="px-6 py-2.5 bg-gradient-to-r from-teal-500 to-teal-600 text-white rounded-lg hover:from-teal-600 hover:to-teal-700 transition shadow-sm flex items-center gap-2 whitespace-nowrap"
+              >
+                <span>作成を開始</span>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-gray-50 p-3 rounded-lg text-center">
+              <p className="text-sm text-gray-600 mb-1">作成済み</p>
+              <p className="text-xl font-semibold text-gray-800">0</p>
+            </div>
+            <div className="bg-gray-50 p-3 rounded-lg text-center">
+              <p className="text-sm text-gray-600 mb-1">下書き</p>
+              <p className="text-xl font-semibold text-gray-800">0</p>
+            </div>
+            <div className="bg-gray-50 p-3 rounded-lg text-center">
+              <p className="text-sm text-gray-600 mb-1">添削待ち</p>
+              <p className="text-xl font-semibold text-gray-800">0</p>
+            </div>
+            <div className="bg-gray-50 p-3 rounded-lg text-center">
+              <p className="text-sm text-gray-600 mb-1">完了</p>
+              <p className="text-xl font-semibold text-gray-800">0</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
-}; 
+};
