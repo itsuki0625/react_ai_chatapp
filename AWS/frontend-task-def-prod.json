@@ -4,7 +4,7 @@
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "256",
   "memory": "512",
-  "executionRoleArn": "arn:aws:iam::354918390375:role/stg-ecs-task-exec-role",
+  "executionRoleArn": "arn:aws:iam::354918390375:role/prod-ecs-task-exec-role",
   "containerDefinitions": [
     {
       "name": "frontend",
@@ -15,7 +15,7 @@
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
-          "awslogs-group": "/ecs/frontend-prod",
+          "awslogs-group": "/ecs/prod-front",
           "awslogs-region": "ap-northeast-1",
           "awslogs-stream-prefix": "ecs"
         }
