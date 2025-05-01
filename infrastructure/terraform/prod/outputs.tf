@@ -4,7 +4,7 @@
 
 output "stg_subnets" {
   description = "STG ECS タスク用 Private Subnets (Referenced by PROD)"
-  value       = data.terraform_remote_state.stg.outputs.private_subnets
+  value       = data.terraform_remote_state.stg.outputs.vpc_module_private_subnets
 }
 
 output "stg_security_groups" {
@@ -14,12 +14,12 @@ output "stg_security_groups" {
 
 output "vpc_module_private_route_table_ids" {
   description = "List of IDs of private route tables created by the STG VPC module."
-  value       = data.terraform_remote_state.stg.outputs.private_route_table_ids
+  value       = data.terraform_remote_state.stg.outputs.vpc_module_private_route_table_ids
 }
 
 output "vpc_module_private_subnets" {
   description = "List of IDs of private subnets created by the STG VPC module."
-  value       = data.terraform_remote_state.stg.outputs.private_subnets
+  value       = data.terraform_remote_state.stg.outputs.vpc_module_private_subnets
 }
 
 output "vpc_id" {

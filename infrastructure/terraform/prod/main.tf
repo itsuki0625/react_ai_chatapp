@@ -179,7 +179,7 @@ resource "aws_db_parameter_group" "custom_rds_pg" {
 # RDS (PostgreSQL)
 resource "aws_db_subnet_group" "rds" {
   name       = "${var.environment}-rds-subnet-group"
-  subnet_ids = data.terraform_remote_state.stg.outputs.private_subnets # <- 参照変更
+  subnet_ids = data.terraform_remote_state.stg.outputs.vpc_module_private_subnets # <- 参照名変更
   tags = { Environment = var.environment }
 }
 resource "aws_db_instance" "rds" {
@@ -215,15 +215,13 @@ resource "aws_secretsmanager_secret" "backend_env" {
 
 # Secrets Manager VPC Endpoint
 resource "aws_vpc_endpoint" "secretsmanager" {
-  vpc_id            = data.terraform_remote_state.stg.outputs.vpc_id # <- 参照変更
-  service_name      = "com.amazonaws.${var.aws_region}.secretsmanager" # リージョンを適切に指定
+  vpc_id            = data.terraform_remote_state.stg.outputs.vpc_id
+  service_name      = "com.amazonaws.${var.aws_region}.secretsmanager"
   vpc_endpoint_type = "Interface"
 
-  # タスクが実行されるプライベートサブネットを指定
-  subnet_ids = data.terraform_remote_state.stg.outputs.private_subnets # <- 参照変更
+  subnet_ids = data.terraform_remote_state.stg.outputs.vpc_module_private_subnets # <- 参照名変更
 
-  # VPCエンドポイント用のセキュリティグループ (インバウンドHTTPSを許可)
-  security_group_ids = [aws_security_group.vpc_endpoint.id] # 新しく作成するSGを指定
+  security_group_ids = [aws_security_group.vpc_endpoint.id]
 
   private_dns_enabled = true # これにより、タスクは通常のエンドポイント名でアクセス可能
 
@@ -259,10 +257,10 @@ resource "aws_security_group" "vpc_endpoint" {
 
 # ECR API Endpoint
 resource "aws_vpc_endpoint" "ecr_api" {
-  vpc_id            = data.terraform_remote_state.stg.outputs.vpc_id # <- 参照変更
+  vpc_id            = data.terraform_remote_state.stg.outputs.vpc_id
   service_name      = "com.amazonaws.${var.aws_region}.ecr.api"
   vpc_endpoint_type = "Interface"
-  subnet_ids        = data.terraform_remote_state.stg.outputs.private_subnets # <- 参照変更
+  subnet_ids        = data.terraform_remote_state.stg.outputs.vpc_module_private_subnets # <- 参照名変更
   security_group_ids = [aws_security_group.vpc_endpoint.id]
   private_dns_enabled = true
   tags = { Name = "${var.environment}-ecr-api-vpce", Environment = var.environment }
@@ -270,10 +268,10 @@ resource "aws_vpc_endpoint" "ecr_api" {
 
 # ECR DKR Endpoint
 resource "aws_vpc_endpoint" "ecr_dkr" {
-  vpc_id            = data.terraform_remote_state.stg.outputs.vpc_id # <- 参照変更
+  vpc_id            = data.terraform_remote_state.stg.outputs.vpc_id
   service_name      = "com.amazonaws.${var.aws_region}.ecr.dkr"
   vpc_endpoint_type = "Interface"
-  subnet_ids        = data.terraform_remote_state.stg.outputs.private_subnets # <- 参照変更
+  subnet_ids        = data.terraform_remote_state.stg.outputs.vpc_module_private_subnets # <- 参照名変更
   security_group_ids = [aws_security_group.vpc_endpoint.id]
   private_dns_enabled = true
   tags = { Name = "${var.environment}-ecr-dkr-vpce", Environment = var.environment }
@@ -281,10 +279,10 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
 
 # CloudWatch Logs Endpoint
 resource "aws_vpc_endpoint" "logs" {
-  vpc_id            = data.terraform_remote_state.stg.outputs.vpc_id # <- 参照変更
+  vpc_id            = data.terraform_remote_state.stg.outputs.vpc_id
   service_name      = "com.amazonaws.${var.aws_region}.logs"
   vpc_endpoint_type = "Interface"
-  subnet_ids        = data.terraform_remote_state.stg.outputs.private_subnets # <- 参照変更
+  subnet_ids        = data.terraform_remote_state.stg.outputs.vpc_module_private_subnets # <- 参照名変更
   security_group_ids = [aws_security_group.vpc_endpoint.id]
   private_dns_enabled = true
   tags = { Name = "${var.environment}-logs-vpce", Environment = var.environment }
