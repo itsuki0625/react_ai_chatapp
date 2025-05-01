@@ -54,7 +54,12 @@
               "ec2:ModifyVpcEndpoint",
               "ec2:DeleteVpcEndpoints",
               "ec2:AllocateAddress",
-              "ec2:ReleaseAddress"
+              "ec2:ReleaseAddress",
+              "ec2:DescribeAddresses",
+              "ec2:DescribeAddressesAttribute",
+              "ec2:CreateNatGateway",
+              "ec2:DeleteNatGateway",
+              "ec2:DescribeNatGateways"
             ],
             "Resource": "*"
         },
@@ -262,6 +267,20 @@
             "Resource": [
               "*"
             ]
+        },
+        {
+            "Sid": "EC2FullAccess",
+            "Effect": "Allow",
+            "Action": ["ec2:*"],
+            "Resource": ["*"]
+        },
+        {
+            "Sid": "AllowEcsTaskToReadSecrets",
+            "Effect": "Allow",
+            "Action": [
+              "secretsmanager:*"
+            ],
+            "Resource": "*"
         }
     ]
 }

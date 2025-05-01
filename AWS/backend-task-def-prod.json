@@ -25,15 +25,15 @@
         { "name": "AWS_ACCOUNT_ID", "value": "354918390375" }
       ],
       "secrets": [
-        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env:DATABASE_URL::" },
-        { "name": "ENVIRONMENT", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env:ENVIRONMENT::" },
-        { "name": "OPENAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env:OPENAI_API_KEY::" },
-        { "name": "SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env:SECRET_KEY::" },
-        { "name": "STRIPE_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env:STRIPE_SECRET_KEY::" },
-        { "name": "STRIPE_PUBLISHABLE_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env:STRIPE_PUBLISHABLE_KEY::" },
-        { "name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env:STRIPE_WEBHOOK_SECRET::" },
-        { "name": "NEXTAUTH_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env:NEXTAUTH_URL::" },
-        { "name": "AUTH_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env:AUTH_SECRET::" }
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-bf58bb25-HBWJUD:DATABASE_URL::" },
+        { "name": "ENVIRONMENT", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-bf58bb25-HBWJUD:ENVIRONMENT::" },
+        { "name": "OPENAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-bf58bb25-HBWJUD:OPENAI_API_KEY::" },
+        { "name": "SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-bf58bb25-HBWJUD:SECRET_KEY::" },
+        { "name": "STRIPE_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-bf58bb25-HBWJUD:STRIPE_SECRET_KEY::" },
+        { "name": "STRIPE_PUBLISHABLE_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-bf58bb25-HBWJUD:STRIPE_PUBLISHABLE_KEY::" },
+        { "name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-bf58bb25-HBWJUD:STRIPE_WEBHOOK_SECRET::" },
+        { "name": "NEXTAUTH_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-bf58bb25-HBWJUD:NEXTAUTH_URL::" },
+        { "name": "AUTH_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-bf58bb25-HBWJUD:AUTH_SECRET::" }
       ]
     }
   ]
