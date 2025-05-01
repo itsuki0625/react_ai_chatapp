@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Body
-from sqlalchemy.orm import Session
-from app.api.deps import get_db, get_current_user, require_permission
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.api.deps import get_async_db, get_current_user, require_permission
 from app.models.user import User
 from app.services.stripe_service import StripeService
 from app.schemas.subscription import (
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 @router.get("/stripe-plans", response_model=List[SubscriptionPlanResponse])
 async def get_stripe_plans(
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Stripeから直接サブスクリプションプラン情報を取得する（パブリックエンドポイント）
@@ -179,14 +179,14 @@ async def get_stripe_plans(
 
 @router.get("/user-subscription", response_model=Optional[SubscriptionResponse])
 async def get_user_subscription(
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     ユーザーのアクティブなサブスクリプション情報を取得する
     """
     try:
-        subscription = crud.get_active_user_subscription(db, current_user.id)
+        subscription = await crud.get_active_user_subscription(db, current_user.id)
         return subscription
     except Exception as e:
         logger.error(f"ユーザーのサブスクリプション取得エラー: {str(e)}")
@@ -199,14 +199,14 @@ async def get_user_subscription(
 async def get_payment_history(
     skip: int = 0,
     limit: int = 10,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     ユーザーの支払い履歴を取得する
     """
     try:
-        payments = crud.get_user_payment_history(db, current_user.id, skip, limit)
+        payments = await crud.get_user_payment_history(db, current_user.id, skip, limit)
         return payments
     except Exception as e:
         logger.error(f"支払い履歴取得エラー: {str(e)}")
@@ -218,7 +218,7 @@ async def get_payment_history(
 @router.post("/verify-campaign-code", response_model=VerifyCampaignCodeResponse)
 async def verify_campaign_code(
     request: VerifyCampaignCodeRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Optional[User] = Depends(get_current_user)
 ):
     """
@@ -247,7 +247,7 @@ async def verify_campaign_code(
             )
             
         # キャンペーンコードを検証
-        result = crud.verify_campaign_code(db, request.code, request.price_id)
+        result = await crud.verify_campaign_code(db, request.code, request.price_id)
         
         # 有効な場合は割引を計算
         if result.get("valid"):
@@ -293,7 +293,7 @@ async def verify_campaign_code(
 @router.post("/create-checkout", response_model=CheckoutSessionResponse)
 async def create_checkout_session(
     request: CreateCheckoutSessionRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -322,7 +322,7 @@ async def create_checkout_session(
             )
 
         # 既存のStripe顧客IDを検索
-        stripe_customer_id = crud.get_stripe_customer_id(db, current_user.id)
+        stripe_customer_id = await crud.get_stripe_customer_id(db, current_user.id)
         
         # Stripe顧客IDがない場合は新規作成
         if not stripe_customer_id:
@@ -334,7 +334,7 @@ async def create_checkout_session(
                     metadata={'user_id': str(current_user.id)}
                 )
                 stripe_customer_id = customer
-                crud.update_stripe_customer_id(db, current_user.id, stripe_customer_id)
+                await crud.update_stripe_customer_id(db, current_user.id, stripe_customer_id)
                 logger.info(f"Stripe顧客を作成しました: Customer ID={stripe_customer_id}")
             except Exception as e:
                 logger.error(f"Stripe顧客作成エラー: {str(e)}", exc_info=True)
@@ -364,7 +364,7 @@ async def create_checkout_session(
             
             # キャンペーンコードの検証
             try:
-                campaign_result = crud.verify_campaign_code(db, request.campaign_code, request.price_id)
+                campaign_result = await crud.verify_campaign_code(db, request.campaign_code, request.price_id)
                 if campaign_result.is_valid:
                     discount_info = {
                         "coupon": campaign_result.stripe_coupon_id, # クーポンIDを使用
@@ -446,7 +446,7 @@ async def create_checkout_session(
 @router.post("/create-portal-session")
 async def create_portal_session(
     return_url: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -454,7 +454,7 @@ async def create_portal_session(
     """
     try:
         # アクティブなサブスクリプションを取得
-        subscription = crud.get_active_user_subscription(db, current_user.id)
+        subscription = await crud.get_active_user_subscription(db, current_user.id)
         if not subscription or not subscription.stripe_customer_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -480,7 +480,7 @@ async def create_portal_session(
 @router.post("/manage-subscription")
 async def manage_subscription(
     request: ManageSubscriptionRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -488,7 +488,7 @@ async def manage_subscription(
     """
     try:
         # サブスクリプションの存在確認
-        subscription = crud.get_subscription(db, request.subscription_id)
+        subscription = await crud.get_subscription(db, request.subscription_id)
         if not subscription:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -505,12 +505,12 @@ async def manage_subscription(
         # アクションの実行
         if request.action == "cancel":
             result = StripeService.cancel_subscription(subscription.stripe_subscription_id)
-            crud.update_subscription(db, subscription.id, {"status": "canceled", "canceled_at": result.canceled_at})
+            await crud.update_subscription(db, subscription.id, {"status": "canceled", "canceled_at": result.canceled_at})
             return {"message": "サブスクリプションが正常にキャンセルされました"}
             
         elif request.action == "reactivate":
             result = StripeService.reactivate_subscription(subscription.stripe_subscription_id)
-            crud.update_subscription(db, subscription.id, {"status": "active", "canceled_at": None})
+            await crud.update_subscription(db, subscription.id, {"status": "active", "canceled_at": None})
             return {"message": "サブスクリプションが正常に再開されました"}
             
         elif request.action == "update":
@@ -537,7 +537,7 @@ async def manage_subscription(
                 
             # Stripeサブスクリプション更新
             result = StripeService.update_subscription(subscription.stripe_subscription_id, price_id)
-            crud.update_subscription(db, subscription.id, {
+            await crud.update_subscription(db, subscription.id, {
                 "plan_name": plan_name,
                 "price_id": price_id
             })
@@ -561,7 +561,7 @@ async def manage_subscription(
 @router.post("/webhook", status_code=status.HTTP_200_OK)
 async def webhook_received(
     request: Request,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Stripeからのwebhookイベントを処理する
@@ -619,7 +619,7 @@ async def webhook_received(
 
 # Webhookイベントハンドラー関数
 
-async def handle_checkout_completed(db: Session, event_data: Dict[str, Any]):
+async def handle_checkout_completed(db: AsyncSession, event_data: Dict[str, Any]):
     """チェックアウト完了イベントの処理"""
     logger.info("チェックアウト完了イベント処理")
     
@@ -659,7 +659,7 @@ async def handle_checkout_completed(db: Session, event_data: Dict[str, Any]):
             return
 
         # ユーザーを取得
-        db_user = crud_user.get_user(db, user_id=user_id)
+        db_user = await crud_user.get_user(db, user_id=user_id)
         if not db_user:
             logger.error(f"Webhook: ユーザーが見つかりません: {user_id}")
             # エラーハンドリングが必要な場合はここに追加（例: Responseを返す）
@@ -675,11 +675,11 @@ async def handle_checkout_completed(db: Session, event_data: Dict[str, Any]):
         )
 
         # 既存のサブスクリプションを探す（重複作成を避ける）
-        existing_subscription = crud.get_subscription_by_stripe_id(db, subscription_id)
+        existing_subscription = await crud.get_subscription_by_stripe_id(db, subscription_id)
         if existing_subscription:
             logger.info(f"Webhook: 既存のサブスクリプションが見つかりました。更新します: {existing_subscription.id}")
             # 既存のサブスクリプションを更新 (status など)
-            crud.update_subscription(db, existing_subscription.id, {
+            await crud.update_subscription(db, existing_subscription.id, {
                 "status": "active", # 再アクティブ化の場合など
                 "is_active": True, # ★ is_active を True に設定
                 "stripe_customer_id": customer_id,
@@ -692,9 +692,9 @@ async def handle_checkout_completed(db: Session, event_data: Dict[str, Any]):
             db_subscription = existing_subscription
         else:
             logger.info("Webhook: 新規サブスクリプションを作成します。")
-            new_subscription = crud.create_subscription(db, subscription_create)
+            new_subscription = await crud.create_subscription(db, subscription_create)
              # Stripeの情報でアップデート
-            crud.update_subscription(db, new_subscription.id, {
+            await crud.update_subscription(db, new_subscription.id, {
                 "stripe_customer_id": customer_id,
                 "stripe_subscription_id": subscription_id,
                 "current_period_start": subscription_data.get("current_period_start"),
@@ -709,7 +709,7 @@ async def handle_checkout_completed(db: Session, event_data: Dict[str, Any]):
             try:
                 # 既に 'active' の場合は更新しないオプションも検討可能
                 if db_user.status != UserStatus.ACTIVE:
-                    updated_user = crud_user.update_user(db, db_user=db_user, user_in=user_update_schema)
+                    updated_user = await crud_user.update_user(db, db_user=db_user, user_in=user_update_schema)
                     logger.info(f"Webhook: ユーザーステータスを更新しました: user_id={user_id}, status={updated_user.status}")
                 else:
                     logger.info(f"Webhook: ユーザーステータスは既に '{db_user.status}' です。更新はスキップされました: user_id={user_id}")
@@ -725,7 +725,7 @@ async def handle_checkout_completed(db: Session, event_data: Dict[str, Any]):
     except Exception as e:
         logger.error(f"チェックアウト完了処理エラー: {str(e)}")
 
-async def handle_invoice_paid(db: Session, event_data: Dict[str, Any]):
+async def handle_invoice_paid(db: AsyncSession, event_data: Dict[str, Any]):
     """請求書支払い完了イベントの処理"""
     logger.info("請求書支払い完了イベント処理")
     
@@ -738,14 +738,14 @@ async def handle_invoice_paid(db: Session, event_data: Dict[str, Any]):
             return
             
         # サブスクリプションをDBから取得
-        db_subscription = crud.get_subscription_by_stripe_id(db, subscription_id)
+        db_subscription = await crud.get_subscription_by_stripe_id(db, subscription_id)
         if not db_subscription:
             logger.error(f"サブスクリプションが見つかりません: {subscription_id}")
             return
             
         # ユーザーを取得
         user_id = db_subscription.user_id
-        db_user = crud_user.get_user(db, user_id=user_id)
+        db_user = await crud_user.get_user(db, user_id=user_id)
         if not db_user:
             logger.error(f"Webhook(Invoice Paid): ユーザーが見つかりません: {user_id}")
             # 必要に応じてエラーハンドリング
@@ -763,13 +763,13 @@ async def handle_invoice_paid(db: Session, event_data: Dict[str, Any]):
             payment_date=event_data.get("created")
         )
         
-        payment = crud.create_payment_history(db, payment_create)
+        payment = await crud.create_payment_history(db, payment_create)
         logger.info(f"支払い履歴が正常に作成されました: {payment.id}")
         
         # ★ サブスクリプションのステータスを 'active', is_active を True に更新
         try:
             if db_subscription.status != "active" or not db_subscription.is_active:
-                crud.update_subscription(db, db_subscription.id, {"status": "active", "is_active": True})
+                await crud.update_subscription(db, db_subscription.id, {"status": "active", "is_active": True})
                 logger.info(f"Webhook(Invoice Paid): サブスクリプションステータスを更新しました: id={db_subscription.id}, status=active, is_active=True")
             else:
                  logger.info(f"Webhook(Invoice Paid): サブスクリプションは既にアクティブです。更新はスキップされました: id={db_subscription.id}")
@@ -782,7 +782,7 @@ async def handle_invoice_paid(db: Session, event_data: Dict[str, Any]):
             user_update_schema = UserUpdate(status=UserStatus.ACTIVE)
             try:
                 if db_user.status != UserStatus.ACTIVE:
-                    updated_user = crud_user.update_user(db, db_user=db_user, user_in=user_update_schema)
+                    updated_user = await crud_user.update_user(db, db_user=db_user, user_in=user_update_schema)
                     logger.info(f"Webhook(Invoice Paid): ユーザーステータスを更新しました: user_id={user_id}, status={updated_user.status}")
                 else:
                     logger.info(f"Webhook(Invoice Paid): ユーザーステータスは既に '{db_user.status}' です。更新はスキップされました: user_id={user_id}")
@@ -794,7 +794,7 @@ async def handle_invoice_paid(db: Session, event_data: Dict[str, Any]):
     except Exception as e:
         logger.error(f"請求書支払い完了処理エラー: {str(e)}")
 
-async def handle_payment_failed(db: Session, event_data: Dict[str, Any]):
+async def handle_payment_failed(db: AsyncSession, event_data: Dict[str, Any]):
     """請求書支払い失敗イベントの処理"""
     logger.info("請求書支払い失敗イベント処理")
     
@@ -807,20 +807,20 @@ async def handle_payment_failed(db: Session, event_data: Dict[str, Any]):
             return
             
         # サブスクリプションをDBから取得
-        db_subscription = crud.get_subscription_by_stripe_id(db, subscription_id)
+        db_subscription = await crud.get_subscription_by_stripe_id(db, subscription_id)
         if not db_subscription:
             logger.error(f"サブスクリプションが見つかりません: {subscription_id}")
             return
             
         # ユーザーを取得
         user_id = db_subscription.user_id
-        db_user = crud_user.get_user(db, user_id=user_id)
+        db_user = await crud_user.get_user(db, user_id=user_id)
         if not db_user:
             logger.error(f"Webhook(Payment Failed): ユーザーが見つかりません: {user_id}")
             # 必要に応じてエラーハンドリング
 
         # サブスクリプションステータスを更新
-        crud.update_subscription(db, db_subscription.id, {"status": "past_due"})
+        await crud.update_subscription(db, db_subscription.id, {"status": "past_due"})
         
         # 支払い履歴を作成
         from app.schemas.subscription import PaymentHistoryCreate
@@ -835,7 +835,7 @@ async def handle_payment_failed(db: Session, event_data: Dict[str, Any]):
             payment_date=event_data.get("created")
         )
         
-        payment = crud.create_payment_history(db, payment_create)
+        payment = await crud.create_payment_history(db, payment_create)
         logger.info(f"失敗した支払い履歴が作成されました: {payment.id}")
         
         # ユーザーステータスを 'unpaid' に更新
@@ -843,7 +843,7 @@ async def handle_payment_failed(db: Session, event_data: Dict[str, Any]):
             user_update_schema = UserUpdate(status=UserStatus.UNPAID)
             try:
                 if db_user.status != UserStatus.UNPAID:
-                    updated_user = crud_user.update_user(db, db_user=db_user, user_in=user_update_schema)
+                    updated_user = await crud_user.update_user(db, db_user=db_user, user_in=user_update_schema)
                     logger.info(f"Webhook(Payment Failed): ユーザーステータスを更新しました: user_id={user_id}, status={updated_user.status}")
                 else:
                     logger.info(f"Webhook(Payment Failed): ユーザーステータスは既に '{db_user.status}' です。更新はスキップされました: user_id={user_id}")
@@ -855,12 +855,12 @@ async def handle_payment_failed(db: Session, event_data: Dict[str, Any]):
     except Exception as e:
         logger.error(f"請求書支払い失敗処理エラー: {str(e)}")
 
-async def handle_subscription_created(db: Session, event_data: Dict[str, Any]):
+async def handle_subscription_created(db: AsyncSession, event_data: Dict[str, Any]):
     """サブスクリプション作成イベントの処理"""
     logger.info("サブスクリプション作成イベント処理")
     # このイベントは基本的にcheckout.session.completedで処理されるため、特別な処理は不要
 
-async def handle_subscription_updated(db: Session, event_data: Dict[str, Any]):
+async def handle_subscription_updated(db: AsyncSession, event_data: Dict[str, Any]):
     """サブスクリプション更新イベントの処理"""
     logger.info("サブスクリプション更新イベント処理")
     
@@ -871,7 +871,7 @@ async def handle_subscription_updated(db: Session, event_data: Dict[str, Any]):
             return
             
         # サブスクリプションをDBから取得
-        db_subscription = crud.get_subscription_by_stripe_id(db, subscription_id)
+        db_subscription = await crud.get_subscription_by_stripe_id(db, subscription_id)
         if not db_subscription:
             logger.error(f"サブスクリプションが見つかりません: {subscription_id}")
             return
@@ -884,13 +884,13 @@ async def handle_subscription_updated(db: Session, event_data: Dict[str, Any]):
             "cancel_at": event_data.get("cancel_at", db_subscription.cancel_at)
         }
         
-        crud.update_subscription(db, db_subscription.id, update_data)
+        await crud.update_subscription(db, db_subscription.id, update_data)
         logger.info(f"サブスクリプションが更新されました: {db_subscription.id}")
         
     except Exception as e:
         logger.error(f"サブスクリプション更新処理エラー: {str(e)}")
 
-async def handle_subscription_deleted(db: Session, event_data: Dict[str, Any]):
+async def handle_subscription_deleted(db: AsyncSession, event_data: Dict[str, Any]):
     """サブスクリプション削除イベントの処理"""
     logger.info("サブスクリプション削除イベント処理")
     
@@ -901,14 +901,14 @@ async def handle_subscription_deleted(db: Session, event_data: Dict[str, Any]):
             return
             
         # サブスクリプションをDBから取得
-        db_subscription = crud.get_subscription_by_stripe_id(db, subscription_id)
+        db_subscription = await crud.get_subscription_by_stripe_id(db, subscription_id)
         if not db_subscription:
             logger.error(f"サブスクリプションが見つかりません: {subscription_id}")
             return
             
         # ユーザーを取得
         user_id = db_subscription.user_id
-        db_user = crud_user.get_user(db, user_id=user_id)
+        db_user = await crud_user.get_user(db, user_id=user_id)
         if not db_user:
             logger.error(f"Webhook(Subscription Deleted): ユーザーが見つかりません: {user_id}")
             # 必要に応じてエラーハンドリング
@@ -920,7 +920,7 @@ async def handle_subscription_deleted(db: Session, event_data: Dict[str, Any]):
             "is_active": False
         }
         
-        crud.update_subscription(db, db_subscription.id, update_data)
+        await crud.update_subscription(db, db_subscription.id, update_data)
         logger.info(f"サブスクリプションが削除されました: {db_subscription.id}")
         
         # ユーザーステータスを 'inactive' に更新
@@ -928,7 +928,7 @@ async def handle_subscription_deleted(db: Session, event_data: Dict[str, Any]):
             user_update_schema = UserUpdate(status=UserStatus.INACTIVE)
             try:
                 if db_user.status != UserStatus.INACTIVE:
-                    updated_user = crud_user.update_user(db, db_user=db_user, user_in=user_update_schema)
+                    updated_user = await crud_user.update_user(db, db_user=db_user, user_in=user_update_schema)
                     logger.info(f"Webhook(Subscription Deleted): ユーザーステータスを更新しました: user_id={user_id}, status={updated_user.status}")
                 else:
                      logger.info(f"Webhook(Subscription Deleted): ユーザーステータスは既に '{db_user.status}' です。更新はスキップされました: user_id={user_id}")
@@ -946,7 +946,7 @@ async def get_campaign_codes(
     skip: int = 0,
     limit: int = 20,
     owner_id: Optional[UUID] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_permission('admin_access', 'campaign_code_read'))
 ):
     """
@@ -959,13 +959,13 @@ async def get_campaign_codes(
         
         # 管理者で特定のユーザーのコードを要求された場合
         if is_admin and owner_id:
-            campaign_codes = crud.get_user_campaign_codes(db, owner_id, skip, limit)
+            campaign_codes = await crud.get_user_campaign_codes(db, owner_id, skip, limit)
         # 管理者の場合は全てのコードを取得
         elif is_admin:
-            campaign_codes = crud.get_all_campaign_codes(db, skip, limit)
+            campaign_codes = await crud.get_all_campaign_codes(db, skip, limit)
         # 一般ユーザーは自分のコードのみ取得可能
         else:
-            campaign_codes = crud.get_user_campaign_codes(db, current_user.id, skip, limit)
+            campaign_codes = await crud.get_user_campaign_codes(db, current_user.id, skip, limit)
             
         return campaign_codes
     except Exception as e:
@@ -978,7 +978,7 @@ async def get_campaign_codes(
 @router.post("/campaign-codes", response_model=CampaignCodeResponse, status_code=status.HTTP_201_CREATED)
 async def create_campaign_code(
     campaign_code: CampaignCodeCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_permission('admin_access', 'campaign_code_write'))
 ):
     """
@@ -990,7 +990,7 @@ async def create_campaign_code(
         is_admin = current_user.role and current_user.role.permissions and "admin" in current_user.role.permissions.lower()
         
         # 既存のコードとの重複チェック
-        existing_code = crud.get_campaign_code_by_code(db, campaign_code.code)
+        existing_code = await crud.get_campaign_code_by_code(db, campaign_code.code)
         if existing_code:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1004,7 +1004,7 @@ async def create_campaign_code(
         elif not campaign_code.owner_id:
             campaign_code.owner_id = current_user.id
             
-        new_campaign_code = crud.create_campaign_code(db, campaign_code)
+        new_campaign_code = await crud.create_campaign_code(db, campaign_code)
         return new_campaign_code
     except HTTPException:
         raise
@@ -1018,14 +1018,14 @@ async def create_campaign_code(
 @router.get("/campaign-codes/{campaign_code_id}", response_model=CampaignCodeResponse)
 async def get_campaign_code(
     campaign_code_id: UUID,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_permission('admin_access', 'campaign_code_read'))
 ):
     """
     特定のキャンペーンコードの詳細を取得する
     """
     try:
-        campaign_code = crud.get_campaign_code(db, campaign_code_id)
+        campaign_code = await crud.get_campaign_code(db, campaign_code_id)
         if not campaign_code:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1056,7 +1056,7 @@ async def get_campaign_code(
 async def update_campaign_code(
     campaign_code_id: UUID,
     campaign_code_update: CampaignCodeUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_permission('admin_access', 'campaign_code_write'))
 ):
     """
@@ -1064,7 +1064,7 @@ async def update_campaign_code(
     """
     try:
         # コードの存在確認
-        db_campaign_code = crud.get_campaign_code(db, campaign_code_id)
+        db_campaign_code = await crud.get_campaign_code(db, campaign_code_id)
         if not db_campaign_code:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1081,7 +1081,7 @@ async def update_campaign_code(
                 detail="このキャンペーンコードを更新する権限がありません"
             )
             
-        updated_campaign_code = crud.update_campaign_code(db, campaign_code_id, campaign_code_update)
+        updated_campaign_code = await crud.update_campaign_code(db, campaign_code_id, campaign_code_update)
         return updated_campaign_code
     except HTTPException:
         raise
@@ -1095,7 +1095,7 @@ async def update_campaign_code(
 @router.delete("/campaign-codes/{campaign_code_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_campaign_code(
     campaign_code_id: UUID,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_permission('admin_access', 'campaign_code_write'))
 ):
     """
@@ -1103,7 +1103,7 @@ async def delete_campaign_code(
     """
     try:
         # コードの存在確認
-        db_campaign_code = crud.get_campaign_code(db, campaign_code_id)
+        db_campaign_code = await crud.get_campaign_code(db, campaign_code_id)
         if not db_campaign_code:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1120,7 +1120,7 @@ async def delete_campaign_code(
                 detail="このキャンペーンコードを削除する権限がありません"
             )
             
-        crud.delete_campaign_code(db, campaign_code_id)
+        await crud.delete_campaign_code(db, campaign_code_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except HTTPException:
         raise

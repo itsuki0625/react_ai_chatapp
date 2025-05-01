@@ -9,6 +9,7 @@ COPY . .
 # 公開環境変数を直接指定
 ENV NEXT_PUBLIC_API_BASE_URL=https://stg-api.smartao.jp
 ENV NEXT_PUBLIC_BROWSER_API_URL=https://stg-api.smartao.jp
+ENV INTERNAL_API_BASE_URL=https://stg-api.smartao.jp
 # NextAuth環境変数を追加（Build-time）
 ENV NEXTAUTH_URL=https://stg.smartao.jp
 ENV NEXTAUTH_COOKIE_DOMAIN=stg.smartao.jp
