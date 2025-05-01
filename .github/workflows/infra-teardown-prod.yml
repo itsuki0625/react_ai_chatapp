@@ -34,6 +34,7 @@ jobs:
         env:
           TF_VAR_db_password:   ${{ secrets.DB_PASSWORD }}   # Use PROD Secrets
           TF_VAR_api_base_url:  ${{ secrets.API_BASE_URL }}   # Use PROD Secrets
-          TF_VAR_environment:   "prod" # Explicitly set environment to prod
+          TF_VAR_environment:   "prod"
+          # Explicitly set environment to prod
         # -auto-approve is VERY DANGEROUS. Ensure protection rules are set.
         run: terraform destroy -input=false -auto-approve 
