@@ -58,6 +58,20 @@ data "aws_iam_policy_document" "ecs_task_secrets_access" {
       "arn:aws:s3:::${var.environment}-rds-ca-certs-${data.aws_caller_identity.current.account_id}/certs/rds-ca-${var.environment}-bundle.pem"
     ]
   }
+
+  # ★ 追加: SSM Parameter Store への読み取りアクセス
+  statement {
+    sid    = "SSMParameterStoreAccess"
+    effect = "Allow"
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+      "ssm:GetParametersByPath"
+    ]
+    resources = [
+      "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/${var.environment}/*"
+    ]
+  }
 }
 
 # 上記ドキュメントから IAM ポリシーを作成
