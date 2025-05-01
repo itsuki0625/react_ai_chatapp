@@ -40,11 +40,10 @@ resource "aws_ecs_service" "backend" {
   task_definition = aws_ecs_task_definition.backend.arn
   desired_count   = 1
   launch_type     = "FARGATE"
-  platform_version = "LATEST"
+  platform_version = "1.4.0"
   network_configuration {
-    subnets         = data.terraform_remote_state.stg.outputs.public_subnets
     security_groups = [aws_security_group.app.id]
-    assign_public_ip = true
+    subnets         = module.vpc.public_subnets
   }
   load_balancer {
     target_group_arn = aws_lb_target_group.backend.arn
@@ -99,11 +98,10 @@ resource "aws_ecs_service" "frontend" {
   task_definition = aws_ecs_task_definition.frontend.arn
   desired_count   = 1
   launch_type     = "FARGATE"
-  platform_version = "LATEST"
+  platform_version = "1.4.0"
   network_configuration {
-    subnets         = data.terraform_remote_state.stg.outputs.public_subnets
     security_groups = [aws_security_group.app.id]
-    assign_public_ip = true
+    subnets         = module.vpc.public_subnets
   }
   load_balancer {
     target_group_arn = aws_lb_target_group.frontend.arn
