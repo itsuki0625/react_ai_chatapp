@@ -33,11 +33,30 @@ module "vpc" {
 
   # --- VPC Endpoints ---
   enable_s3_endpoint       = true # S3 Gateway Endpoint
-  enable_secretsmanager_endpoint = true # Secrets Manager Interface Endpoint
-  enable_ecs_endpoint          = true # ECS Interface Endpoint
-  enable_ecr_api_endpoint      = true # ECR API Interface Endpoint
-  enable_ecr_dkr_endpoint      = true # ECR DKR Interface Endpoint
-  enable_logs_endpoint         = true # CloudWatch Logs Interface Endpoint
+
+  # Interface Endpoints (Mapで定義)
+  interface_endpoints = {
+    secretsmanager = {
+      service_name = "com.amazonaws.${var.aws_region}.secretsmanager"
+      tags         = { Name = "${var.environment}-secretsmanager-vpce" }
+    },
+    ecs = {
+      service_name = "com.amazonaws.${var.aws_region}.ecs"
+      tags         = { Name = "${var.environment}-ecs-vpce" }
+    },
+    ecr_api = {
+      service_name = "com.amazonaws.${var.aws_region}.ecr.api"
+      tags         = { Name = "${var.environment}-ecr-api-vpce" }
+    },
+    ecr_dkr = {
+      service_name = "com.amazonaws.${var.aws_region}.ecr.dkr"
+      tags         = { Name = "${var.environment}-ecr-dkr-vpce" }
+    },
+    logs = {
+      service_name = "com.amazonaws.${var.aws_region}.logs"
+      tags         = { Name = "${var.environment}-logs-vpce" }
+    }
+  }
 
   tags = {
     Terraform   = "true"
