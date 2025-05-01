@@ -26,6 +26,10 @@ module "vpc" {
   enable_nat_gateway = true # Privateサブネットからのアウトバウンド通信用
   single_nat_gateway = true # コスト削減のため (必要なら false に変更)
 
+  # Disable default ACL and route table creation to satisfy module requirements
+  create_default_network_acl = false
+  create_default_route_table = false
+
   # VPC Flow Logs (オプション)
   # enable_flow_log                      = true
   # create_flow_log_cloudwatch_log_group = true
