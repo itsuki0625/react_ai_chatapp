@@ -223,7 +223,7 @@ resource "aws_vpc_endpoint" "secretsmanager" {
 
   security_group_ids = [aws_security_group.vpc_endpoint.id]
 
-  private_dns_enabled = true # これにより、タスクは通常のエンドポイント名でアクセス可能
+  private_dns_enabled = false # これにより、タスクは通常のエンドポイント名でアクセス可能
 
   tags = {
     Name        = "${var.environment}-secretsmanager-vpce"
@@ -262,7 +262,7 @@ resource "aws_vpc_endpoint" "ecr_api" {
   vpc_endpoint_type = "Interface"
   subnet_ids        = data.terraform_remote_state.stg.outputs.vpc_module_private_subnets # <- 参照名変更
   security_group_ids = [aws_security_group.vpc_endpoint.id]
-  private_dns_enabled = true
+  private_dns_enabled = false
   tags = { Name = "${var.environment}-ecr-api-vpce", Environment = var.environment }
 }
 
@@ -273,7 +273,7 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
   vpc_endpoint_type = "Interface"
   subnet_ids        = data.terraform_remote_state.stg.outputs.vpc_module_private_subnets # <- 参照名変更
   security_group_ids = [aws_security_group.vpc_endpoint.id]
-  private_dns_enabled = true
+  private_dns_enabled = false
   tags = { Name = "${var.environment}-ecr-dkr-vpce", Environment = var.environment }
 }
 
@@ -284,7 +284,7 @@ resource "aws_vpc_endpoint" "logs" {
   vpc_endpoint_type = "Interface"
   subnet_ids        = data.terraform_remote_state.stg.outputs.vpc_module_private_subnets # <- 参照名変更
   security_group_ids = [aws_security_group.vpc_endpoint.id]
-  private_dns_enabled = true
+  private_dns_enabled = false
   tags = { Name = "${var.environment}-logs-vpce", Environment = var.environment }
 }
 
