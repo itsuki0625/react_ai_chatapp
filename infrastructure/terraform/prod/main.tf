@@ -11,28 +11,26 @@ provider "aws" {
   region = var.aws_region
 }
 
-# VPC
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.0"
-
-  name                 = "${var.environment}-vpc"
-  cidr                 = var.vpc_cidr
-  azs                  = var.azs
-  public_subnets       = var.public_subnets
-  private_subnets      = var.private_subnets
-  enable_nat_gateway   = false
-  enable_dns_hostnames = true
-  manage_default_network_acl = false
-
-  tags = { Environment = var.environment }
+# === STG 環境の Terraform State を参照 ===
+data "terraform_remote_state" "stg" {
+  backend = "s3"
+  config = {
+    # ↓↓↓ STG の backend.tf と同じ値を設定 ↓↓↓
+    bucket = "smartao-stg-terraform-state"
+    key    = "stg/terraform.tfstate"
+    region = var.aws_region # provider と同じリージョンを仮定
+  }
 }
+# === 追加ここまで ===
+
+# VPC モジュール定義は削除
+# module "vpc" { ... }
 
 # セキュリティグループ: アプリケーション
 resource "aws_security_group" "app" {
   name        = "${var.environment}-app-sg"
   description = "Allow HTTP/3000/5050"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = data.terraform_remote_state.stg.outputs.vpc_id # <- 参照変更
 
   ingress {
     from_port   = 80
@@ -67,7 +65,7 @@ resource "aws_security_group" "app" {
 resource "aws_security_group" "rds" {
   name        = "${var.environment}-rds-sg"
   description = "Allow PostgreSQL"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = data.terraform_remote_state.stg.outputs.vpc_id # <- 参照変更
 
   ingress {
     from_port       = 5432
@@ -90,7 +88,7 @@ resource "aws_lb" "frontend" {
   name               = "${var.environment}-front-alb"
   internal           = false
   load_balancer_type = "application"
-  subnets            = module.vpc.public_subnets
+  subnets            = data.terraform_remote_state.stg.outputs.public_subnets # <- 参照変更
   security_groups    = [aws_security_group.app.id]
 
   tags = { Environment = var.environment }
@@ -100,7 +98,7 @@ resource "aws_lb_target_group" "frontend" {
   name        = "${var.environment}-front-tg"
   port        = 3000
   protocol    = "HTTP"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = data.terraform_remote_state.stg.outputs.vpc_id # <- 参照変更
   target_type = "ip"
 }
 
@@ -120,7 +118,7 @@ resource "aws_lb" "backend" {
   name               = "${var.environment}-api-alb"
   internal           = false
   load_balancer_type = "application"
-  subnets            = module.vpc.public_subnets
+  subnets            = data.terraform_remote_state.stg.outputs.public_subnets # <- 参照変更
   security_groups    = [aws_security_group.app.id]
 
   tags = { Environment = var.environment }
@@ -130,7 +128,7 @@ resource "aws_lb_target_group" "backend" {
   name        = "${var.environment}-api-tg"
   port        = 5050
   protocol    = "HTTP"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = data.terraform_remote_state.stg.outputs.vpc_id # <- 参照変更
   target_type = "ip"
 }
 
@@ -181,7 +179,7 @@ resource "aws_db_parameter_group" "custom_rds_pg" {
 # RDS (PostgreSQL)
 resource "aws_db_subnet_group" "rds" {
   name       = "${var.environment}-rds-subnet-group"
-  subnet_ids = module.vpc.private_subnets
+  subnet_ids = data.terraform_remote_state.stg.outputs.private_subnets # <- 参照変更
   tags = { Environment = var.environment }
 }
 resource "aws_db_instance" "rds" {
@@ -217,12 +215,12 @@ resource "aws_secretsmanager_secret" "backend_env" {
 
 # Secrets Manager VPC Endpoint
 resource "aws_vpc_endpoint" "secretsmanager" {
-  vpc_id            = module.vpc.vpc_id
+  vpc_id            = data.terraform_remote_state.stg.outputs.vpc_id # <- 参照変更
   service_name      = "com.amazonaws.${var.aws_region}.secretsmanager" # リージョンを適切に指定
   vpc_endpoint_type = "Interface"
 
   # タスクが実行されるプライベートサブネットを指定
-  subnet_ids = module.vpc.private_subnets
+  subnet_ids = data.terraform_remote_state.stg.outputs.private_subnets # <- 参照変更
 
   # VPCエンドポイント用のセキュリティグループ (インバウンドHTTPSを許可)
   security_group_ids = [aws_security_group.vpc_endpoint.id] # 新しく作成するSGを指定
@@ -239,7 +237,7 @@ resource "aws_vpc_endpoint" "secretsmanager" {
 resource "aws_security_group" "vpc_endpoint" {
   name        = "${var.environment}-vpce-sg"
   description = "Allow HTTPS from App SG for VPC Endpoint"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = data.terraform_remote_state.stg.outputs.vpc_id # <- 参照変更
 
   ingress {
     from_port       = 443
@@ -259,68 +257,47 @@ resource "aws_security_group" "vpc_endpoint" {
   tags = { Environment = var.environment }
 }
 
-# ECR API VPC Endpoint
+# ECR API Endpoint
 resource "aws_vpc_endpoint" "ecr_api" {
-  vpc_id            = module.vpc.vpc_id
+  vpc_id            = data.terraform_remote_state.stg.outputs.vpc_id # <- 参照変更
   service_name      = "com.amazonaws.${var.aws_region}.ecr.api"
   vpc_endpoint_type = "Interface"
-
-  subnet_ids         = module.vpc.private_subnets # プライベートサブネットを指定
-  security_group_ids = [aws_security_group.vpc_endpoint.id] # Secrets Managerと同じSGを再利用可能
+  subnet_ids        = data.terraform_remote_state.stg.outputs.private_subnets # <- 参照変更
+  security_group_ids = [aws_security_group.vpc_endpoint.id]
   private_dns_enabled = true
-
-  tags = {
-    Name        = "${var.environment}-ecr-api-vpce"
-    Environment = var.environment
-  }
+  tags = { Name = "${var.environment}-ecr-api-vpce", Environment = var.environment }
 }
 
-# ECR DKR VPC Endpoint
+# ECR DKR Endpoint
 resource "aws_vpc_endpoint" "ecr_dkr" {
-  vpc_id            = module.vpc.vpc_id
+  vpc_id            = data.terraform_remote_state.stg.outputs.vpc_id # <- 参照変更
   service_name      = "com.amazonaws.${var.aws_region}.ecr.dkr"
   vpc_endpoint_type = "Interface"
-
-  subnet_ids         = module.vpc.private_subnets # プライベートサブネットを指定
-  security_group_ids = [aws_security_group.vpc_endpoint.id] # Secrets Managerと同じSGを再利用可能
+  subnet_ids        = data.terraform_remote_state.stg.outputs.private_subnets # <- 参照変更
+  security_group_ids = [aws_security_group.vpc_endpoint.id]
   private_dns_enabled = true
-
-  tags = {
-    Name        = "${var.environment}-ecr-dkr-vpce"
-    Environment = var.environment
-  }
+  tags = { Name = "${var.environment}-ecr-dkr-vpce", Environment = var.environment }
 }
 
-# CloudWatch Logs VPC Endpoint
+# CloudWatch Logs Endpoint
 resource "aws_vpc_endpoint" "logs" {
-  vpc_id            = module.vpc.vpc_id
+  vpc_id            = data.terraform_remote_state.stg.outputs.vpc_id # <- 参照変更
   service_name      = "com.amazonaws.${var.aws_region}.logs"
   vpc_endpoint_type = "Interface"
-
-  subnet_ids         = module.vpc.private_subnets # プライベートサブネットを指定
-  security_group_ids = [aws_security_group.vpc_endpoint.id] # 既存のSGを再利用
+  subnet_ids        = data.terraform_remote_state.stg.outputs.private_subnets # <- 参照変更
+  security_group_ids = [aws_security_group.vpc_endpoint.id]
   private_dns_enabled = true
-
-  tags = {
-    Name        = "${var.environment}-logs-vpce"
-    Environment = var.environment
-  }
+  tags = { Name = "${var.environment}-logs-vpce", Environment = var.environment }
 }
 
-# The following S3 Gateway VPC Endpoint block is removed as it's now managed by the VPC module
-# Restore the external definition
-# S3 Gateway VPC Endpoint
+# S3 Gateway Endpoint
 resource "aws_vpc_endpoint" "s3_gateway" {
-  vpc_id       = module.vpc.vpc_id
-  service_name = "com.amazonaws.${var.aws_region}.s3"
+  vpc_id            = data.terraform_remote_state.stg.outputs.vpc_id # <- 参照変更
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
   vpc_endpoint_type = "Gateway"
-
-  # プライベートサブネットのルートテーブルに関連付ける
-  # Use the module's output for private route table IDs
-  route_table_ids = module.vpc.private_route_table_ids
-
-  tags = {
-    Name        = "${var.environment}-s3-gateway-vpce"
-    Environment = var.environment
-  }
+  # ゲートウェイエンドポイントは特定のルートテーブルに関連付ける
+  # ここではプライベートサブネットのルートテーブルを指定 (STGのOutputが必要になる場合あり)
+  # 例: route_table_ids = data.terraform_remote_state.stg.outputs.private_route_table_ids
+  # 今回は明示的に指定せず、デフォルトルートテーブルに関連付けられる可能性あり
+  tags = { Name = "${var.environment}-s3-gateway-vpce", Environment = var.environment }
 } 
