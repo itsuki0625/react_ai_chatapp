@@ -89,4 +89,18 @@ resource "aws_iam_role_policy_attachment" "ecs_task_secrets_attachment" {
   role       = aws_iam_role.ecs_task_execution_role.name
   policy_arn = aws_iam_policy.ecs_task_secrets_policy.arn
 }
-# --- End Secrets Manager Access Policy --- 
+# --- End Secrets Manager Access Policy ---
+
+# === Add Task Role for Application ===
+resource "aws_iam_role" "ecs_task_role" {
+  name               = "${var.environment}-ecs-task-role" # New role for the application itself
+  assume_role_policy = data.aws_iam_policy_document.ecs_task_assume_role.json # Assumed by ecs-tasks
+  tags = { Environment = var.environment }
+}
+
+# Attach the existing custom policy (Secrets Manager & S3 access) to the new Task Role
+resource "aws_iam_role_policy_attachment" "ecs_task_role_secrets_attachment" {
+  role       = aws_iam_role.ecs_task_role.name
+  policy_arn = aws_iam_policy.ecs_task_secrets_policy.arn # Reuse the policy with S3/SecretsManager permissions
+}
+# === End Task Role for Application === 
