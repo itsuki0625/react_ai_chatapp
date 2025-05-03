@@ -14,6 +14,7 @@ from app.api.v1.endpoints.quiz import router as quiz_router
 from app.api.v1.endpoints.roles import router as roles_router
 from app.api.v1.endpoints.study_plans import router as study_plans_router
 from app.api.v1.endpoints.communication import router as communication_router
+from app.api.v1.endpoints.users import router as users_router
 
 # 各ルーターをエクスポート
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     "roles_router",
     "study_plans_router",
     "communication_router",
+    "users_router",
 ]
