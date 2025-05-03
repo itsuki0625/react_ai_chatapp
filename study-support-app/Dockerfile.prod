@@ -1,0 +1,40 @@
+# PROD用マルチステージDockerfile
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# 依存関係インストール
+COPY package*.json ./
+RUN rm -rf node_modules .next
+RUN npm ci --legacy-peer-deps
+COPY . .
+
+# ビルド時に渡す公開環境変数
+ENV NEXT_PUBLIC_API_BASE_URL=https://api.smartao.jp
+ENV NEXT_PUBLIC_BROWSER_API_URL=https://api.smartao.jp
+ENV INTERNAL_API_BASE_URL=https://api.smartao.jp
+# NextAuth環境変数を追加（Build-time）
+ENV NEXTAUTH_URL=https://app.smartao.jp
+ENV NEXTAUTH_COOKIE_DOMAIN=app.smartao.jp
+ENV NEXTAUTH_SECRET=gLl9JJlJN95emviDnWGSUZlm9u7He2n+C7YLxveaVoc=
+
+# ビルド実行
+RUN rm -rf .next
+RUN npm run build
+
+# ランタイム用ステージ
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+# NextAuth用の環境変数を追加（Runtime）
+ENV NEXTAUTH_URL=https://app.smartao.jp
+ENV NEXTAUTH_COOKIE_DOMAIN=app.smartao.jp
+ENV NEXTAUTH_SECRET=gLl9JJlJN95emviDnWGSUZlm9u7He2n+C7YLxveaVoc=
+
+# build成果物をコピー
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
+
+EXPOSE 3000
+CMD ["npm", "run", "start", "--", "-p", "3000"] 

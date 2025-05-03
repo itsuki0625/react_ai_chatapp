@@ -27,23 +27,25 @@ jobs:
           terraform_version: '1.5.0' # 必要に応じてバージョンを更新してください
 
       - name: Terraform Init
-        working-directory: infrastructure/terraform
+        working-directory: infrastructure/terraform/prod
         run: terraform init -upgrade -input=false
 
       - name: Terraform Plan
-        working-directory: infrastructure/terraform
+        working-directory: infrastructure/terraform/prod
         env:
           # ★★★ 本番用のシークレット名を指定してください ★★★
           TF_VAR_db_password:   ${{ secrets.DB_PASSWORD }}
           TF_VAR_api_base_url:  ${{ secrets.API_BASE_URL }}
+          TF_VAR_environment:   "prod" # <- 環境名を明示的に指定
         run: terraform plan -input=false -out=tfplan
 
       - name: Terraform Apply (Requires manual approval)
-        working-directory: infrastructure/terraform
+        working-directory: infrastructure/terraform/prod
         env:
           # ★★★ 本番用のシークレット名を指定してください ★★★
           TF_VAR_db_password:   ${{ secrets.DB_PASSWORD }}
           TF_VAR_api_base_url:  ${{ secrets.API_BASE_URL }}
+          TF_VAR_environment:   "prod" # <- 環境名を明示的に指定
         # apply コマンドから -auto-approve を削除
         # GitHub Environments の承認機能を利用して手動承認後に実行されることを想定
         run: terraform apply -input=false tfplan 

@@ -11,6 +11,8 @@ export interface User {
   status: 'active' | 'inactive' | 'pending' | 'unpaid'; // 未決済ステータスを追加
   createdAt?: string; // ISO 8601 DateTime string
   lastLogin?: string; // ISO 8601 DateTime string or null
+  prefecture?: string | null;
+  profile_image_url?: string | null; // 追加
   // 必要に応じて他のフィールドを追加
 }
 

@@ -323,4 +323,30 @@ resource "aws_vpc_endpoint" "s3_gateway" {
     Name        = "${var.environment}-s3-gateway-vpce"
     Environment = var.environment
   }
+}
+
+# アイコン用 S3 バケットを追加
+resource "aws_s3_bucket" "icon_images" {
+  bucket = "${var.environment}-icon-images"
+  acl    = "private"
+
+  tags = {
+    Name        = "${var.environment}-icon-images"
+    Environment = var.environment
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "icon_images" {
+  bucket = aws_s3_bucket.icon_images.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# アイコン用バケット名を出力
+output "icon_images_bucket_name" {
+  description = "S3 bucket name for icon images"
+  value       = aws_s3_bucket.icon_images.bucket
 } 

@@ -44,20 +44,34 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
       - name: Build backend image with commit SHA tag
         id: build-image
         run: |
           IMAGE_TAG=$(echo $GITHUB_SHA | head -c7)
-          IMAGE_URI="${{ env.ECR_REGISTRY }}/backend:$IMAGE_TAG"
-          echo "Building and tagging image as: $IMAGE_URI"
+          IMAGE_URI="${{ env.ECR_REGISTRY }}/prod-backend:$IMAGE_TAG"
+          LATEST_URI="${{ env.ECR_REGISTRY }}/prod-backend:latest"
+          echo "Building and tagging images: $IMAGE_URI and $LATEST_URI"
           docker build \
             --file backend/Dockerfile \
             --tag  $IMAGE_URI \
+            --tag  $LATEST_URI \
             backend
           echo "::set-output name=image_uri::$IMAGE_URI"
 
       - name: Push backend to ECR
-        run: docker push ${{ steps.build-image.outputs.image_uri }}
+        run: |
+          docker push ${{ steps.build-image.outputs.image_uri }}
+          docker push ${{ env.ECR_REGISTRY }}/prod-backend:latest
 
   # ─────────────────────────────────────────────────
   # 3) Frontend イメージのビルド & Push (本番環境)
@@ -72,20 +86,32 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
       - name: Build frontend image with commit SHA tag
         id: build-image
         run: |
           IMAGE_TAG=$(echo $GITHUB_SHA | head -c7)
-          IMAGE_URI="${{ env.ECR_REGISTRY }}/front:$IMAGE_TAG"
-          echo "Building and tagging image as: $IMAGE_URI"
+          IMAGE_URI="${{ env.ECR_REGISTRY }}/prod-frontend:latest"
+          echo "Building and tagging images: $IMAGE_URI"
           docker build \
-            --file study-support-app/Dockerfile \
+            --file study-support-app/Dockerfile.prod \
             --tag  $IMAGE_URI \
             study-support-app
           echo "::set-output name=image_uri::$IMAGE_URI"
 
       - name: Push frontend to ECR
-        run: docker push ${{ steps.build-image.outputs.image_uri }}
+        run: |
+          docker push ${{ steps.build-image.outputs.image_uri }}
+          docker push ${{ env.ECR_REGISTRY }}/prod-frontend:latest
 
   # ─────────────────────────────────────────────────
   # 4) Backend を ECS にデプロイ (本番環境)
@@ -104,13 +130,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
       - name: Deploy Backend to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           cluster: prod-api
           service: prod-api-service
           task-definition: AWS/backend-task-def-prod.json
           container-name: backend
-          image: ${{ needs.build-push-backend.outputs.image_uri }}
+          image: ${{ env.ECR_REGISTRY }}/prod-backend:latest
           wait-for-service-stability: true
 
   # ─────────────────────────────────────────────────
@@ -130,11 +156,11 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
       - name: Deploy Frontend to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           cluster: prod-front
           service: prod-front-service
           task-definition: AWS/frontend-task-def-prod.json
           container-name: frontend
-          image: ${{ needs.build-push-frontend.outputs.image_uri }}
+          image: ${{ env.ECR_REGISTRY }}/prod-frontend:latest
           wait-for-service-stability: true 

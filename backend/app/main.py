@@ -87,7 +87,7 @@ app.add_middleware(
         "https://yourdomain.com",  # 本番環境（必要に応じて変更）
         "https://stg.smartao.jp", # ステージング環境フロントエンド
         "https://api.smartao.jp", # 本番環境API
-        "https://smartao.jp", # 本番環境フロントエンド
+        "https://app.smartao.jp", # 本番環境フロントエンド
     ],
     allow_credentials=True,  # 認証情報を許可
     allow_methods=["*"],  # すべてのHTTPメソッドを許可
