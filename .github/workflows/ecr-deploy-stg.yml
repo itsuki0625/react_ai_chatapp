@@ -95,7 +95,7 @@ jobs:
         with:
           cluster: stg-api
           service: stg-api-service
-          task-definition: AWS/backend-task-def-stg.json
+          task-definition: backend-stg
           wait-for-service-stability: true
 
   deploy-frontend-stg:
@@ -116,5 +116,5 @@ jobs:
         with:
           cluster: stg-front
           service: stg-front-service
-          task-definition: AWS/frontend-task-def-stg.json
+          task-definition: stg-front
           wait-for-service-stability: true 

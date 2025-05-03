@@ -208,12 +208,14 @@ resource "aws_ssm_parameter" "api_base_url" {
 }
 
 # Secrets Manager (backend.env)
-resource "random_id" "secret_suffix" {
-  byte_length = 4
-}
+# resource "random_id" "secret_suffix" {
+#   byte_length = 4
+# }
 resource "aws_secretsmanager_secret" "backend_env" {
-  name                         = "${var.environment}/api/env-${random_id.secret_suffix.hex}"
+  name                         = "${var.environment}/api/env"
   recovery_window_in_days      = 0
+  description                  = "Environment variables for backend application in ${var.environment}"
+  tags = { Environment = var.environment, Application = "backend" }
 }
 
 # Secrets Manager VPC Endpoint
