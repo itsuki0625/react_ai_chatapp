@@ -42,6 +42,7 @@ jobs:
             --tag  $IMAGE_URI \
             backend
           echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "::set-output name=latest_image_uri::$IMAGE_URI"
 
       - name: Push STG backend to ECR
         run: |
@@ -79,6 +80,7 @@ jobs:
             --tag  $IMAGE_URI \
             study-support-app
           echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "::set-output name=latest_image_uri::$IMAGE_URI"
 
       - name: Push STG frontend to ECR
         run: |
@@ -112,6 +114,8 @@ jobs:
           service: stg-api-service
           task-definition: ${{ steps.render-task-def.outputs.task-definition }}
           wait-for-service-stability: true
+      - name: Debug: Built image URI
+        run: echo "latest_image_uri: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
 
   deploy-frontend-stg:
     needs: build-push-frontend-stg
@@ -139,4 +143,6 @@ jobs:
           cluster: stg-front
           service: stg-front-service
           task-definition: ${{ steps.render-frontend-task-def.outputs.task-definition }}
-          wait-for-service-stability: true 
+          wait-for-service-stability: true
+      - name: Debug: Built image URI (Frontend)
+        run: echo "latest_image_uri: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}" 
