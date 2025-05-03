@@ -15,6 +15,8 @@ jobs:
   build-push-backend-stg:
     environment: Preview
     runs-on: ubuntu-latest
+    outputs:
+      latest_image_uri: ${{ steps.build-image.outputs.latest_image_uri }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -31,6 +33,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build STG backend image
+        id: build-image
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
           IMAGE_URI="${REGISTRY}/stg-backend:latest"
@@ -49,6 +52,8 @@ jobs:
   build-push-frontend-stg:
     environment: Preview
     runs-on: ubuntu-latest
+    outputs:
+      latest_image_uri: ${{ steps.build-image.outputs.latest_image_uri }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -65,6 +70,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build STG frontend image
+        id: build-image
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
           IMAGE_URI="${REGISTRY}/stg-frontend:latest"
