@@ -1,5 +1,5 @@
 {
-  "family": "backend-stg",
+  "family": "backend-stg-migration",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "256",
@@ -9,9 +9,6 @@
     {
       "name": "backend",
       "image": "354918390375.dkr.ecr.ap-northeast-1.amazonaws.com/stg-backend:latest",
-      "portMappings": [
-        { "containerPort": 5050, "protocol": "tcp" }
-      ],
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {

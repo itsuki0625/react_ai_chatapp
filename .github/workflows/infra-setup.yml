@@ -31,18 +31,18 @@ jobs:
         run: curl -v https://truststore.pki.rds.amazonaws.com/rds-combined-ca-bundle.pem -o /dev/null
 
       - name: Terraform Init
-        working-directory: infrastructure/terraform
+        working-directory: infrastructure/terraform/stg
         run: terraform init -upgrade -input=false
 
       - name: Terraform Plan
-        working-directory: infrastructure/terraform
+        working-directory: infrastructure/terraform/stg
         env:
           TF_VAR_db_password:   ${{ secrets.DB_PASSWORD }}
           TF_VAR_api_base_url:  ${{ secrets.API_BASE_URL }}
         run: terraform plan -input=false -out=tfplan
 
       - name: Terraform Apply
-        working-directory: infrastructure/terraform
+        working-directory: infrastructure/terraform/stg
         env:
           TF_VAR_db_password:   ${{ secrets.DB_PASSWORD }}
           TF_VAR_api_base_url:  ${{ secrets.API_BASE_URL }}

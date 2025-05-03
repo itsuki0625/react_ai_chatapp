@@ -37,7 +37,8 @@ data "aws_iam_policy_document" "ecs_task_secrets_access" {
     sid    = "SecretsManagerAccess"
     effect = "Allow"
     actions = [
-      "secretsmanager:GetSecretValue"
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:DescribeSecret"
     ]
     resources = [
       "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:${var.environment}/api/env-*" # パターンを修正
@@ -55,6 +56,20 @@ data "aws_iam_policy_document" "ecs_task_secrets_access" {
     ]
     resources = [
       "arn:aws:s3:::${var.environment}-rds-ca-certs-${data.aws_caller_identity.current.account_id}/certs/rds-ca-${var.environment}-bundle.pem"
+    ]
+  }
+
+  # ★ 追加: SSM Parameter Store への読み取りアクセス
+  statement {
+    sid    = "SSMParameterStoreAccess"
+    effect = "Allow"
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+      "ssm:GetParametersByPath"
+    ]
+    resources = [
+      "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/${var.environment}/*"
     ]
   }
 }

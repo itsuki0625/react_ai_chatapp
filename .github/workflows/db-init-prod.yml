@@ -1,0 +1,81 @@
+name: Run PROD DB Initialization
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: >
+          Run DB initialization (load demo data) on PROD? (Type 'yes' to confirm)
+        required: true
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECS_CLUSTER: prod-api
+  ECS_TASK_DEFINITION: backend-prod-migration
+  ECS_CONTAINER_NAME: backend
+
+jobs:
+  run-db-init-prod:
+    name: Run DB Initialization on PROD
+    if: github.event.inputs.confirm == 'yes'
+    environment: Production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Run DB initialization script on ECS
+        id: run_init_db
+        run: |
+          echo "Running DB initialization script on PROD environment..."
+          task_output=$(aws ecs run-task \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --launch-type FARGATE \
+            --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ secrets.PROD_SUBNETS }}],securityGroups=[${{ secrets.PROD_SECURITY_GROUPS }}],assignPublicIp=DISABLED}" \
+            --overrides '{"containerOverrides":[{"name":"${{ env.ECS_CONTAINER_NAME }}","command":["python", "-m", "app.database.init_db"]}]}' \
+            --output json)
+
+          echo "AWS Response: $task_output"
+
+          if echo "$task_output" | jq -e '.failures | length > 0' > /dev/null; then
+            echo "::error::Failed to start ECS task for DB initialization (PROD):"
+            echo "$task_output" | jq -r '.failures[].reason'
+            exit 1
+          fi
+          if ! echo "$task_output" | jq -e '.tasks | length > 0' > /dev/null; then
+             echo "::error::No tasks found in ECS run-task response for DB init (PROD)."
+             echo "$task_output"
+             exit 1
+          fi
+
+          task_arn=$(echo "$task_output" | jq -r '.tasks[0].taskArn')
+
+          if [ -z "$task_arn" ] || [ "$task_arn" == "null" ]; then
+             echo "::error::Could not extract task ARN from response for DB init (PROD)."
+             echo "$task_output"
+             exit 1
+          fi
+
+          echo "DB initialization task started for PROD (ARN: ${task_arn}). Check ECS console for status."
+
+      # Optional: Add a wait step if you want the workflow to wait for completion
+      # - name: Wait for init_db task completion
+      #   if: steps.run_init_db.outputs.task_arn # Requires init_task_arn output from previous step
+      #   run: |
+      #     echo "init_task_arn=${task_arn}" >> $GITHUB_OUTPUT # Need to output ARN first if waiting
+      #     aws ecs wait tasks-stopped --cluster ${{ env.ECS_CLUSTER }} --tasks ${task_arn}
+      #     echo "Init DB task completed."
+      #     # Check exit code if necessary
+      #     init_exit_code=$(aws ecs describe-tasks --cluster ${{ env.ECS_CLUSTER }} --tasks ${task_arn} --query 'tasks[0].containers[?name==`'${{ env.ECS_CONTAINER_NAME }}'`].exitCode | jq -r '.[0]')
+      #     if [ "$init_exit_code" != "0" ]; then
+      #       echo "::error::Init DB task container exited with non-zero code: $init_exit_code"
+      #       exit 1
+      #     fi 
