@@ -343,7 +343,6 @@ resource "aws_vpc_endpoint" "s3_gateway" {
 # アイコン用 S3 バケットを追加
 resource "aws_s3_bucket" "icon_images" {
   bucket = "${var.environment}-icon-images"
-  # acl    = "private" # 非推奨: バケットポリシーとIAMで制御
 
   tags = {
     Name        = "${var.environment}-icon-images"
