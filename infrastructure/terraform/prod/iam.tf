@@ -72,12 +72,32 @@ data "aws_iam_policy_document" "ecs_task_secrets_access" {
       "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/${var.environment}/*"
     ]
   }
+
+  # ★ 追加: アイコン用 S3 バケットへのアクセス権限
+  statement {
+    sid    = "IconBucketAccess"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject"
+      # 必要に応じて ListBucket も追加
+      # "s3:ListBucket"
+    ]
+    resources = [
+      # S3 バケットの ARN を参照 (main.tfで定義したリソース名に合わせる)
+      # Note: Use module.main directly if main.tf is not split into a module
+      # Assuming aws_s3_bucket.icon_images is defined in the same directory (main.tf)
+      aws_s3_bucket.icon_images.arn,
+      "${aws_s3_bucket.icon_images.arn}/*" # バケット内のオブジェクト ARN
+    ]
+  }
 }
 
 # 上記ドキュメントから IAM ポリシーを作成
 resource "aws_iam_policy" "ecs_task_secrets_policy" {
   name        = "${var.environment}-ecs-task-secrets-policy"
-  description = "Allow ECS tasks to access specific secrets"
+  description = "Allow ECS tasks to access specific secrets and S3 bucket"
   policy      = data.aws_iam_policy_document.ecs_task_secrets_access.json
 }
 
@@ -86,4 +106,4 @@ resource "aws_iam_role_policy_attachment" "ecs_task_secrets_attachment" {
   role       = aws_iam_role.ecs_task_execution_role.name
   policy_arn = aws_iam_policy.ecs_task_secrets_policy.arn
 }
-# --- End Secrets Manager Access Policy --- 
+# --- End Secrets Manager and S3 Access Policy --- 

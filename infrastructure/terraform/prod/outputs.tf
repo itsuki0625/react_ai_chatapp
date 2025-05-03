@@ -40,4 +40,9 @@ output "public_subnets" {
 output "backend_cluster_name" {
   description = "The name of the backend ECS cluster"
   value       = aws_ecs_cluster.backend.name
+}
+
+output "icon_images_bucket_name" {
+  description = "S3 bucket name for icon images"
+  value       = aws_s3_bucket.icon_images.bucket
 } 
