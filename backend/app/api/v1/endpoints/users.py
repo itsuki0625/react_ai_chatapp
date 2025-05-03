@@ -14,7 +14,7 @@ async def upload_user_icon(
     *,
     db: AsyncSession = Depends(deps.get_async_db),
     file: UploadFile = File(...),
-    current_user: models.User = Depends(deps.get_current_active_user)
+    current_user: models.User = Depends(deps.get_current_user)
 ):
     """現在のユーザーのプロフィールアイコンをアップロードします。"""
     _, file_extension = os.path.splitext(file.filename)
@@ -44,7 +44,7 @@ async def upload_user_icon(
 async def delete_user_icon(
     *,
     db: AsyncSession = Depends(deps.get_async_db),
-    current_user: models.User = Depends(deps.get_current_active_user)
+    current_user: models.User = Depends(deps.get_current_user)
 ):
     """現在のユーザーのプロフィールアイコンを削除します。"""
     if not current_user.profile_image_url:
