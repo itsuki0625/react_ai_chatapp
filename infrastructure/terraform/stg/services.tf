@@ -2,7 +2,7 @@
 
 # Backend task definition
 resource "aws_ecs_task_definition" "backend" {
-  family                   = "${var.environment}-api"
+  family                   = "backend-${var.environment}"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "256"
