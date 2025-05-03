@@ -38,7 +38,7 @@ jobs:
             --file backend/Dockerfile.stg \
             --tag  $IMAGE_URI \
             backend
-          echo "::set-output name=latest_image_uri::$IMAGE_URI"
+          echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
       - name: Push STG backend to ECR
         run: |
@@ -72,7 +72,7 @@ jobs:
             --file study-support-app/Dockerfile.stg \
             --tag  $IMAGE_URI \
             study-support-app
-          echo "::set-output name=latest_image_uri::$IMAGE_URI"
+          echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
       - name: Push STG frontend to ECR
         run: |
