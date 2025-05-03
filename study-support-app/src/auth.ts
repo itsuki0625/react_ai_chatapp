@@ -28,14 +28,15 @@ interface Credentials {
   password: string;
 }
 
-// Userインターフェースの拡張 (next-auth.d.tsで定義済みならここでは不要かも)
+// Userインターフェースの拡張
 interface User extends NextAuthUser {
-  role?: string | string[]; // ★ role を string | string[] に変更
+  role?: string | string[];
   status?: string;
   permissions?: string[];
   isTeacher?: boolean;
   grade?: string;
   prefecture?: string;
+  profile_image_url?: string | null;
   accessToken?: string;
   refreshToken?: string;
   accessTokenExpires?: number;
@@ -93,23 +94,21 @@ export const authConfig: NextAuthConfig = {
           }
 
           // BackendのUser型とToken型をNextAuthのUser型にマッピング
-          // ★注意: バックエンドのUserResponse型とNextAuthのUser型のフィールドを合わせる
           const user: User = {
               id: data.user.id,
-              name: data.user.full_name, // Backendのfull_nameをnameに
+              name: data.user.full_name,
               email: data.user.email,
-              // image: data.user.profile_image_url, // 必要なら追加
-              role: data.user.role, // Backendのroleをそのまま利用
-              status: data.user.status, // Backendのstatusを利用
-              // permissions: data.user.permissions, // permissionsはtokenに含まれる想定
-              // isTeacher: data.user.role === '講師', // session callbackで設定するので不要かも
-              grade: data.user.grade, // ★ grade を追加 (LoginResponseのuserに含まれている想定)
-              prefecture: data.user.prefecture, // ★ prefecture を追加 (LoginResponseのuserに含まれている想定)
-              accessToken: data.token.access_token, // token情報をUser型に含める
+              image: data.user.profile_image_url,
+              role: data.user.role,
+              status: data.user.status,
+              grade: data.user.grade,
+              prefecture: data.user.prefecture,
+              profile_image_url: data.user.profile_image_url,
+              accessToken: data.token.access_token,
               refreshToken: data.token.refresh_token,
               accessTokenExpires: Date.now() + data.token.expires_in * 1000,
           };
-          console.debug("Authorize Callback: User object created", { userId: user.id, role: user.role, grade: user.grade }); // ★ logger を console.debug に変更
+          console.debug("Authorize Callback: User object created", { userId: user.id, role: user.role, grade: user.grade, profile_image_url: user.profile_image_url }); // ★ ログ追加
           return user;
         } catch (error: any) { // ★ エラーの型を any にして詳細をログ出力
           console.error("[Authorize] Error in authorize callback:", error);
@@ -179,6 +178,7 @@ export const authConfig: NextAuthConfig = {
                 name: authUser.name,
                 email: authUser.email,
                 picture: authUser.image,
+                profile_image_url: authUser.profile_image_url,
                 // --- role と permissions をデコード結果から設定 ---
                 role: tokenRoles || authUser.role, // デコードした roles (配列) を優先、なければ authorize の role
                 permissions: tokenPermissions,      // デコードした permissions を設定
@@ -194,7 +194,7 @@ export const authConfig: NextAuthConfig = {
                 exp: expiresAt,
                 jti: crypto.randomUUID()
             };
-            console.debug("JWT Callback: Initial token population", { userId: extendedToken.id, role: extendedToken.role }); // role のログも確認
+            console.debug("JWT Callback: Initial token population", { userId: extendedToken.id, role: extendedToken.role, profile_image_url: extendedToken.profile_image_url }); // ★ ログ追加
             return extendedToken;
         }
 
@@ -249,7 +249,7 @@ export const authConfig: NextAuthConfig = {
             const newExpiresAt = Math.floor(Date.now() / 1000) + newExpiresInSeconds;
 
             const refreshedTokenData: JWT = {
-                ...token, // Keep existing properties like id, name, email etc.
+                ...token,
                 accessToken: refreshedTokens.access_token,
                 refreshToken: refreshedTokens.refresh_token ?? token.refreshToken,
                 accessTokenExpires: newExpiresAt,
@@ -257,14 +257,15 @@ export const authConfig: NextAuthConfig = {
                 role: refreshedRoles || token.role, // デコードした roles (配列) を優先、なければ以前の role
                 permissions: refreshedPermissions || token.permissions, // デコードした permissions を優先
                 // --- ここまで修正 ---
+                profile_image_url: token.profile_image_url,
                 iat: Math.floor(Date.now() / 1000),
-                exp: newExpiresAt, // Update JWT expiration as well
-                jti: crypto.randomUUID(), // Generate a new JTI for the refreshed token
-                error: undefined, // Clear any previous error
-                errorDetail: undefined, // Clear previous error detail
+                exp: newExpiresAt,
+                jti: crypto.randomUUID(),
+                error: undefined,
+                errorDetail: undefined,
             };
 
-            console.info("JWT Callback: Token refreshed successfully", { newTokenId: refreshedTokenData.jti, newRole: refreshedTokenData.role });
+            console.info("JWT Callback: Token refreshed successfully", { newTokenId: refreshedTokenData.jti, newRole: refreshedTokenData.role, profile_image_url: refreshedTokenData.profile_image_url }); // ★ ログ追加
             return refreshedTokenData;
 
         } catch (error: any) {
@@ -303,6 +304,7 @@ export const authConfig: NextAuthConfig = {
           permissions: [],
           grade: undefined,
           prefecture: undefined,
+          profile_image_url: undefined,
         };
         return session;
       }
@@ -335,12 +337,10 @@ export const authConfig: NextAuthConfig = {
 
         session.user.status = token.status ?? 'pending'; 
         session.user.permissions = token.permissions as string[] | undefined;
-        // isTeacher は上で計算済みなので不要
-        // session.user.isTeacher = (token.isTeacher as boolean | undefined) ?? false;
         session.user.grade = token.grade as string | undefined; 
         session.user.prefecture = token.prefecture as string | undefined; 
+        session.user.profile_image_url = token.profile_image_url as string | undefined;
         session.accessToken = token.accessToken as string | undefined; 
-        // session.accessTokenExpires = token.accessTokenExpires as number | undefined; 
       } else {
         console.warn("Session Callback: Token or session.user is missing, cannot populate session user data.");
         // ★ エラー時と同様にデフォルト値を持つ user オブジェクトを設定
@@ -358,11 +358,12 @@ export const authConfig: NextAuthConfig = {
                 permissions: [],
                 grade: undefined,
                 prefecture: undefined,
+                profile_image_url: undefined,
             };
         }
       }
 
-      console.debug("Session Callback: Session data populated", { userId: session.user?.id, role: session.user?.role }); // 最終的なロールを確認
+      console.debug("Session Callback: Session data populated", { userId: session.user?.id, role: session.user?.role, profile_image_url: session.user?.profile_image_url }); // ★ ログ追加
       return session;
     },
     // authorized コールバックはミドルウェアに移行したため、ここでは不要な場合がある
