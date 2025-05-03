@@ -24,7 +24,7 @@ resource "aws_ecs_task_definition" "backend" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = "/ecs/${var.environment}-api"
+          awslogs-group         = "/ecs/backend-stg"
           awslogs-region        = var.aws_region
           awslogs-stream-prefix = "ecs"
         }
