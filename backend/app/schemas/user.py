@@ -96,6 +96,7 @@ class UserResponse(TimestampMixin):
     login_info: Optional[Any] = None # 型は UserLoginInfo だが、循環参照を避けるため Any も可
     grade: Optional[str] = None # grade を追加 (モデルに合わせて Optional[str])
     prefecture: Optional[str] = None # prefecture を追加 (モデルに合わせて Optional[str])
+    profile_image_url: Optional[str] = None # 追加
     # --- End source fields ---
 
     # --- computed fields (these will be in the final JSON) ---
@@ -236,6 +237,7 @@ class UserRoleAssignment(BaseModel):
 class UserSettingsResponse(BaseModel):
     email: EmailStr
     full_name: str
+    profile_image_url: Optional[str] = None
     # ★ 必要であればここにも grade, prefecture を追加する
     # grade: Optional[str] = None
     # prefecture: Optional[str] = None

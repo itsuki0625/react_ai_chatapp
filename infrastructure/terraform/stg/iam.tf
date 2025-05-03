@@ -57,6 +57,24 @@ data "aws_iam_policy_document" "ecs_task_secrets_access" {
       "arn:aws:s3:::${var.environment}-rds-ca-certs-${data.aws_caller_identity.current.account_id}/certs/rds-ca-${var.environment}-bundle.pem"
     ]
   }
+
+  # ★ 追加: アイコン用 S3 バケットへのアクセス権限
+  statement {
+    sid    = "IconBucketAccess"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject"
+      # 必要に応じて ListBucket も追加
+      # "s3:ListBucket"
+    ]
+    resources = [
+      # S3 バケットの ARN を参照するように修正 (main.tfで定義したリソース名に合わせる)
+      aws_s3_bucket.icon_images.arn,
+      "${aws_s3_bucket.icon_images.arn}/*" # バケット内のオブジェクト ARN
+    ]
+  }
 }
 
 # 上記ドキュメントから IAM ポリシーを作成
