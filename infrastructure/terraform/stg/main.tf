@@ -21,7 +21,8 @@ module "vpc" {
   azs                  = var.azs
   public_subnets       = var.public_subnets
   private_subnets      = var.private_subnets
-  enable_nat_gateway   = false
+  enable_nat_gateway   = true
+  single_nat_gateway   = true
   enable_dns_hostnames = true
   manage_default_network_acl = false
 
