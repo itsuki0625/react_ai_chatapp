@@ -38,6 +38,7 @@ jobs:
             --file backend/Dockerfile.stg \
             --tag  $IMAGE_URI \
             backend
+          echo "::set-output name=latest_image_uri::$IMAGE_URI"
 
       - name: Push STG backend to ECR
         run: |
@@ -71,6 +72,7 @@ jobs:
             --file study-support-app/Dockerfile.stg \
             --tag  $IMAGE_URI \
             study-support-app
+          echo "::set-output name=latest_image_uri::$IMAGE_URI"
 
       - name: Push STG frontend to ECR
         run: |
@@ -96,6 +98,7 @@ jobs:
         with:
           task-definition: backend-stg
           container-name: backend
+          image: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}
           output-file: task-definition.json
       - name: Deploy Backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
@@ -124,6 +127,7 @@ jobs:
         with:
           task-definition: stg-front
           container-name: frontend
+          image: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}
           output-file: frontend-task-definition.json
       - name: Deploy Frontend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
