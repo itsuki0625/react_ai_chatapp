@@ -10,6 +10,7 @@ declare module "next-auth" {
     isTeacher?: boolean; // authorizeで設定されていれば含める
     grade?: string;
     prefecture?: string;
+    profile_image_url?: string | null;
     // accessToken?: string; // authorizeの返り値には含めず、jwtコールバックでtokenに追加される想定
     refreshToken?: string;
     accessTokenExpires?: number;
@@ -30,6 +31,7 @@ declare module "next-auth" {
       permissions?: string[];
       grade?: string;
       prefecture?: string;
+      profile_image_url?: string | null;
       // DefaultSession['user'] の他のプロパティ（name, email, image）も必要なら含める
     } & Pick<DefaultSession["user"], 'name' | 'email' | 'image'>; // 必要な標準プロパティのみ選択的に結合
     accessToken?: string; // sessionコールバックで追加される
@@ -52,6 +54,7 @@ declare module "next-auth/jwt" {
     accessTokenExpires?: number;
     grade?: string;
     prefecture?: string;
+    profile_image_url?: string | null;
     error?: "RefreshAccessTokenError"; // トークンリフレッシュエラー用
     errorDetail?: string; // エラー詳細を追加
     iat: number;
