@@ -102,14 +102,19 @@ jobs:
           aws-region:            ${{ secrets.AWS_REGION }}
       - name: Debug-Backend
         run: echo "Backend URI ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
+      - name: Render ECS task definition
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: AWS/backend-task-def-stg.json
+          container-name: backend
+          image: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}
       - name: Deploy Backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           cluster: stg-api
           service: stg-api-service
-          task-definition: backend-stg
-          container-name: backend
-          image: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
           wait-for-service-stability: true
       - name: Debug-Output
         run: echo "latest_image_uri ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
@@ -129,14 +134,19 @@ jobs:
           aws-region:            ${{ secrets.AWS_REGION }}
       - name: Debug-Frontend
         run: echo "Frontend URI ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}"
+      - name: Render ECS task definition
+        id: render-frontend-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: AWS/stg-front.json
+          container-name: frontend
+          image: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}
       - name: Deploy Frontend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           cluster: stg-front
           service: stg-front-service
-          task-definition: stg-front
-          container-name: frontend
-          image: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}
+          task-definition: ${{ steps.render-frontend-task-def.outputs.task-definition }}
           wait-for-service-stability: true
       - name: Debug-Output-Frontend
         run: echo "latest_image_uri ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}" 

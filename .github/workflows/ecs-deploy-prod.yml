@@ -129,14 +129,21 @@ jobs:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
+      - name: Debug-Backend
+        run: echo "Backend IMAGE URI ${{ env.ECR_REGISTRY }}/prod-backend:latest"
+      - name: Render ECS task definition
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: AWS/backend-task-def-prod.json
+          container-name: backend
+          image: ${{ env.ECR_REGISTRY }}/prod-backend:latest
       - name: Deploy Backend to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           cluster: prod-api
           service: prod-api-service
-          task-definition: backend-prod
-          container-name: backend
-          image: ${{ env.ECR_REGISTRY }}/prod-backend:latest
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
           wait-for-service-stability: true
 
   # ─────────────────────────────────────────────────
@@ -155,12 +162,19 @@ jobs:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
+      - name: Debug-Frontend
+        run: echo "Frontend IMAGE URI ${{ env.ECR_REGISTRY }}/prod-frontend:latest"
+      - name: Render ECS task definition
+        id: render-frontend-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: AWS/prod-front.json
+          container-name: frontend
+          image: ${{ env.ECR_REGISTRY }}/prod-frontend:latest
       - name: Deploy Frontend to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           cluster: prod-front
           service: prod-front-service
-          task-definition: prod-front
-          container-name: frontend
-          image: ${{ env.ECR_REGISTRY }}/prod-frontend:latest
+          task-definition: ${{ steps.render-frontend-task-def.outputs.task-definition }}
           wait-for-service-stability: true 
