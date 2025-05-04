@@ -15,6 +15,8 @@ jobs:
   build-push-backend-stg:
     environment: Preview
     runs-on: ubuntu-latest
+    outputs:
+      latest_image_uri: ${{ steps.build-image.outputs.latest_image_uri }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -31,6 +33,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build STG backend image
+        id: build-image
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
           IMAGE_URI="${REGISTRY}/stg-backend:latest"
@@ -38,6 +41,8 @@ jobs:
             --file backend/Dockerfile.stg \
             --tag  $IMAGE_URI \
             backend
+          echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "::set-output name=latest_image_uri::$IMAGE_URI"
 
       - name: Push STG backend to ECR
         run: |
@@ -48,6 +53,8 @@ jobs:
   build-push-frontend-stg:
     environment: Preview
     runs-on: ubuntu-latest
+    outputs:
+      latest_image_uri: ${{ steps.build-image.outputs.latest_image_uri }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -64,6 +71,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build STG frontend image
+        id: build-image
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
           IMAGE_URI="${REGISTRY}/stg-frontend:latest"
@@ -71,6 +79,8 @@ jobs:
             --file study-support-app/Dockerfile.stg \
             --tag  $IMAGE_URI \
             study-support-app
+          echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "::set-output name=latest_image_uri::$IMAGE_URI"
 
       - name: Push STG frontend to ECR
         run: |
@@ -90,13 +100,20 @@ jobs:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
+      - name: "Debug: Confirm backend image URI"
+        run: echo "Backend IMAGE URI: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
       - name: Deploy Backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           cluster: stg-api
           service: stg-api-service
-          task-definition: AWS/backend-task-def-stg.json
+          task-definition: backend-stg
+          container-name: backend
+          image: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}
           wait-for-service-stability: true
+      - name: "Debug: Built image URI"
+        run: |
+          echo "latest_image_uri: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
 
   deploy-frontend-stg:
     needs: build-push-frontend-stg
@@ -111,10 +128,17 @@ jobs:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
+      - name: "Debug: Confirm frontend image URI"
+        run: echo "Frontend IMAGE URI: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}"
       - name: Deploy Frontend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           cluster: stg-front
           service: stg-front-service
-          task-definition: AWS/frontend-task-def-stg.json
-          wait-for-service-stability: true 
+          task-definition: stg-front
+          container-name: frontend
+          image: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}
+          wait-for-service-stability: true
+      - name: "Debug: Built image URI (Frontend)"
+        run: |
+          echo "latest_image_uri: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}" 

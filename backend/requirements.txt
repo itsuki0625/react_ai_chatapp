@@ -27,4 +27,4 @@ pytest>=8.2.2
 
 # 追加: 非同期 PostgreSQL ドライバ
 asyncpg
-boto3
+boto3>=1.28.0

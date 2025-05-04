@@ -229,12 +229,14 @@ resource "aws_ssm_parameter" "api_base_url" {
 }
 
 # Secrets Manager (backend.env)
-resource "random_id" "secret_suffix" {
-  byte_length = 4
-}
+# resource "random_id" "secret_suffix" {
+#   byte_length = 4
+# }
 resource "aws_secretsmanager_secret" "backend_env" {
-  name                         = "${var.environment}/api/env-${random_id.secret_suffix.hex}"
-  recovery_window_in_days      = 0
+  name                         = "${var.environment}/api/env"
+  recovery_window_in_days      = 7
+  description                  = "Environment variables for backend application in ${var.environment}"
+  tags = { Environment = var.environment, Application = "backend" }
 }
 
 # === VPC エンドポイント定義 (個別リソースとして定義) ===
@@ -319,16 +321,43 @@ resource "aws_vpc_endpoint" "logs" {
   }
 }
 
+# The following S3 Gateway VPC Endpoint block is removed as it's now managed by the VPC module
+# Restore the external definition
 # S3 Gateway VPC Endpoint
 resource "aws_vpc_endpoint" "s3_gateway" {
   vpc_id       = module.vpc.vpc_id
   service_name = "com.amazonaws.${var.aws_region}.s3"
   vpc_endpoint_type = "Gateway"
-  route_table_ids = module.vpc.private_route_table_ids # Use module output for private route tables
+
+  # プライベートサブネットのルートテーブルに関連付ける
+  # Use the module's output for private route table IDs
+  route_table_ids = module.vpc.private_route_table_ids
+
   tags = {
     Name        = "${var.environment}-s3-gateway-vpce"
     Environment = var.environment
   }
 }
 
-# --- VPC エンドポイント定義 ここまで --- 
+# --- VPC エンドポイント定義 ここまで ---
+
+# --- ここから追加 ---
+# アイコン用 S3 バケットを追加
+resource "aws_s3_bucket" "icon_images" {
+  bucket = "${var.environment}-icon-images"
+
+  tags = {
+    Name        = "${var.environment}-icon-images"
+    Environment = var.environment
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "icon_images" {
+  bucket = aws_s3_bucket.icon_images.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+# --- ここまで追加 --- 

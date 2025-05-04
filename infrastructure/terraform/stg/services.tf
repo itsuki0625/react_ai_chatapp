@@ -2,12 +2,13 @@
 
 # Backend task definition
 resource "aws_ecs_task_definition" "backend" {
-  family                   = "${var.environment}-api"
+  family                   = "backend-${var.environment}"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "256"
   memory                   = "512"
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+  task_role_arn            = aws_iam_role.ecs_task_role.arn
   container_definitions    = jsonencode([
     {
       name      = "backend",
@@ -16,15 +17,17 @@ resource "aws_ecs_task_definition" "backend" {
       portMappings = [
         { containerPort = 5050, protocol = "tcp" }
       ],
-      # 環境変数は全て SSM パラメータから取得
-      secrets = [for param in aws_ssm_parameter.backend_env : {
-        name      = split("/", param.name)[3] # 各キー名を抽出
-        valueFrom = param.arn
-      }],
+      # 環境変数は Secrets Manager から取得 (ECSが自動展開)
+      secrets = [
+        {
+          name      = "BACKEND_ENV_SECRETS" # Temporary name, not used as env var
+          valueFrom = aws_secretsmanager_secret.backend_env.arn # Reference the Secret ARN
+        }
+      ],
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = "/ecs/${var.environment}-api"
+          awslogs-group         = "/ecs/backend-stg"
           awslogs-region        = var.aws_region
           awslogs-stream-prefix = "ecs"
         }
@@ -111,40 +114,4 @@ resource "aws_ecs_service" "frontend" {
     container_port   = 3000
   }
   depends_on = [ aws_lb_listener.frontend_http ]
-}
-
-# Variable for secrets used by backend
-variable "backend_secret_names" {
-  type    = list(string)
-  default = [
-    "DATABASE_URL",
-    "OPENAI_API_KEY",
-    "SECRET_KEY",
-    "STRIPE_SECRET_KEY",
-    "STRIPE_PUBLISHABLE_KEY",
-    "STRIPE_WEBHOOK_SECRET",
-    "NEXTAUTH_URL",
-    "AUTH_SECRET"
-  ]
-}
-
-# .env.stgをパースしてキー・値のマップを取得
-data "external" "dotenv" {
-  program = ["bash", "-c", <<-EOF
-    echo -n '{'
-    awk -F= '/^[A-Za-z0-9_]+=/{gsub(/"/,"\\\"",$2); printf "\"%s\":\"%s\",", $1, $2}' ../../backend/.env.stg | sed 's/,$//'
-    echo '}'
-EOF
-  ]
-}
-locals {
-  backend_env = data.external.dotenv.result
-}
-
-# SSMパラメータを for_each で自動作成
-resource "aws_ssm_parameter" "backend_env" {
-  for_each = local.backend_env
-  name     = "/${var.environment}/backend/${each.key}"
-  type     = "SecureString"
-  value    = each.value
 } 

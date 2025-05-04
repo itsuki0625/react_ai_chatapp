@@ -134,7 +134,7 @@ jobs:
         with:
           cluster: prod-api
           service: prod-api-service
-          task-definition: AWS/backend-task-def-prod.json
+          task-definition: backend-prod
           container-name: backend
           image: ${{ env.ECR_REGISTRY }}/prod-backend:latest
           wait-for-service-stability: true
@@ -160,7 +160,7 @@ jobs:
         with:
           cluster: prod-front
           service: prod-front-service
-          task-definition: AWS/frontend-task-def-prod.json
+          task-definition: prod-front
           container-name: frontend
           image: ${{ env.ECR_REGISTRY }}/prod-frontend:latest
           wait-for-service-stability: true 

@@ -21,7 +21,8 @@ module "vpc" {
   azs                  = var.azs
   public_subnets       = var.public_subnets
   private_subnets      = var.private_subnets
-  enable_nat_gateway   = false
+  enable_nat_gateway   = true
+  single_nat_gateway   = true
   enable_dns_hostnames = true
   manage_default_network_acl = false
 
@@ -207,12 +208,14 @@ resource "aws_ssm_parameter" "api_base_url" {
 }
 
 # Secrets Manager (backend.env)
-resource "random_id" "secret_suffix" {
-  byte_length = 4
-}
+# resource "random_id" "secret_suffix" {
+#   byte_length = 4
+# }
 resource "aws_secretsmanager_secret" "backend_env" {
-  name                         = "${var.environment}/api/env-${random_id.secret_suffix.hex}"
+  name                         = "${var.environment}/api/env"
   recovery_window_in_days      = 0
+  description                  = "Environment variables for backend application in ${var.environment}"
+  tags = { Environment = var.environment, Application = "backend" }
 }
 
 # Secrets Manager VPC Endpoint
@@ -323,4 +326,29 @@ resource "aws_vpc_endpoint" "s3_gateway" {
     Name        = "${var.environment}-s3-gateway-vpce"
     Environment = var.environment
   }
+}
+
+# アイコン用 S3 バケットを追加
+resource "aws_s3_bucket" "icon_images" {
+  bucket = "${var.environment}-icon-images"
+
+  tags = {
+    Name        = "${var.environment}-icon-images"
+    Environment = var.environment
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "icon_images" {
+  bucket = aws_s3_bucket.icon_images.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# アイコン用バケット名を出力
+output "icon_images_bucket_name" {
+  description = "S3 bucket name for icon images"
+  value       = aws_s3_bucket.icon_images.bucket
 } 
