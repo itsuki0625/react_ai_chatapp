@@ -17,6 +17,7 @@ import { uploadUserIcon, deleteUserIcon } from '@/services/userService';
 import { useUserStore } from '@/store/userStore';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5050';
+const ASSET_BASE_URL = process.env.NEXT_PUBLIC_ASSET_BASE_URL || '';
 
 const SettingsPage = () => {
   const { data: session, status } = useSession();
@@ -210,7 +211,12 @@ const SettingsPage = () => {
 
   const displayName = userSettings?.name ?? user?.name ?? session?.user?.name ?? 'ユーザー';
   const fallbackChar = displayName?.charAt(0)?.toUpperCase() ?? 'U';
-  const currentIconUrl = previewUrl;
+
+  const profileImageUrlKey = previewUrl;
+  const currentIconUrl = profileImageUrlKey && !profileImageUrlKey.startsWith('data:')
+    ? `${ASSET_BASE_URL}/${profileImageUrlKey}`
+    : profileImageUrlKey;
+
   const hasExistingIcon = !!(user?.profile_image_url ?? session?.user?.profile_image_url);
 
   return (
