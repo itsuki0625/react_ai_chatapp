@@ -30,8 +30,8 @@ logging.getLogger("boto3").setLevel(logging.INFO)
 logging.getLogger("botocore").setLevel(logging.INFO)
 logging.getLogger("urllib3").setLevel(logging.INFO)
 
-# SQLAlchemyのエンジンログレベルもINFOに設定 (必要に応じて)
-logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
+# SQLAlchemyのエンジンログレベルをWARNINGに設定してINFOログを抑制
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
 # アプリケーション自体のロガー取得
 logger = logging.getLogger(__name__)
