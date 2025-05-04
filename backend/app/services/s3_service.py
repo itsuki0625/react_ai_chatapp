@@ -41,8 +41,7 @@ class S3Service:
                 Key=object_key,
                 Body=contents,
                 ContentType=file.content_type,
-                # ★ オブジェクトを公開読込可能にするためにACLを設定
-                ACL='public-read'
+                # ACL='public-read'  # ACL を設定しないようにコメントアウト
             )
             logger.info(f"Successfully uploaded icon for user {user_id} to s3://{self.bucket_name}/{object_key}")
 
