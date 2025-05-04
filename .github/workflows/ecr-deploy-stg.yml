@@ -100,13 +100,15 @@ jobs:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
+      - name: Debug: Confirm backend image URI
+        run: echo "Backend IMAGE URI: ${{ needs['build-push-backend-stg'].outputs.latest_image_uri }}"
       - name: Render ECS task definition
         id: render-task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: backend-stg
           container-name: backend
-          image: ${{ needs['build-push-backend-stg'].outputs.latest_image_uri }}
+          image: "${{ needs['build-push-backend-stg'].outputs.latest_image_uri }}"
       - name: Deploy Backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
@@ -131,13 +133,15 @@ jobs:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
+      - name: Debug: Confirm frontend image URI
+        run: echo "Frontend IMAGE URI: ${{ needs['build-push-frontend-stg'].outputs.latest_image_uri }}"
       - name: Render ECS task definition
         id: render-frontend-task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: stg-front
           container-name: frontend
-          image: ${{ needs['build-push-frontend-stg'].outputs.latest_image_uri }}
+          image: "${{ needs['build-push-frontend-stg'].outputs.latest_image_uri }}"
       - name: Deploy Frontend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
