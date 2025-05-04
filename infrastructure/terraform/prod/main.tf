@@ -344,20 +344,46 @@ resource "aws_vpc_endpoint" "s3_gateway" {
 # --- ここから追加 ---
 # アイコン用 S3 バケットを追加
 resource "aws_s3_bucket" "icon_images" {
-  bucket = "${var.environment}-icon-images"
-
+  bucket = var.icon_images_bucket_name # ★ 変数を使用
   tags = {
     Name        = "${var.environment}-icon-images"
     Environment = var.environment
   }
 }
 
+# ★ S3バケットのパブリックアクセスブロック設定
 resource "aws_s3_bucket_public_access_block" "icon_images" {
   bucket = aws_s3_bucket.icon_images.id
 
   block_public_acls       = true
-  block_public_policy     = true
+  block_public_policy     = false # ★ バケットポリシーによるパブリックアクセスを許可
   ignore_public_acls      = true
-  restrict_public_buckets = true
+  restrict_public_buckets = false # ★ パブリックバケットと見なされるのを制限しない
 }
-# --- ここまで追加 --- 
+
+# ★ S3バケットポリシーを追加
+resource "aws_s3_bucket_policy" "icon_images_public_read" {
+  bucket = aws_s3_bucket.icon_images.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "PublicReadForIconsFolder"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = [
+          "s3:GetObject"
+        ]
+        Resource = [
+          "${aws_s3_bucket.icon_images.arn}/icons/*"
+        ]
+      }
+    ]
+  })
+
+  depends_on = [aws_s3_bucket_public_access_block.icon_images]
+}
+# --- ここまで追加 ---
+
+# --- Outputs --- 
