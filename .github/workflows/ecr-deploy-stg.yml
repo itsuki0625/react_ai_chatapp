@@ -100,8 +100,8 @@ jobs:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
-      - name: "Debug: Confirm backend image URI"
-        run: echo "Backend IMAGE URI: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
+      - name: Debug-Backend
+        run: echo "Backend URI ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
       - name: Deploy Backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
@@ -111,9 +111,8 @@ jobs:
           container-name: backend
           image: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}
           wait-for-service-stability: true
-      - name: "Debug: Built image URI"
-        run: |
-          echo "latest_image_uri: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
+      - name: Debug-Output
+        run: echo "latest_image_uri ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
 
   deploy-frontend-stg:
     needs: build-push-frontend-stg
@@ -128,8 +127,8 @@ jobs:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
-      - name: "Debug: Confirm frontend image URI"
-        run: echo "Frontend IMAGE URI: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}"
+      - name: Debug-Frontend
+        run: echo "Frontend URI ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}"
       - name: Deploy Frontend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
@@ -139,6 +138,5 @@ jobs:
           container-name: frontend
           image: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}
           wait-for-service-stability: true
-      - name: "Debug: Built image URI (Frontend)"
-        run: |
-          echo "latest_image_uri: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}" 
+      - name: Debug-Output-Frontend
+        run: echo "latest_image_uri ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}" 
