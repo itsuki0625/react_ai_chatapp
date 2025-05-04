@@ -35,7 +35,7 @@ async def upload_user_icon(
         raise HTTPException(status_code=500, detail="Failed to upload icon to S3.")
 
     user_update = schemas.UserUpdate(profile_image_url=object_key)
-    updated_user = await crud.user.update(db, db_obj=current_user, obj_in=user_update)
+    updated_user = await crud.user.update_user(db, db_user=current_user, user_in=user_update)
 
     return updated_user
 
@@ -59,7 +59,7 @@ async def delete_user_icon(
         pass
 
     user_update = schemas.UserUpdate(profile_image_url=None)
-    updated_user = await crud.user.update(db, db_obj=current_user, obj_in=user_update)
+    updated_user = await crud.user.update_user(db, db_user=current_user, user_in=user_update)
 
     return updated_user
 
