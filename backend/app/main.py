@@ -122,6 +122,28 @@ async def startup_event():
 def read_root():
     return {"message": "Welcome to the API"}
 
+# ヘルスチェックエンドポイント（認証なしでアクセス可能）
+@app.get("/health")
+def health_check():
+    """
+    ELB/ALBのヘルスチェック用エンドポイント
+    データベース接続などの簡易チェックを行い、サービスの状態を返す
+    """
+    try:
+        # ここに必要なヘルスチェックロジックを追加できます
+        # 例: データベース接続の確認など
+        return {
+            "status": "healthy",
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        logger.error(f"ヘルスチェックエラー: {str(e)}")
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": time.time()
+        }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
