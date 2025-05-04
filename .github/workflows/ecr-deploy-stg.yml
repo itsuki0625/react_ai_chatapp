@@ -110,7 +110,7 @@ jobs:
           container-name: backend
           image: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}
       - name: Deploy Backend to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           cluster: stg-api
           service: stg-api-service
@@ -143,7 +143,7 @@ jobs:
           container-name: frontend
           image: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}
       - name: Deploy Frontend to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           cluster: stg-front
           service: stg-front-service
