@@ -3,8 +3,9 @@ import { RoleRead, RoleCreate, RoleUpdate } from '@/types/role';
 // Assume fetchWithAuth exists in lib for authenticated requests
 // You might need to create this helper function
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
+import { getApiBaseUrl } from './api';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5050'; // Get from environment variables
+const API_BASE_URL = getApiBaseUrl();
 
 // GET /api/v1/roles
 export const getRoles = async (params?: { skip?: number; limit?: number }): Promise<RoleRead[]> => {

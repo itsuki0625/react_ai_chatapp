@@ -479,7 +479,8 @@ async def admin_get_campaign_codes(
             )
     # owner_idが指定されていない場合は全て取得
     else:
-        return get_all_campaign_codes(db, skip, limit)
+        campaign_codes = await get_all_campaign_codes(db=db, skip=skip, limit=limit)
+        return campaign_codes
 
 @router.post("/campaign-codes", response_model=CampaignCodeResponse, status_code=status.HTTP_201_CREATED)
 async def admin_create_campaign_code(
