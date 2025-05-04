@@ -29,6 +29,7 @@ from app.crud import subscription as crud_subscription
 from app.models.subscription import Subscription
 from app.schemas.subscription import SubscriptionResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter()
 
@@ -406,6 +407,7 @@ async def get_user_settings(
         settings_response_data = {
             "email": current_user.email,
             "full_name": current_user.full_name,
+            "profile_image_url": current_user.profile_image_url,
             "email_notifications": True, # Placeholder
             "browser_notifications": False, # Placeholder
             "theme": "light", # Placeholder
@@ -634,69 +636,107 @@ async def refresh_token(
     db: AsyncSession = Depends(get_async_db)
 ) -> Any:
     """
-    リフレッシュトークンを使用して新しいアクセストークンを取得
+    アクセストークンをリフレッシュトークンを使用して更新します。
     """
     try:
-        # リフレッシュトークンを検証
+        # リフレッシュトークンをデコード
         payload = decode_token(refresh_data.refresh_token)
-        if not payload:
+        if not payload or "sub" not in payload or "jti" not in payload:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="無効なリフレッシュトークンです"
+                detail="無効なリフレッシュトークンです",
             )
-        
-        # トークンからユーザー情報を取得
-        user_id = payload.get("sub")
-        jti = payload.get("jti")
-        
-        if not user_id or not jti:
-            raise HTTPException(
+
+        user_id = uuid.UUID(payload["sub"])
+        token_jti = payload["jti"]
+        expires_at = datetime.fromtimestamp(payload.get("exp")) # 有効期限取得
+
+        # トークンがブラックリストに登録されているか確認
+        if await is_token_blacklisted(db, token_jti=token_jti):
+             logger.error(f"リフレッシュトークンエラー: 401: このトークンは無効化されています (is_token_blacklisted check)") # ★ エラーログ追加
+             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="トークンの形式が不正です"
+                detail="このトークンは無効化されています", # ★ エラーメッセージ修正
             )
-        
-        # ブラックリストのチェック
-        if await is_token_blacklisted(db, jti):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="このトークンは無効化されています"
-            )
-        
-        # ユーザーの存在確認
-        user = await crud_user.get_user(db, user_id)
+
+        # ユーザーが存在するか確認
+        user = await crud_user.get_user(db, user_id=user_id)
         if not user:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="ユーザーが見つかりません"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="ユーザーが見つかりません",
             )
-        
-        # 新しいトークンペアを生成
-        access_token = create_access_token(data={"sub": str(user.id)})
-        new_refresh_token = create_refresh_token(data={"sub": str(user.id)})
-        
-        # 古いリフレッシュトークンをブラックリストに追加
+
+        # --- ★ 修正: ブラックリスト追加処理を try...except で囲む ---
         try:
+            # 古いリフレッシュトークンをブラックリストに追加
             await add_token_to_blacklist(
                 db=db,
-                token_jti=jti,
+                token_jti=token_jti,
                 user_id=user_id,
-                expires_at=datetime.fromtimestamp(payload.get("exp")),
-                reason=TokenBlacklistReason.MANUAL_REVOCATION
+                expires_at=expires_at,
+                reason=TokenBlacklistReason.MANUAL_REVOCATION # REFRESHED が適切かも
             )
-            logger.info(f"使用済みリフレッシュトークン {jti} をブラックリストに追加しました")
-        except Exception as e:
-            logger.error(f"リフレッシュトークンのブラックリスト登録に失敗: {str(e)}")
-        
-        return {
-            "access_token": access_token,
-            "refresh_token": new_refresh_token,
-            "token_type": "bearer"
+            logger.info(f"使用済みリフレッシュトークン {token_jti} をブラックリストに追加しました")
+        except IntegrityError: # sqlalchemy.exc.IntegrityError をインポートする必要がある場合あり
+            # すでにブラックリストに存在する場合 (UniqueViolation)
+            logger.warning(f"リフレッシュトークン {token_jti} はすでにブラックリストに存在します。")
+            # ここで 401 エラーを発生させる (トークンは既に使用済み)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="このトークンは既に使用されているか無効化されています",
+            )
+        except Exception as e_blacklist:
+             # その他のDBエラー
+             logger.error(f"トークン {token_jti} のブラックリスト追加中に予期せぬDBエラー: {e_blacklist}")
+             raise HTTPException(
+                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                 detail="トークンの無効化処理中にエラーが発生しました。"
+             )
+        # --- ★ 修正ここまで ---
+
+        # 新しいアクセストークンを生成
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+
+        # ★ get_userでロードしたユーザー情報を使用
+        primary_user_role = next((ur for ur in user.user_roles if ur.is_primary), None)
+        if not primary_user_role or not primary_user_role.role:
+             logger.error(f"User {user.email} primary role object is missing or invalid.")
+             primary_role_name = "不明"
+             role_permissions = [] # 権限も空にする
+        else:
+             primary_role_name = primary_user_role.role.name
+             role_permissions = [rp.permission.name for rp in primary_user_role.role.role_permissions if rp.is_granted]
+
+        token_data = {
+            "sub": str(user.id),
+            "email": user.email,
+            "roles": [primary_role_name],
+            "permissions": role_permissions,
+            "name": user.full_name,
+            "status": user.status.value if user.status else None
         }
+        new_access_token = create_access_token(
+            data=token_data, expires_delta=access_token_expires
+        )
+
+        return {
+            "access_token": new_access_token,
+            "token_type": "bearer",
+            "expires_in": int(access_token_expires.total_seconds())
+        }
+
+    except HTTPException as http_exc: # 内部で発生したHTTPExceptionはそのまま再raise
+        logger.error(f"リフレッシュトークン処理中のHTTPエラー: {http_exc.status_code}: {http_exc.detail}")
+        raise http_exc
     except Exception as e:
-        logger.error(f"リフレッシュトークンエラー: {str(e)}")
+        logger.error(f"リフレッシュトークン処理中に予期せぬエラー: {str(e)}")
+        logger.exception("Refresh token error details:") # ★ スタックトレースも記録
+        # ★ 予期せぬエラーのレスポンス
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="トークンのリフレッシュ中に予期せぬエラーが発生しました。"
+            # detail=f"{type(e).__name__}: {str(e)}" # デバッグ用により詳細な情報を返すことも可能
         )
 
 @router.post("/verify-email", response_model=dict)
