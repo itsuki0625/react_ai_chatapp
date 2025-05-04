@@ -493,7 +493,7 @@ async def admin_create_campaign_code(
     管理者専用エンドポイント。
     """
     # create_campaign_code に creator=current_user を渡す
-    return create_campaign_code(db=db, campaign_code=campaign_code, creator=current_user)
+    return await create_campaign_code(db=db, campaign_code=campaign_code, creator=current_user)
 
 @router.delete("/campaign-codes/{campaign_code_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_delete_campaign_code(
