@@ -101,7 +101,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
       - name: "Debug: Confirm backend image URI"
-        run: echo "Backend IMAGE URI: ${{ needs['build-push-backend-stg'].outputs.latest_image_uri }}"
+        run: echo "Backend IMAGE URI: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
       - name: Render ECS task definition
         id: render-task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
@@ -118,7 +118,7 @@ jobs:
           wait-for-service-stability: true
       - name: "Debug: Built image URI"
         run: |
-          echo "latest_image_uri: ${{ needs['build-push-backend-stg'].outputs.latest_image_uri }}"
+          echo "latest_image_uri: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
 
   deploy-frontend-stg:
     needs: build-push-frontend-stg
@@ -134,7 +134,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
       - name: "Debug: Confirm frontend image URI"
-        run: echo "Frontend IMAGE URI: ${{ needs['build-push-frontend-stg'].outputs.latest_image_uri }}"
+        run: echo "Frontend IMAGE URI: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}"
       - name: Render ECS task definition
         id: render-frontend-task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
@@ -151,4 +151,4 @@ jobs:
           wait-for-service-stability: true
       - name: "Debug: Built image URI (Frontend)"
         run: |
-          echo "latest_image_uri: ${{ needs['build-push-frontend-stg'].outputs.latest_image_uri }}" 
+          echo "latest_image_uri: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}" 
