@@ -43,6 +43,7 @@ const SettingsPage = () => {
             full_name: String(settingsData.full_name || session.user.name || ''),
             name: String(settingsData.name || settingsData.full_name || session.user.name || ''),
             email: String(settingsData.email || session.user.email || ''),
+            profile_image_url: settingsData.profile_image_url ?? null,
             emailNotifications: settingsData.emailNotifications ?? true,
             browserNotifications: settingsData.browserNotifications ?? false,
             theme: String(settingsData.theme || 'light'),
@@ -50,14 +51,18 @@ const SettingsPage = () => {
           };
           setUserSettings(mappedSettings);
 
-          const profileImageUrlFromSession = (session.user as any).profile_image_url ?? null;
-          
-          if (!user) {
-            console.log("Initializing Zustand user state from session...");
-            setUser(session.user as any);
-            setPreviewUrl(profileImageUrlFromSession);
+          const userProfileImageKey = settingsData.profile_image_url ?? null;
+
+          if (!user || user.id !== session.user.id) {
+            console.log("Initializing/Updating Zustand user state...");
+            const userDataForStore = {
+              ...(session?.user ?? {}),
+              profile_image_url: userProfileImageKey
+            };
+            setUser(userDataForStore as any);
+            setPreviewUrl(userProfileImageKey);
           } else {
-            setPreviewUrl(user.profile_image_url ?? profileImageUrlFromSession);
+            setPreviewUrl(user.profile_image_url ?? null);
           }
 
         } catch (error) {
@@ -67,12 +72,14 @@ const SettingsPage = () => {
             full_name: 'デモユーザー',
             name: 'デモユーザー',
             email: 'demo@example.com',
+            profile_image_url: null,
             emailNotifications: true,
             browserNotifications: false,
             theme: 'light',
             subscription: null,
           });
            setPreviewUrl(null);
+           setUser(null);
         } finally {
           setIsLoading(false);
         }
@@ -87,7 +94,6 @@ const SettingsPage = () => {
   }, [status, session?.user?.id, setUser]);
 
   useEffect(() => {
-    const profileImageUrlFromSession = (session?.user as any)?.profile_image_url ?? null;
     if (selectedFile) {
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -95,7 +101,7 @@ const SettingsPage = () => {
         };
         reader.readAsDataURL(selectedFile);
     } else {
-        setPreviewUrl(user?.profile_image_url ?? profileImageUrlFromSession);
+        setPreviewUrl(user?.profile_image_url ?? null);
     }
   }, [selectedFile, user?.profile_image_url]);
 

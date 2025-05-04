@@ -56,6 +56,7 @@ export interface UserSettings {
   email: string;
   full_name: string; // Add full_name based on API response
   name: string; // Keep for internal state/display mapping
+  profile_image_url?: string | null; // ★ 追加 (Nullable string型)
   emailNotifications: boolean;
   browserNotifications: boolean;
   theme: string; // e.g., 'light' | 'dark'
