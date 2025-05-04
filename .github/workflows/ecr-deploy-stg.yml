@@ -115,7 +115,8 @@ jobs:
           task-definition: ${{ steps.render-task-def.outputs.task-definition }}
           wait-for-service-stability: true
       - name: "Debug: Built image URI"
-        run: echo "latest_image_uri: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
+        run: |
+          echo "latest_image_uri: ${{ needs['build-push-backend-stg'].outputs.latest_image_uri }}"
 
   deploy-frontend-stg:
     needs: build-push-frontend-stg
@@ -145,4 +146,5 @@ jobs:
           task-definition: ${{ steps.render-frontend-task-def.outputs.task-definition }}
           wait-for-service-stability: true
       - name: "Debug: Built image URI (Frontend)"
-        run: echo "latest_image_uri: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}" 
+        run: |
+          echo "latest_image_uri: ${{ needs['build-push-frontend-stg'].outputs.latest_image_uri }}" 
