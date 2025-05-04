@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     
     # セキュリティ設定
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-here")
+    AUTH_SECRET: str = os.getenv("AUTH_SECRET", "default-auth-secret")
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "https://smartao.jp", "https://stg.smartao.jp"]
     
     # データベース設定
@@ -39,6 +40,13 @@ class Settings(BaseSettings):
     
     # 追加: 非同期データベースURL
     ASYNC_DATABASE_URL: Optional[str] = None
+
+    # --- AWS 設定 --- 
+    AWS_REGION: str = os.getenv("AWS_REGION", "ap-northeast-1")
+    AWS_S3_ICON_BUCKET_NAME: str = os.getenv("AWS_S3_ICON_BUCKET_NAME", "your-icon-bucket-name")
+    # 必要であればエンドポイントURLも設定
+    # AWS_S3_ENDPOINT_URL: Optional[str] = os.getenv("AWS_S3_ENDPOINT_URL") 
+    # --- AWS 設定ここまで ---
 
     def __init__(self, **values):
         super().__init__(**values)

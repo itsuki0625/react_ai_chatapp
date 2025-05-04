@@ -12,9 +12,9 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # --- AUTH_SECRET からキーを導出 --- 
 # このキーは AuthMiddleware でも使用される
-AUTH_SECRET = os.getenv("AUTH_SECRET")
+AUTH_SECRET = settings.AUTH_SECRET
 if not AUTH_SECRET:
-    raise RuntimeError("AUTH_SECRET environment variable not set")
+    raise RuntimeError("AUTH_SECRET not found in settings")
 derived_key = hashlib.sha512(AUTH_SECRET.encode('utf-8')).digest()
 
 # --- JWT アルゴリズム --- 

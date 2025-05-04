@@ -7,6 +7,7 @@ from enum import Enum
 from .base import TimestampMixin
 from app.models.user import User as UserModel, UserRole as UserRoleModel, Role, Permission, UserLoginInfo
 from .subscription import SubscriptionResponse # SubscriptionResponse をインポート
+from app.core.config import settings
 
 # Logger をモジュールレベルで定義
 logger = logging.getLogger(__name__)
@@ -98,7 +99,7 @@ class UserUpdate(BaseModel):
     prefecture: Optional[str] = None # prefecture を追加
     class_number: Optional[str] = None
     student_number: Optional[str] = None
-    profile_image_url: Optional[str] = None
+    profile_image_url: Optional[str] = None # S3 キーを受け取る想定
     role: Optional[str] = None # 文字列として受け入れるように変更
     status: Optional[UserStatus] = None # ステータス変更用
 
@@ -134,7 +135,8 @@ class UserResponse(TimestampMixin):
     login_info: Optional[Any] = None # 型は UserLoginInfo だが、循環参照を避けるため Any も可
     grade: Optional[str] = None # grade を追加 (モデルに合わせて Optional[str])
     prefecture: Optional[str] = None # prefecture を追加 (モデルに合わせて Optional[str])
-    profile_image_url: Optional[str] = None # 追加
+    # ★ profile_image_url を computed_field で上書きするため、元のフィールドは別名にする
+    profile_image_url_key: Optional[str] = Field(alias='profile_image_url', default=None)
     # --- End source fields ---
 
     # --- computed fields (these will be in the final JSON) ---
@@ -194,10 +196,30 @@ class UserResponse(TimestampMixin):
         logger.info(f"SCHEMA: Computed permissions for user {self.id}: {user_perms}")
         return user_perms
 
+    # ★ profile_image_url を計算する computed_field を追加
+    @computed_field(return_type=Optional[str])
+    @property
+    def profile_image_url(self) -> Optional[str]:
+        """S3キーから完全なURLを生成して返す"""
+        key = getattr(self, 'profile_image_url_key', None)
+        if key:
+            # config からバケット名とリージョンを取得
+            bucket_name = settings.AWS_S3_ICON_BUCKET_NAME
+            region = settings.AWS_REGION
+            if bucket_name and region:
+                # Virtual Hosted Style URL を生成
+                # 必要に応じて Path Style に変更 (https://s3.{region}.amazonaws.com/{bucket_name}/{key})
+                return f"https://{bucket_name}.s3.{region}.amazonaws.com/{key}"
+            else:
+                logger.error("S3 bucket name or region is not configured for generating profile image URL.")
+        return None
+
     # --- End computed fields ---
 
     model_config = ConfigDict(
         from_attributes=True,
+        # ★ computed_field が元のフィールドを上書きできるように設定
+        populate_by_name=True, 
     )
 
 # ユーザー一覧取得レスポンス
