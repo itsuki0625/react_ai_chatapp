@@ -219,6 +219,13 @@ const SettingsPage = () => {
 
   const hasExistingIcon = !!(user?.profile_image_url ?? session?.user?.profile_image_url);
 
+  // ★★★ デバッグログを追加 ★★★
+  console.log("--- Icon URL Debug ---");
+  console.log("ASSET_BASE_URL:", ASSET_BASE_URL);
+  console.log("profileImageUrlKey (from previewUrl):", profileImageUrlKey);
+  console.log("Final currentIconUrl passed to AvatarImage:", currentIconUrl);
+  // ★★★ デバッグログここまで ★★★
+
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">設定</h1>
