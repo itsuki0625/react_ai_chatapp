@@ -293,14 +293,9 @@ const SettingsPage = () => {
               <h2 className="text-lg font-medium text-gray-900">契約プラン</h2>
             </div>
             <div className="p-6 space-y-4">
-                {userSettings?.subscription ? (
+                {session?.user?.role ? (
                     <div>
-                        <p>現在のプラン: <Badge variant="secondary">{userSettings.subscription.plan_name}</Badge></p>
-                        <p>ステータス: <Badge variant={userSettings.subscription.status === 'active' ? 'default' : 'outline'}>{userSettings.subscription.status}</Badge></p>
-                        <p>有効期限: {new Date(userSettings.subscription.current_period_end).toLocaleDateString()}</p>
-                        <Button type="button" onClick={handleChangePlanClick} className="mt-4">
-                            プランを変更する
-                        </Button>
+                        <p>現在のプラン: <Badge variant="secondary">{session.user.role}</Badge></p>
                     </div>
                 ) : (
                     <p>現在アクティブなプランはありません。</p>
