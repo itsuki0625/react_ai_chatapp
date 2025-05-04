@@ -39,7 +39,7 @@ jobs:
     needs: ecr-login
     runs-on: ubuntu-latest
     outputs:
-      image_uri: ${{ steps.build-image.outputs.image_uri }}
+      latest_image_uri: ${{ steps.build-image.outputs.latest_image_uri }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -66,11 +66,11 @@ jobs:
             --tag  $IMAGE_URI \
             --tag  $LATEST_URI \
             backend
-          echo "::set-output name=image_uri::$IMAGE_URI"
+          echo "latest_image_uri=$LATEST_URI" >> $GITHUB_OUTPUT
 
       - name: Push backend to ECR
         run: |
-          docker push ${{ steps.build-image.outputs.image_uri }}
+          docker push ${{ steps.build-image.outputs.latest_image_uri }}
           docker push ${{ env.ECR_REGISTRY }}/prod-backend:latest
 
   # ─────────────────────────────────────────────────
@@ -81,7 +81,7 @@ jobs:
     needs: ecr-login
     runs-on: ubuntu-latest
     outputs:
-      image_uri: ${{ steps.build-image.outputs.image_uri }}
+      latest_image_uri: ${{ steps.build-image.outputs.latest_image_uri }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -106,11 +106,11 @@ jobs:
             --file study-support-app/Dockerfile.prod \
             --tag  $IMAGE_URI \
             study-support-app
-          echo "::set-output name=image_uri::$IMAGE_URI"
+          echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
       - name: Push frontend to ECR
         run: |
-          docker push ${{ steps.build-image.outputs.image_uri }}
+          docker push ${{ steps.build-image.outputs.latest_image_uri }}
           docker push ${{ env.ECR_REGISTRY }}/prod-frontend:latest
 
   # ─────────────────────────────────────────────────
@@ -130,14 +130,14 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
       - name: Debug-Backend
-        run: echo "Backend IMAGE URI ${{ env.ECR_REGISTRY }}/prod-backend:latest"
+        run: echo "Backend IMAGE URI ${{ needs.build-push-backend.outputs.latest_image_uri }}"
       - name: Render ECS task definition
         id: render-task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: AWS/backend-task-def-prod.json
           container-name: backend
-          image: ${{ env.ECR_REGISTRY }}/prod-backend:latest
+          image: ${{ needs.build-push-backend.outputs.latest_image_uri }}
       - name: Deploy Backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
@@ -163,14 +163,14 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
       - name: Debug-Frontend
-        run: echo "Frontend IMAGE URI ${{ env.ECR_REGISTRY }}/prod-frontend:latest"
+        run: echo "Frontend IMAGE URI ${{ needs.build-push-frontend.outputs.latest_image_uri }}"
       - name: Render ECS task definition
         id: render-frontend-task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: AWS/prod-front.json
           container-name: frontend
-          image: ${{ env.ECR_REGISTRY }}/prod-frontend:latest
+          image: ${{ needs.build-push-frontend.outputs.latest_image_uri }}
       - name: Deploy Frontend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:

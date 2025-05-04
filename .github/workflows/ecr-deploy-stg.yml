@@ -42,7 +42,6 @@ jobs:
             --tag  $IMAGE_URI \
             backend
           echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
-          echo "::set-output name=latest_image_uri::$IMAGE_URI"
 
       - name: Push STG backend to ECR
         run: |
@@ -80,7 +79,6 @@ jobs:
             --tag  $IMAGE_URI \
             study-support-app
           echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
-          echo "::set-output name=latest_image_uri::$IMAGE_URI"
 
       - name: Push STG frontend to ECR
         run: |
