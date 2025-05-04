@@ -204,11 +204,10 @@ async def update_user(
     for field, value in update_data.items():
         if hasattr(db_user, field):
             setattr(db_user, field, value)
-        elif field in ['grade', 'class_number', 'student_number', 'profile_image_url']:
+        elif field in ['grade', 'class_number', 'student_number']:
             if not db_user.profile:
                  db_user.profile = UserProfile(user_id=db_user.id)
                  db.add(db_user.profile)
-            setattr(db_user.profile, field, value)
 
     db_user.updated_at = datetime.utcnow()
     db.add(db_user)

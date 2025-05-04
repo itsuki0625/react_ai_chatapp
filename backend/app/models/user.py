@@ -73,7 +73,7 @@ class User(Base, TimestampMixin):
     # Profile information
     grade: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     prefecture: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    profile_image_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    profile_image_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
 
     # Relationships
     profile = relationship("UserProfile", back_populates="user", uselist=False)
@@ -116,7 +116,6 @@ class UserProfile(Base, TimestampMixin):
     grade = Column(Integer)
     class_number = Column(String)
     student_number = Column(String)
-    profile_image_url = Column(String)
     
     # Relationships
     user = relationship("User", back_populates="profile")
