@@ -15,12 +15,27 @@ import time
 import os  # CA証明書確認用
 
 
-# ロギング設定（DEBUG出力を有効化）
+# --- ロギング設定 --- 
+# 基本設定 (アプリケーション全体のデフォルトレベル)
+log_level_str = os.getenv("LOG_LEVEL", "DEBUG").upper()
+log_level = getattr(logging, log_level_str, logging.DEBUG)
+
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=log_level,
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s"
 )
+
+# boto3/botocore のログレベルを INFO に設定して詳細ログを抑制
+logging.getLogger("boto3").setLevel(logging.INFO)
+logging.getLogger("botocore").setLevel(logging.INFO)
+logging.getLogger("urllib3").setLevel(logging.INFO)
+
+# SQLAlchemyのエンジンログレベルもINFOに設定 (必要に応じて)
+# logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
+
+# アプリケーション自体のロガー取得
 logger = logging.getLogger(__name__)
+# --- ロギング設定ここまで ---
 
 # データベースセッションコンテキスト
 @contextmanager
