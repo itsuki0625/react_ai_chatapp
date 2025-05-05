@@ -69,10 +69,7 @@ export interface VerifyCampaignCodeResponse {
   original_amount: number | null;
   discounted_amount: number | null;
   campaign_code_id: string | null;
-}
-
-export interface CampaignCodeVerificationResult extends VerifyCampaignCodeResponse {
-  is_valid: boolean;
+  stripe_coupon_id?: string | null;
 }
 
 export interface CheckoutSession {
@@ -86,6 +83,7 @@ export interface CreateCheckoutRequest {
   success_url: string;
   cancel_url: string;
   campaign_code?: string;
+  coupon_id?: string;
 }
 
 export interface ManageSubscriptionRequest {

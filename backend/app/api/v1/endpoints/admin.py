@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any, Optional
 import stripe # エラーハンドリング用に追加
 import logging # ロギング用に追加
 from uuid import UUID
+from pydantic import BaseModel, Field # ★ BaseModel と Field をインポート
 
 from app.core.config import settings
 from app.api.deps import get_db
@@ -15,7 +16,8 @@ from app.services.stripe_service import StripeService # StripeServiceをイン�
 from app.schemas.subscription import (
     CampaignCodeCreate, 
     CampaignCodeResponse,
-    DiscountTypeCreate, DiscountTypeResponse, DiscountTypeUpdate
+    DiscountTypeCreate, DiscountTypeResponse, DiscountTypeUpdate,
+    StripeCouponCreate, StripeCouponUpdate, StripeCouponResponse
 )
 from app.crud.subscription import (
     create_campaign_code,
@@ -24,7 +26,12 @@ from app.crud.subscription import (
     update_campaign_code,
     delete_campaign_code,
     create_discount_type, get_all_discount_types, get_discount_type,
-    update_discount_type, delete_discount_type, get_discount_type_by_name
+    update_discount_type, delete_discount_type, get_discount_type_by_name,
+    create_db_coupon,
+    get_db_coupon,
+    get_all_db_coupons,
+    update_db_coupon,
+    get_db_coupon_by_stripe_id
 )
 from app.crud.user import get_multi_users, remove_user, create_user, get_user, update_user, get_user_by_email
 from app.schemas.user import (
@@ -453,34 +460,21 @@ async def archive_stripe_price(
             detail=f"Stripe価格のアーカイブに失敗しました: {str(e)}"
         )
 
-# ---------- キャンペーンコード関連のエンドポイント ---------- #
+# ---------- キャンペーンコード関連のエンドポイント (修正) ---------- #
 
 @router.get("/campaign-codes", response_model=List[CampaignCodeResponse])
 async def admin_get_campaign_codes(
     skip: int = 0,
     limit: int = 100,
-    owner_id: Optional[str] = None,
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(require_permission('admin_access', 'campaign_code_read')),
 ):
     """
-    キャンペーンコード一覧を取得します。
+    キャンペーンコード一覧を取得します。(Coupon情報を含む)
     管理者専用エンドポイント。
     """
-    # owner_idが指定されている場合
-    if owner_id:
-        try:
-            uuid_owner_id = UUID(owner_id)
-            return get_user_campaign_codes(db, uuid_owner_id, skip, limit)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="無効なowner_id形式です"
-            )
-    # owner_idが指定されていない場合は全て取得
-    else:
-        campaign_codes = await get_all_campaign_codes(db=db, skip=skip, limit=limit)
-        return campaign_codes
+    campaign_codes = await get_all_campaign_codes(db=db, skip=skip, limit=limit)
+    return campaign_codes
 
 @router.post("/campaign-codes", response_model=CampaignCodeResponse, status_code=status.HTTP_201_CREATED)
 async def admin_create_campaign_code(
@@ -489,11 +483,16 @@ async def admin_create_campaign_code(
     current_user: UserModel = Depends(require_permission('admin_access', 'campaign_code_write')),
 ):
     """
-    新しいキャンペーンコードを作成します。
+    新しいキャンペーンコードを作成します。(指定されたDB Couponに紐づくStripe Promotion Codeも作成)
     管理者専用エンドポイント。
     """
-    # create_campaign_code に creator=current_user を渡す
-    return await create_campaign_code(db=db, campaign_code=campaign_code, creator=current_user)
+    try:
+        return await create_campaign_code(db=db, campaign_code=campaign_code, creator=current_user)
+    except HTTPException as e: # CRUD関数内で発生したHTTPExceptionをそのまま返す
+        raise e
+    except Exception as e: # その他の予期せぬエラー
+        logger.error(f"キャンペーンコード作成APIエラー: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="キャンペーンコードの作成に失敗しました。")
 
 @router.delete("/campaign-codes/{campaign_code_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_delete_campaign_code(
@@ -502,74 +501,387 @@ async def admin_delete_campaign_code(
     current_user: UserModel = Depends(require_permission('admin_access', 'campaign_code_write')),
 ):
     """
-    キャンペーンコードを削除します。
+    キャンペーンコードをDBから削除します。(紐づくStripe Promotion Codeも無効化)
     管理者専用エンドポイント。
     """
     try:
         uuid_campaign_code_id = UUID(campaign_code_id)
-        delete_campaign_code(db, uuid_campaign_code_id)
-        return None
     except ValueError:
-        raise HTTPException(
+         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="無効なcampaign_code_id形式です"
-        ) 
+        )
 
-# ---------- 割引タイプ関連のエンドポイント ---------- #
+    deleted = await delete_campaign_code(db, uuid_campaign_code_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="指定されたキャンペーンコードが見つかりません"
+        )
+    return None
 
-@router.get("/discount-types", response_model=List[DiscountTypeResponse])
-async def admin_get_discount_types(
+# ---------- ★ DB Stripe Coupon 関連のエンドポイント (追加) ---------- #
+
+@router.get("/stripe-coupons", response_model=List[StripeCouponResponse])
+async def admin_get_db_stripe_coupons(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_async_db),
-    current_user: UserModel = Depends(require_permission('admin_access', 'discount_type_read')),
+    current_user: UserModel = Depends(require_permission('admin_access', 'stripe_coupon_read')),
 ):
-    """割引タイプ一覧を取得します。"""
-    discount_types = await get_all_discount_types(db, skip=skip, limit=limit)
-    return discount_types
+    """DBに保存されているStripe Couponの情報一覧を取得します。"""
+    db_coupons = await get_all_db_coupons(db=db, skip=skip, limit=limit)
+    return db_coupons
 
-@router.post("/discount-types", response_model=DiscountTypeResponse, status_code=status.HTTP_201_CREATED)
-async def admin_create_discount_type(
-    discount_type_in: DiscountTypeCreate,
+@router.get("/stripe-coupons/{coupon_db_id}", response_model=StripeCouponResponse)
+async def admin_get_db_stripe_coupon(
+    coupon_db_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    current_user: UserModel = Depends(require_permission('admin_access', 'discount_type_write')),
+    current_user: UserModel = Depends(require_permission('admin_access', 'stripe_coupon_read')),
 ):
-    """新しい割引タイプを作成します。"""
+    """DBに保存されている特定のStripe Coupon情報を取得します。"""
+    db_coupon = await get_db_coupon(db, coupon_db_id=coupon_db_id)
+    if not db_coupon:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="指定されたDB Couponが見つかりません。"
+        )
+    return db_coupon
+
+@router.put("/stripe-coupons/{coupon_db_id}", response_model=StripeCouponResponse)
+async def admin_update_db_stripe_coupon(
+    coupon_db_id: UUID,
+    coupon_in: StripeCouponUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(require_permission('admin_access', 'stripe_coupon_write')),
+):
+    """DBに保存されているStripe Coupon情報を更新します (主に is_active, metadata)。"""
+    updated_coupon = await update_db_coupon(db, coupon_db_id=coupon_db_id, coupon_in=coupon_in)
+    if not updated_coupon:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="指定されたDB Couponが見つかりません。"
+        )
+    return updated_coupon
+
+# POST /stripe-coupons (DBへの登録) は、Stripe Coupon自体をどう作成するかによるため、一旦保留。
+# Stripe側でCouponを作成 -> そのIDをDBに登録するフローが一般的かもしれない。
+# その場合、このAdmin APIでStripe Couponを直接作成する機能は不要かもしれない。
+
+# ---------- 割引タイプ関連のエンドポイント (コメントアウト) ---------- #
+# DiscountType は StripeCoupon/PromotionCode で代替されるため、不要になる可能性が高い
+# 必要であれば残すが、一旦コメントアウトまたは削除を検討
+
+# @router.get("/discount-types", response_model=List[DiscountTypeResponse])
+# async def admin_get_discount_types(
+#     skip: int = 0,
+#     limit: int = 100,
+#     db: AsyncSession = Depends(get_async_db),
+#     current_user: UserModel = Depends(require_permission('admin_access', 'discount_type_read')),
+# ):
+#     """割引タイプ一覧を取得します。"""
+#     discount_types = await get_all_discount_types(db, skip=skip, limit=limit)
+#     return discount_types
+
+# @router.post("/discount-types", response_model=DiscountTypeResponse, status_code=status.HTTP_201_CREATED)
+# async def admin_create_discount_type(
+#     discount_type_in: DiscountTypeCreate,
+#     db: AsyncSession = Depends(get_async_db),
+#     current_user: UserModel = Depends(require_permission('admin_access', 'discount_type_write')),
+# ):
+#     """新しい割引タイプを作成します。"""
+#     try:
+#         return await create_discount_type(db=db, discount_type=discount_type_in)
+#     except HTTPException as e: # 重複エラーなどをキャッチ
+#         raise e
+#     except Exception as e:
+#         logger.error(f"割引タイプの作成中に予期せぬエラー: {e}")
+#         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+# @router.put("/discount-types/{discount_type_id}", response_model=DiscountTypeResponse)
+# async def admin_update_discount_type(
+#     discount_type_id: UUID,
+#     discount_type_in: DiscountTypeUpdate,
+#     db: AsyncSession = Depends(get_async_db),
+#     current_user: UserModel = Depends(require_permission('admin_access', 'discount_type_write')),
+# ):
+#     """割引タイプを更新します。"""
+#     try:
+#         updated_discount_type = await update_discount_type(db, discount_type_id, discount_type_in)
+#         if not updated_discount_type:
+#             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Discount type not found")
+#         return updated_discount_type
+#     except HTTPException as e: # 重複エラーなどをキャッチ
+#         raise e
+#     except Exception as e:
+#         logger.error(f"割引タイプの更新中に予期せぬエラー: {e}")
+#         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+# @router.delete("/discount-types/{discount_type_id}", status_code=status.HTTP_204_NO_CONTENT)
+# async def admin_delete_discount_type(
+#     discount_type_id: UUID,
+#     db: AsyncSession = Depends(get_async_db),
+#     current_user: UserModel = Depends(require_permission('admin_access', 'discount_type_write')),
+# ):
+#     """割引タイプを削除します。"""
+#     deleted = await delete_discount_type(db, discount_type_id)
+#     if not deleted:
+#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Discount type not found")
+#     return None 
+
+# --- Stripe Coupon Management Schemas ---
+
+class StripeCouponCreate(BaseModel):
+    """Stripe Coupon 作成リクエストスキーマ"""
+    name: Optional[str] = None
+    percent_off: Optional[float] = Field(None, gt=0, le=100)
+    amount_off: Optional[int] = Field(None, gt=0) # 整数値 (セント単位)
+    currency: Optional[str] = Field(None, min_length=3, max_length=3) # amount_off の場合に必須
+    duration: str = Field(..., pattern="^(forever|once|repeating)$") # forever, once, repeating
+    duration_in_months: Optional[int] = Field(None, gt=0) # duration=repeating の場合に必須
+    max_redemptions: Optional[int] = Field(None, gt=0)
+    redeem_by: Optional[int] = None # Unix timestamp
+    metadata: Optional[Dict[str, str]] = None
+    applies_to: Optional[Dict[str, List[str]]] = None # 例: {"products": ["prod_123", "prod_456"]}
+
+    # amount_off と percent_off のどちらか一方のみ指定可能にするバリデーション (例)
+    # @validator('*', pre=True, always=True)
+    # def check_discount_type(cls, values):
+    #     if values.get('amount_off') is not None and values.get('percent_off') is not None:
+    #         raise ValueError('amount_off と percent_off は同時に指定できません。')
+    #     if values.get('amount_off') is None and values.get('percent_off') is None:
+    #         raise ValueError('amount_off または percent_off のどちらか一方を指定してください。')
+    #     if values.get('amount_off') is not None and values.get('currency') is None:
+    #         raise ValueError('amount_off を指定する場合は currency も指定してください。')
+    #     if values.get('duration') == 'repeating' and values.get('duration_in_months') is None:
+    #         raise ValueError('duration が repeating の場合は duration_in_months を指定してください。')
+    #     return values
+
+class StripeCouponResponse(BaseModel):
+    """Stripe Coupon レスポンススキーマ"""
+    id: str
+    object: str
+    amount_off: Optional[int]
+    created: int
+    currency: Optional[str]
+    duration: str
+    duration_in_months: Optional[int]
+    livemode: bool
+    max_redemptions: Optional[int]
+    metadata: Dict[str, str]
+    name: Optional[str]
+    percent_off: Optional[float]
+    redeem_by: Optional[int]
+    times_redeemed: int
+    valid: bool
+    applies_to: Optional[Dict[str, List[str]]] = None
+
+    class Config:
+        orm_mode = True # orm_mode の代わりに from_attributes = True を使用 (Pydantic v2)
+        # from_attributes = True # Pydantic v2 の場合
+
+class StripeCouponUpdate(BaseModel):
+    """Stripe Coupon 更新リクエストスキーマ"""
+    name: Optional[str] = None
+    metadata: Optional[Dict[str, str]] = None
+
+
+# --- Stripe Coupon Management Endpoints ---
+
+@router.post(
+    "/stripe/coupons",
+    response_model=StripeCouponResponse,
+    summary="Create Stripe Coupon",
+    dependencies=[Depends(require_permission('admin_access'))] # 管理者権限が必要
+)
+async def create_stripe_coupon(
+    coupon_data: StripeCouponCreate,
+    current_user: UserModel = Depends(require_permission('admin_access')) # require_permission を使用
+):
+    """
+    新しい Stripe Coupon を作成します。
+
+    **必要な権限:** `admin_access`
+    """
     try:
-        return await create_discount_type(db=db, discount_type=discount_type_in)
-    except HTTPException as e: # 重複エラーなどをキャッチ
-        raise e
-    except Exception as e:
-        logger.error(f"割引タイプの作成中に予期せぬエラー: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+        # Pydantic モデルから辞書に変換
+        coupon_params = coupon_data.dict(exclude_unset=True)
+        logger.info(f"Stripe Coupon 作成リクエスト: {coupon_params} by user {current_user.email}")
 
-@router.put("/discount-types/{discount_type_id}", response_model=DiscountTypeResponse)
-async def admin_update_discount_type(
-    discount_type_id: UUID,
-    discount_type_in: DiscountTypeUpdate,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: UserModel = Depends(require_permission('admin_access', 'discount_type_write')),
+        # amount_off と percent_off のバリデーション（Pydantic側で定義するかここでチェック）
+        if coupon_params.get('amount_off') is not None and coupon_params.get('percent_off') is not None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="amount_off と percent_off は同時に指定できません。")
+        if coupon_params.get('amount_off') is None and coupon_params.get('percent_off') is None:
+             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="amount_off または percent_off のどちらか一方を指定してください。")
+        if coupon_params.get('amount_off') is not None and coupon_params.get('currency') is None:
+             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="amount_off を指定する場合は currency も指定してください。")
+        if coupon_params.get('duration') == 'repeating' and coupon_params.get('duration_in_months') is None:
+             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="duration が repeating の場合は duration_in_months を指定してください。")
+
+        created_coupon = StripeService.create_coupon(**coupon_params)
+        logger.info(f"Stripe Coupon 作成成功: {created_coupon.get('id')}")
+        # Stripe APIのレスポンスを Pydantic モデルに変換して返す
+        # **注意:** Stripe API のレスポンス構造に合わせて StripeCouponResponse を調整する必要があるかもしれません
+        return StripeCouponResponse.parse_obj(created_coupon) # parse_obj は Pydantic v1, v2 では model_validate
+        # return StripeCouponResponse.model_validate(created_coupon) # Pydantic v2
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe Coupon 作成 Stripe API エラー: {e.user_message}")
+        raise HTTPException(status_code=e.http_status or status.HTTP_400_BAD_REQUEST, detail=e.user_message or "Stripe API Error")
+    except ValueError as e: # Pydantic または手動バリデーションエラー
+         logger.error(f"Stripe Coupon 作成 バリデーションエラー: {str(e)}")
+         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Stripe Coupon 作成中に予期せぬエラーが発生しました: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error during coupon creation")
+
+@router.get(
+    "/stripe/coupons",
+    response_model=List[StripeCouponResponse],
+    summary="List Stripe Coupons",
+    dependencies=[Depends(require_permission('admin_access'))]
+)
+async def list_stripe_coupons(
+    limit: int = Query(10, ge=1, le=100),
+    starting_after: Optional[str] = Query(None),
+    ending_before: Optional[str] = Query(None),
+    created_lt: Optional[int] = Query(None, description="Unix timestamp"),
+    created_lte: Optional[int] = Query(None, description="Unix timestamp"),
+    created_gt: Optional[int] = Query(None, description="Unix timestamp"),
+    created_gte: Optional[int] = Query(None, description="Unix timestamp"),
+    current_user: UserModel = Depends(require_permission('admin_access'))
 ):
-    """割引タイプを更新します。"""
+    """
+    Stripe Coupon のリストを取得します。ページネーションと作成日時によるフィルタリングが可能です。
+
+    **必要な権限:** `admin_access`
+    """
     try:
-        updated_discount_type = await update_discount_type(db, discount_type_id, discount_type_in)
-        if not updated_discount_type:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Discount type not found")
-        return updated_discount_type
-    except HTTPException as e: # 重複エラーなどをキャッチ
-        raise e
-    except Exception as e:
-        logger.error(f"割引タイプの更新中に予期せぬエラー: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+        created_filter = {}
+        if created_lt: created_filter['lt'] = created_lt
+        if created_lte: created_filter['lte'] = created_lte
+        if created_gt: created_filter['gt'] = created_gt
+        if created_gte: created_filter['gte'] = created_gte
 
-@router.delete("/discount-types/{discount_type_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def admin_delete_discount_type(
-    discount_type_id: UUID,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: UserModel = Depends(require_permission('admin_access', 'discount_type_write')),
+        logger.info(f"Stripe Coupon リスト取得リクエスト by user {current_user.email}. Params: limit={limit}, starting_after={starting_after}, ending_before={ending_before}, created={created_filter or None}")
+
+        coupons_data = StripeService.list_coupons(
+            limit=limit,
+            created=created_filter or None,
+            starting_after=starting_after,
+            ending_before=ending_before
+        )
+        logger.info(f"Stripe Coupon リスト取得成功: {len(coupons_data)} 件")
+        # return [StripeCouponResponse.model_validate(c) for c in coupons_data] # Pydantic v2
+        return [StripeCouponResponse.parse_obj(c) for c in coupons_data] # Pydantic v1
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe Coupon リスト取得 Stripe API エラー: {e.user_message}")
+        raise HTTPException(status_code=e.http_status or status.HTTP_400_BAD_REQUEST, detail=e.user_message or "Stripe API Error")
+    except Exception as e:
+        logger.exception(f"Stripe Coupon リスト取得中に予期せぬエラーが発生しました: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error during coupon listing")
+
+@router.get(
+    "/stripe/coupons/{coupon_id}",
+    response_model=StripeCouponResponse,
+    summary="Retrieve Stripe Coupon",
+    dependencies=[Depends(require_permission('admin_access'))]
+)
+async def retrieve_stripe_coupon(
+    coupon_id: str,
+    current_user: UserModel = Depends(require_permission('admin_access'))
 ):
-    """割引タイプを削除します。"""
-    deleted = await delete_discount_type(db, discount_type_id)
-    if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Discount type not found")
-    return None 
+    """
+    指定された ID の Stripe Coupon 詳細を取得します。
+
+    **必要な権限:** `admin_access`
+    """
+    try:
+        logger.info(f"Stripe Coupon 詳細取得リクエスト: {coupon_id} by user {current_user.email}")
+        coupon = StripeService.retrieve_coupon(coupon_id)
+        if not coupon: # StripeService が None を返す場合 (通常はエラーを raise するはず)
+             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Coupon not found")
+        logger.info(f"Stripe Coupon 詳細取得成功: {coupon.get('id')}")
+        # return StripeCouponResponse.model_validate(coupon) # Pydantic v2
+        return StripeCouponResponse.parse_obj(coupon) # Pydantic v1
+    except stripe.error.InvalidRequestError as e:
+         if "No such coupon" in str(e):
+             logger.warning(f"Stripe Coupon {coupon_id} が見つかりません。")
+             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Coupon not found")
+         logger.error(f"Stripe Coupon ({coupon_id}) 詳細取得 Stripe API エラー: {e.user_message}")
+         raise HTTPException(status_code=e.http_status or status.HTTP_400_BAD_REQUEST, detail=e.user_message or "Stripe API Error")
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe Coupon ({coupon_id}) 詳細取得 Stripe API エラー: {e.user_message}")
+        raise HTTPException(status_code=e.http_status or status.HTTP_400_BAD_REQUEST, detail=e.user_message or "Stripe API Error")
+    except Exception as e:
+        logger.exception(f"Stripe Coupon ({coupon_id}) 詳細取得中に予期せぬエラーが発生しました: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error during coupon retrieval")
+
+@router.put(
+    "/stripe/coupons/{coupon_id}",
+    response_model=StripeCouponResponse,
+    summary="Update Stripe Coupon",
+    dependencies=[Depends(require_permission('admin_access'))]
+)
+async def update_stripe_coupon(
+    coupon_id: str,
+    coupon_data: StripeCouponUpdate,
+    current_user: UserModel = Depends(require_permission('admin_access'))
+):
+    """
+    指定された ID の Stripe Coupon 情報（名前、メタデータ）を更新します。
+
+    **必要な権限:** `admin_access`
+    """
+    try:
+        update_params = coupon_data.dict(exclude_unset=True)
+        logger.info(f"Stripe Coupon 更新リクエスト: {coupon_id}, data: {update_params} by user {current_user.email}")
+        if not update_params:
+             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="更新するデータが指定されていません。")
+
+        updated_coupon = StripeService.update_coupon(coupon_id, **update_params)
+        logger.info(f"Stripe Coupon 更新成功: {updated_coupon.get('id')}")
+        # return StripeCouponResponse.model_validate(updated_coupon) # Pydantic v2
+        return StripeCouponResponse.parse_obj(updated_coupon) # Pydantic v1
+    except stripe.error.InvalidRequestError as e:
+         if "No such coupon" in str(e):
+             logger.warning(f"更新しようとしたStripe Coupon {coupon_id} が見つかりません。")
+             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Coupon not found")
+         logger.error(f"Stripe Coupon ({coupon_id}) 更新 Stripe API エラー: {e.user_message}")
+         raise HTTPException(status_code=e.http_status or status.HTTP_400_BAD_REQUEST, detail=e.user_message or "Stripe API Error")
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe Coupon ({coupon_id}) 更新 Stripe API エラー: {e.user_message}")
+        raise HTTPException(status_code=e.http_status or status.HTTP_400_BAD_REQUEST, detail=e.user_message or "Stripe API Error")
+    except Exception as e:
+        logger.exception(f"Stripe Coupon ({coupon_id}) 更新中に予期せぬエラーが発生しました: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error during coupon update")
+
+@router.delete(
+    "/stripe/coupons/{coupon_id}",
+    status_code=status.HTTP_204_NO_CONTENT, # 成功時は Body なし
+    summary="Delete Stripe Coupon",
+    dependencies=[Depends(require_permission('admin_access'))]
+)
+async def delete_stripe_coupon(
+    coupon_id: str,
+    current_user: UserModel = Depends(require_permission('admin_access'))
+):
+    """
+    指定された ID の Stripe Coupon を削除します。
+
+    **注意:** 一度使用された Coupon は削除できない場合があります。
+
+    **必要な権限:** `admin_access`
+    """
+    try:
+        logger.info(f"Stripe Coupon 削除リクエスト: {coupon_id} by user {current_user.email}")
+        StripeService.delete_coupon(coupon_id)
+        logger.info(f"Stripe Coupon 削除成功: {coupon_id}")
+        return # 204 No Content
+    except HTTPException as e: # delete_coupon 内で raise された HTTPException をそのまま返す
+        raise e
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe Coupon ({coupon_id}) 削除 Stripe API エラー: {e.user_message}")
+        raise HTTPException(status_code=e.http_status or status.HTTP_400_BAD_REQUEST, detail=e.user_message or "Stripe API Error")
+    except Exception as e:
+        logger.exception(f"Stripe Coupon ({coupon_id}) 削除中に予期せぬエラーが発生しました: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error during coupon deletion") 

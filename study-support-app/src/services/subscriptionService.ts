@@ -51,8 +51,8 @@ const getAxiosConfig = async (requireAuth = true) => {
   if (requireAuth && typeof window !== 'undefined') {
     try {
       const session = await getSession();
-      if (session?.accessToken) { // accessToken を確認
-        config.headers['Authorization'] = `Bearer ${session.accessToken}`; // Authorization ヘッダーを設定
+      if (session?.user?.accessToken) {
+        config.headers['Authorization'] = `Bearer ${session.user.accessToken}`;
       } else if (session) {
         // 以前のカスタムヘッダーロジック（警告付き）
         config.headers['X-Session-Token'] = 'true';
@@ -173,11 +173,7 @@ export const subscriptionService = {
     success_url: string,
     cancel_url: string,
     metadata?: Record<string, string>,
-    discountInfo?: {
-      campaign_code: string;
-      discount_type: string;
-      discount_value: number;
-    }
+    stripeCouponId?: string // Optional: Stripe Coupon ID
   ): Promise<string> => {
     try {
       // 認証状態を確認
@@ -193,7 +189,7 @@ export const subscriptionService = {
         plan_id: price_id,
         success_url,
         cancel_url,
-        campaign_code: discountInfo?.campaign_code
+        coupon_id: stripeCouponId // ★ coupon_id として stripeCouponId を渡す
       };
 
       console.log('チェックアウトセッションリクエストデータ:', data);
@@ -205,7 +201,7 @@ export const subscriptionService = {
       try {
         const response = await axios.post<CheckoutSession>(
           `${API_URL}/subscriptions/create-checkout`,
-          data,
+          data, // ★ 修正したリクエストデータ
           config
         );
         

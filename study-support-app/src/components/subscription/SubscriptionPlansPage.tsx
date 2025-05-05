@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { StyledH1, StyledH2 } from '@/components/common/CustomHeadings';
-import { SubscriptionPlan, CampaignCodeVerificationResult, Subscription, VerifyCampaignCodeResponse } from '@/types/subscription';
+import { SubscriptionPlan, Subscription, VerifyCampaignCodeResponse } from '@/types/subscription';
 import { subscriptionService } from '@/services/subscriptionService';
 import { CampaignCodeForm } from '@/components/subscription/CampaignCodeForm';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
@@ -24,7 +24,7 @@ export const SubscriptionPlansPage: React.FC = () => {
   const [campaignCode, setCampaignCode] = useState<string>('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [campaignCodeVerificationResult, setCampaignCodeVerificationResult] = useState<CampaignCodeVerificationResult | null>(null);
+  const [campaignCodeVerificationResult, setCampaignCodeVerificationResult] = useState<VerifyCampaignCodeResponse | null>(null);
 
   const { toast } = useToast();
 
@@ -33,7 +33,7 @@ export const SubscriptionPlansPage: React.FC = () => {
     setCampaignCodeVerificationResult(null);
     setCampaignCode('');
     setError(null);
-  }, []);
+  }, [setSelectedPlan, setCampaignCodeVerificationResult, setCampaignCode, setError]);
 
   useEffect(() => {
     const planIdFromUrl = searchParams?.get('plan');
@@ -73,23 +73,12 @@ export const SubscriptionPlansPage: React.FC = () => {
     }
     try {
       const result = await subscriptionService.verifyCampaignCode(code, selectedPlan.price_id);
-      const verificationResult: CampaignCodeVerificationResult = {
-        is_valid: result.valid,
-        valid: result.valid,
-        campaign_code_id: null,
-        message: result.message ?? '',
-        discount_type: result.discount_type ?? null,
-        discount_value: result.discount_value ?? null,
-        original_amount: result.original_amount ?? null,
-        discounted_amount: result.discounted_amount ?? null,
-      };
+      setCampaignCodeVerificationResult(result);
 
-      setCampaignCodeVerificationResult(verificationResult);
-
-      if (verificationResult.is_valid) {
-          toast({ title: "成功", description: verificationResult.message || `コード「${code}」が適用されました。` });
+      if (result.valid) {
+          toast({ title: "成功", description: result.message || `コード「${code}」が適用されました。` });
       } else {
-          toast({ variant: 'destructive', title: "無効なコード", description: verificationResult.message || 'コードが無効です。' });
+          toast({ variant: 'destructive', title: "無効なコード", description: result.message || 'コードが無効です。' });
       }
       return result;
     } catch (error) {
@@ -125,24 +114,24 @@ export const SubscriptionPlansPage: React.FC = () => {
       const successUrl = `${window.location.origin}/payment/success?session_id={CHECKOUT_SESSION_ID}`;
       const cancelUrl = window.location.href;
 
+      const stripeCouponId = campaignCodeVerificationResult?.valid
+        ? (campaignCodeVerificationResult.stripe_coupon_id ?? undefined)
+        : undefined;
+
       try {
         const response = await subscriptionService.createCheckoutSession(
           priceId,
           successUrl,
           cancelUrl,
-          campaignCodeVerificationResult?.is_valid && campaignCode
-            ? { campaign_code: campaignCode }
-            : undefined
+          undefined,
+          stripeCouponId
         );
 
         let checkoutUrl: string | null = null;
-        if (response && typeof response === 'object') {
-            const potentialUrl = (response as { url?: unknown }).url;
-            if (typeof potentialUrl === 'string') {
-                checkoutUrl = potentialUrl;
-            }
-        } else if (typeof response === 'string') {
+        if (response && typeof response === 'string') {
              checkoutUrl = response;
+        } else {
+             console.error('Invalid checkout URL response:', response);
         }
 
         if (checkoutUrl) {
@@ -328,7 +317,7 @@ export const SubscriptionPlansPage: React.FC = () => {
             <p className="text-xl font-semibold">{selectedPlan.name}</p>
             <p className="mt-1">
               <span className="font-semibold">料金:</span>{' '}
-              {campaignCodeVerificationResult?.is_valid && typeof campaignCodeVerificationResult.discounted_amount === 'number' ? (
+              {campaignCodeVerificationResult?.valid && typeof campaignCodeVerificationResult.discounted_amount === 'number' ? (
                 <span>
                   <span className="line-through text-gray-500">{formatAmount(selectedPlan.amount)}</span>{' '}
                   <span className="text-green-600 font-semibold">{formatAmount(campaignCodeVerificationResult.discounted_amount)}</span>

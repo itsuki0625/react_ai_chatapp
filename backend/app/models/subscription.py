@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, UUID, Boolean, DateTime, ForeignKey, Integer, Float, JSON
+from sqlalchemy import Column, String, UUID, Boolean, DateTime, ForeignKey, Integer, Float, JSON, Enum as SQLAlchemyEnum
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
@@ -84,47 +84,54 @@ class PaymentMethod(Base, TimestampMixin):
     user = relationship("User")
     payment_history = relationship("PaymentHistory", back_populates="payment_method")
 
+class StripeCoupon(Base, TimestampMixin):
+    __tablename__ = 'stripe_coupons'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    stripe_coupon_id = Column(String, nullable=False, unique=True, index=True)
+    name = Column(String)
+    duration = Column(String, nullable=False)
+    duration_in_months = Column(Integer)
+    amount_off = Column(Integer)
+    percent_off = Column(Float)
+    currency = Column(String)
+    redeem_by = Column(DateTime)
+    max_redemptions = Column(Integer)
+    times_redeemed = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    metadata_ = Column('metadata', JSON)
+
+    campaign_codes = relationship("CampaignCode", back_populates="coupon")
+
 class CampaignCode(Base, TimestampMixin):
     __tablename__ = 'campaign_codes'
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    code = Column(String, nullable=False, unique=True)
+    code = Column(String, nullable=False, unique=True, index=True)
     description = Column(String)
-    discount_type_id = Column(UUID(as_uuid=True), ForeignKey('discount_types.id'), nullable=False)
-    discount_value = Column(Float, nullable=False)  # 割引率(%)または固定金額
-    max_uses = Column(Integer)  # 最大使用回数（nullは無制限）
-    used_count = Column(Integer, default=0)  # 使用回数
-    valid_from = Column(DateTime)  # 有効期間開始
-    valid_until = Column(DateTime)  # 有効期間終了
+    max_uses = Column(Integer)
+    used_count = Column(Integer, default=0)
+    valid_from = Column(DateTime)
+    valid_until = Column(DateTime)
     is_active = Column(Boolean, default=True)
+    stripe_promotion_code_id = Column(String, nullable=True, unique=True, index=True)
+    coupon_id = Column(UUID(as_uuid=True), ForeignKey('stripe_coupons.id'), nullable=False, index=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey('users.id'))
     
     # Relationships
     creator = relationship("User", foreign_keys=[created_by])
-    discount_type = relationship("DiscountType", back_populates="campaign_codes")
+    coupon = relationship("StripeCoupon", back_populates="campaign_codes")
     subscriptions = relationship("Subscription", back_populates="campaign_code")
     redemptions = relationship("CampaignCodeRedemption", back_populates="campaign_code")
     
     @property
     def is_valid(self):
-        """コードが現在有効かどうかをチェック"""
+        """コードが現在有効かどうかをDB情報で簡易チェック"""
         now = datetime.utcnow()
-        
-        # 非アクティブの場合
-        if not self.is_active:
-            return False
-            
-        # 有効期間のチェック
-        if self.valid_from and self.valid_from > now:
-            return False
-            
-        if self.valid_until and self.valid_until < now:
-            return False
-            
-        # 使用回数のチェック
-        if self.max_uses and self.used_count >= self.max_uses:
-            return False
-            
+        if not self.is_active: return False
+        if self.valid_from and self.valid_from > now: return False
+        if self.valid_until and self.valid_until < now: return False
+        if self.max_uses is not None and self.used_count >= self.max_uses: return False
         return True
 
 class DiscountType(Base, TimestampMixin):
@@ -133,9 +140,7 @@ class DiscountType(Base, TimestampMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False, unique=True)  # 'percentage', 'fixed' etc.
     description = Column(String)
-    
-    # Relationships
-    campaign_codes = relationship("CampaignCode", back_populates="discount_type")
+
 
 class CampaignCodeRedemption(Base, TimestampMixin):
     __tablename__ = 'campaign_code_redemptions'

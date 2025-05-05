@@ -1,32 +1,33 @@
 from pydantic import BaseModel, UUID4, Field, validator
 from pydantic import computed_field
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 from datetime import datetime
 from uuid import UUID
 from .base import TimestampMixin
 
 # ベースモデル
 class SubscriptionBase(BaseModel):
+    user_id: UUID
     plan_name: str
-    price_id: str  # Stripeの価格ID
-    status: str = "active"
-    campaign_code_id: Optional[UUID] = None
-
-# 作成リクエスト
-class SubscriptionCreate(SubscriptionBase):
-    user_id: UUID
-
-# データベースからの応答
-class SubscriptionResponse(SubscriptionBase, TimestampMixin):
-    id: UUID
-    user_id: UUID
+    price_id: Optional[str] = None
+    status: str
     stripe_customer_id: Optional[str] = None
     stripe_subscription_id: Optional[str] = None
     current_period_start: Optional[datetime] = None
     current_period_end: Optional[datetime] = None
     cancel_at: Optional[datetime] = None
     canceled_at: Optional[datetime] = None
-    is_active: bool
+    is_active: bool = True
+
+# 作成リクエスト
+class SubscriptionCreate(SubscriptionBase):
+    pass
+
+# データベースからの応答
+class SubscriptionResponse(SubscriptionBase, TimestampMixin):
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
@@ -55,137 +56,157 @@ class SubscriptionPlanResponse(SubscriptionPlanBase):
 # 支払い履歴
 class PaymentHistoryBase(BaseModel):
     user_id: UUID
+    subscription_id: UUID
+    stripe_payment_intent_id: Optional[str] = None
+    stripe_invoice_id: Optional[str] = None
     amount: int
-    currency: str = "jpy"
+    currency: str
+    payment_date: datetime
     status: str
+    description: Optional[str] = None
 
 class PaymentHistoryCreate(PaymentHistoryBase):
-    subscription_id: Optional[UUID] = None
-    stripe_payment_intent_id: Optional[str] = None
-    stripe_invoice_id: Optional[str] = None
-    payment_method: Optional[str] = None
-    payment_date: datetime = Field(default_factory=datetime.utcnow)
+    pass
 
-class PaymentHistoryResponse(PaymentHistoryBase, TimestampMixin):
+class PaymentHistoryResponse(PaymentHistoryBase):
     id: UUID
-    subscription_id: Optional[UUID] = None
-    stripe_payment_intent_id: Optional[str] = None
-    stripe_invoice_id: Optional[str] = None
-    payment_method: Optional[str] = None
-    payment_date: datetime
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
 
-# キャンペーンコード
+# --- ★ Stripe Coupon Schemas --- 
+class StripeCouponBase(BaseModel):
+    stripe_coupon_id: str = Field(..., description="Stripe上のCoupon ID")
+    name: Optional[str] = None
+    duration: str = Field(..., description="'once', 'forever', or 'repeating'")
+    duration_in_months: Optional[int] = None
+    amount_off: Optional[int] = None
+    percent_off: Optional[float] = None
+    currency: Optional[str] = None
+    redeem_by: Optional[datetime] = None
+    max_redemptions: Optional[int] = None
+    is_active: bool = True
+    metadata_: Optional[Dict[str, Any]] = Field(None, alias='metadata') # DBモデルに合わせてエイリアスを設定
+
+class StripeCouponCreate(BaseModel): # DBに保存するためのスキーマ (APIから直接受け取ることは少ないかも)
+    stripe_coupon_id: str
+    name: Optional[str] = None
+    duration: str
+    duration_in_months: Optional[int] = None
+    amount_off: Optional[int] = None
+    percent_off: Optional[float] = None
+    currency: Optional[str] = None
+    redeem_by: Optional[datetime] = None
+    max_redemptions: Optional[int] = None
+    is_active: bool = True
+    metadata: Optional[Dict[str, Any]] = None # API入力は metadata
+
+class StripeCouponUpdate(BaseModel): # 更新用 (主に is_active や metadata)
+    is_active: Optional[bool] = None
+    metadata: Optional[Dict[str, Any]] = None
+    name: Optional[str] = None # 名前も更新可能にするか
+
+class StripeCouponResponse(StripeCouponBase):
+    id: UUID # DB上のID
+    times_redeemed: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True # エイリアス(metadata)を有効にする
+
+# --- Campaign Code Schemas (修正) --- 
 class CampaignCodeBase(BaseModel):
-    code: str
+    code: str = Field(..., max_length=255)
     description: Optional[str] = None
-    discount_value: float
-    max_uses: Optional[int] = None
+    max_uses: Optional[int] = Field(None, ge=1)
     valid_from: Optional[datetime] = None
     valid_until: Optional[datetime] = None
     is_active: bool = True
 
 class CampaignCodeCreate(CampaignCodeBase):
-    discount_type: str = Field(..., examples=['percentage', 'fixed'])
-    owner_id: Optional[UUID] = None
+    # stripe_coupon_id: str # ← 文字列のStripe IDではなくDBのIDを使う
+    coupon_id: UUID # ★ 紐付ける StripeCoupon テーブルの UUID (必須)
 
-    @validator('discount_type')
-    def validate_discount_type(cls, v):
-        if v not in ['percentage', 'fixed']:
-            raise ValueError('discount_typeは "percentage" または "fixed" である必要があります')
-        return v
-        
-    @validator('discount_value')
-    def validate_discount_value(cls, v, values):
-        if 'discount_type' in values and values['discount_type'] == 'percentage' and (v <= 0 or v > 100):
-            raise ValueError('割引率は0より大きく、100以下である必要があります')
-        elif v <= 0:
-            raise ValueError('割引額は0より大きい必要があります')
-        return v
+class CampaignCodeUpdate(BaseModel):
+    description: Optional[str] = None
+    max_uses: Optional[int] = Field(None, ge=1)
+    valid_from: Optional[datetime] = None
+    valid_until: Optional[datetime] = None
+    is_active: Optional[bool] = None
+    # code, coupon_id の更新は許可しない想定
 
-class CampaignCodeResponse(TimestampMixin, CampaignCodeBase):
+class CampaignCodeResponse(CampaignCodeBase):
     id: UUID
-    owner_id: Optional[UUID] = None
-    used_count: int
-    is_valid: bool
-    
-    # --- computed_field を一時的にコメントアウト ---
-    # @computed_field
-    # @property
-    # def discount_type(self) -> str:
-    #     if hasattr(self, 'discount_type') and self.discount_type and hasattr(self.discount_type, 'name'):
-    #         return self.discount_type.name
-    #     return "unknown"
-    # --- ここまでコメントアウト ---
+    used_count: int = 0
+    stripe_promotion_code_id: Optional[str] = None
+    coupon_id: UUID # ★ 紐づく Coupon の DB ID
+    # coupon: Optional[StripeCouponResponse] = None # ★ ネストして返す場合 (要 selectinload)
+    created_at: datetime
+    updated_at: datetime
+    created_by: Optional[UUID] = None
 
     class Config:
         from_attributes = True
 
-class CampaignCodeUpdate(BaseModel):
-    description: Optional[str] = None
-    discount_value: Optional[float] = None
-    max_uses: Optional[int] = None
-    valid_from: Optional[datetime] = None
-    valid_until: Optional[datetime] = None
-    is_active: Optional[bool] = None
-
-# キャンペーンコード検証リクエスト
+# --- Verify Campaign Code (修正) --- 
 class VerifyCampaignCodeRequest(BaseModel):
     code: str
-    price_id: str  # plan_idからprice_idに変更（Stripeの価格ID）
+    price_id: str
 
-# キャンペーンコード検証レスポンス
 class VerifyCampaignCodeResponse(BaseModel):
     valid: bool
     message: str
-    discount_type: Optional[str] = None
-    discount_value: Optional[float] = None
-    original_amount: Optional[int] = None
-    discounted_amount: Optional[int] = None
     campaign_code_id: Optional[UUID] = None
+    coupon_id: Optional[UUID] = None # ★ Coupon の DB ID を返す
+    stripe_coupon_id: Optional[str] = None # ★ Stripe Coupon IDも返すように変更
+    # coupon: Optional[StripeCouponResponse] = None # ★ ネストして返す場合
 
-# Stripeチェックアウトセッション作成リクエスト（キャンペーンコード対応）
-class CreateCheckoutSessionRequest(BaseModel):
-    price_id: str  # Stripeの価格ID
-    plan_id: Optional[str] = None  # 互換性のために残す（price_idと同じ値）
+# --- Checkout Session (修正) ---
+class CreateCheckoutRequest(BaseModel):
+    price_id: str
+    plan_id: Optional[str] = None
     success_url: str
     cancel_url: str
-    campaign_code: Optional[str] = None
+    # campaign_code: Optional[str] = None # ← 文字列ではなく Coupon ID を受け取る
+    coupon_id: Optional[str] = None # ★ 適用する Stripe Coupon ID を受け取る
 
-# Stripeチェックアウトセッション応答
 class CheckoutSessionResponse(BaseModel):
     session_id: str
     url: str
 
 # サブスクリプション管理リクエスト
 class ManageSubscriptionRequest(BaseModel):
-    subscription_id: UUID
-    action: str  # "cancel", "reactivate", "update"
-    price_id: Optional[str] = None  # Stripeの価格ID
-    plan_id: Optional[str] = None  # 互換性のために残す（price_idと同じ値）
+    action: str # 'cancel', 'reactivate', 'update'
+    subscription_id: Optional[str] = None # update時に必要
+    plan_id: Optional[str] = None # update時に必要
 
 # Webhookイベント検証
 class WebhookEventValidation(BaseModel):
     signature: str
     payload: str 
 
-# --- DiscountType Schemas --- #
-
+# --- Discount Type Schemas (現状維持または削除検討) ---
 class DiscountTypeBase(BaseModel):
-    name: str = Field(..., description="割引タイプの名前 (例: percentage, fixed)", examples=['percentage', 'fixed'])
-    description: Optional[str] = Field(None, description="割引タイプの説明")
+    name: str = Field(..., max_length=100)
+    description: Optional[str] = None
+    is_percentage: bool
 
 class DiscountTypeCreate(DiscountTypeBase):
     pass
 
-class DiscountTypeUpdate(BaseModel): # 更新は name, description のみ可能と想定
-    name: Optional[str] = Field(None, examples=['percentage', 'fixed'])
+class DiscountTypeUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = None
+    is_percentage: Optional[bool] = None
 
-class DiscountTypeResponse(DiscountTypeBase, TimestampMixin):
+class DiscountTypeResponse(DiscountTypeBase):
     id: UUID
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True 
