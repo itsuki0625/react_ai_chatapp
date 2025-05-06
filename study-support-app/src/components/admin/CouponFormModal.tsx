@@ -118,10 +118,10 @@ export const CouponFormModal: React.FC<CouponFormModalProps> = ({ isOpen, onClos
       duration_in_months: initialData?.duration_in_months === null ? undefined : initialData?.duration_in_months,
       max_redemptions: initialData?.max_redemptions === null ? undefined : initialData?.max_redemptions,
       redeem_by: initialData?.redeem_by ? initialData.redeem_by : undefined,
-      metadata: initialData?.metadata ? JSON.stringify(initialData.metadata, null, 2) : '{}',
+      metadata: initialData?.metadata_ ? JSON.stringify(initialData.metadata_, null, 2) : '{}',
       discountType: initialData?.percent_off ? 'percent' : (initialData?.amount_off ? 'amount' : undefined),
       discountValue: initialData?.percent_off?.toString() ?? initialData?.amount_off?.toString() ?? '',
-      currency: initialData?.currency ?? 'jpy',
+      currency: 'jpy',
     },
   });
 
@@ -142,10 +142,10 @@ export const CouponFormModal: React.FC<CouponFormModalProps> = ({ isOpen, onClos
         duration_in_months: initialData.duration_in_months === null || initialData.duration_in_months === undefined ? undefined : initialData.duration_in_months,
         max_redemptions: initialData.max_redemptions === null || initialData.max_redemptions === undefined ? undefined : initialData.max_redemptions,
         redeem_by: initialData.redeem_by === null || initialData.redeem_by === undefined ? undefined : initialData.redeem_by,
-        metadata: initialData.metadata ? JSON.stringify(initialData.metadata, null, 2) : '{}',
+        metadata: initialData.metadata_ ? JSON.stringify(initialData.metadata_, null, 2) : '{}',
         discountType: discountType,
         discountValue: discountValue,
-        currency: initialData.currency ?? 'jpy',
+        currency: 'jpy',
       });
         setRedeemByDate(redeemDate);
     } else {
