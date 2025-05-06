@@ -22,8 +22,9 @@ class MessageResponse(MessageBase):
     read: bool = Field(False, description="既読フラグ")
     created_at: datetime = Field(..., description="作成日時")
 
-    class Config:
-        orm_mode = True
+    model_config = {
+        "from_attributes": True,
+    }
 
 class ConversationBase(BaseModel):
     """会話の基本情報"""
@@ -48,8 +49,9 @@ class ConversationResponse(ConversationBase):
     created_at: datetime = Field(..., description="作成日時")
     updated_at: Optional[datetime] = Field(None, description="更新日時")
 
-    class Config:
-        orm_mode = True
+    model_config = {
+        "from_attributes": True,
+    }
 
 class ConversationUpdate(BaseModel):
     """会話更新リクエスト"""

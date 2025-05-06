@@ -33,8 +33,10 @@ class RoleRead(RoleBase):
     updated_at: datetime
     permissions: List[PermissionRead] = []
 
-    class Config:
-        orm_mode = True
+    # ★ Pydantic V2 の model_config を使用
+    model_config = {
+        "from_attributes": True,
+    }
 
 class RoleAssign(BaseModel):
     """ロール割り当てリクエスト"""
@@ -56,8 +58,10 @@ class PermissionResponse(PermissionBase):
     id: UUID = Field(..., description="権限ID")
     created_at: datetime = Field(..., description="作成日時")
 
-    class Config:
-        orm_mode = True
+    # ★ Pydantic V2 の model_config を使用
+    model_config = {
+        "from_attributes": True,
+    }
 
 # ロール権限スキーマ
 class RolePermissionBase(BaseModel):
@@ -75,5 +79,7 @@ class RolePermissionResponse(RolePermissionBase):
     id: UUID = Field(..., description="ロール権限ID")
     created_at: datetime = Field(..., description="作成日時")
 
-    class Config:
-        orm_mode = True 
+    # ★ Pydantic V2 の model_config を使用
+    model_config = {
+        "from_attributes": True,
+    } 

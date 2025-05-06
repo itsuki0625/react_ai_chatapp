@@ -57,6 +57,8 @@ export interface CampaignCode {
   valid_until: string | null;
   is_active: boolean;
   is_valid: boolean;
+  coupon_id: string | null;
+  stripe_promotion_code_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -130,4 +132,15 @@ export interface DiscountTypeResponse extends DiscountTypeBase {
     id: string; // UUID は string で受け取る
     created_at: string; // または Date
     updated_at: string; // または Date
+}
+
+// キャンペーンコード作成時のペイロード型
+export interface CampaignCodeCreatePayload {
+  code: string;
+  description?: string | null;
+  stripe_coupon_id: string; // 必須
+  max_uses?: number | null;
+  valid_from?: string | null; // ISO Date string
+  valid_until?: string | null; // ISO Date string
+  is_active?: boolean;
 } 

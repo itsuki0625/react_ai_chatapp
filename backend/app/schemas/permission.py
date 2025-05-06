@@ -19,6 +19,11 @@ class PermissionRead(PermissionBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True # SQLAlchemyモデルからPydanticモデルへの変換を有効化 (v1)
-        # from_attributes = True # Pydantic v2 の場合 
+    # ★ Pydantic V2 の model_config を使用
+    model_config = {
+        "from_attributes": True,
+    }
+    # ★ Pydantic V1 の Config は削除
+    # class Config:
+    #     orm_mode = True # SQLAlchemyモデルからPydanticモデルへの変換を有効化 (v1)
+    #     # from_attributes = True # Pydantic v2 の場合 

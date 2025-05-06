@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-// Base schema for common fields
-export const StripeCouponBaseSchema = z.object({
+// Base schema for common fields (Closer to Stripe API response)
+export const StripeApiCouponSchema = z.object({
   id: z.string(), // Stripe ID
   name: z.string().nullable().optional(),
   duration: z.enum(['forever', 'once', 'repeating']),
@@ -14,7 +14,7 @@ export const StripeCouponBaseSchema = z.object({
   times_redeemed: z.number().int().nonnegative(),
   valid: z.boolean(),
   metadata: z.record(z.string()).nullable().optional(),
-  created: z.number().int(), // Unix timestamp
+  created: z.number().int(), // Unix timestamp (Stripe object creation)
   livemode: z.boolean(),
   object: z.literal('coupon'),
   applies_to: z.object({
@@ -63,6 +63,25 @@ export const StripeCouponUpdateSchema = z.object({
 });
 
 // TypeScript types inferred from Zod schemas
-export type StripeCouponResponse = z.infer<typeof StripeCouponBaseSchema>;
+export type StripeApiCouponData = z.infer<typeof StripeApiCouponSchema>;
 export type StripeCouponCreate = z.infer<typeof StripeCouponCreateSchema>;
-export type StripeCouponUpdate = z.infer<typeof StripeCouponUpdateSchema>; 
+export type StripeCouponUpdate = z.infer<typeof StripeCouponUpdateSchema>;
+
+// DB から取得する Coupon の型定義 (Interface を正とする)
+export interface StripeCouponResponse {
+  id: string; // DB の UUID
+  stripe_coupon_id: string; // ★ Stripe の Coupon ID
+  name?: string | null;
+  duration: 'forever' | 'once' | 'repeating';
+  valid: boolean; // Stripe API の valid と同じか、DB 側で管理するフラグか要確認
+  times_redeemed: number;
+  created: number; // DB レコード作成日時 (Unix timestamp)
+  amount_off?: number | null;
+  percent_off?: number | null;
+  duration_in_months?: number | null;
+  max_redemptions?: number | null;
+  redeem_by?: number | null; // Unix timestamp
+  updated_at: number; // Unix timestamp (DB record update)
+  metadata_?: { [key: string]: string } | null; // DB の metadata カラム (末尾にアンダースコア)
+  // 必要に応じて他の DB カラムに対応するフィールドを追加
+} 

@@ -127,35 +127,51 @@ class StripeService:
 
     @staticmethod
     def create_coupon(
-        discount_type: str,  # 'percentage' or 'amount_off'
-        discount_value: float,
-        duration: str = 'once',  # 'once', 'forever', 'repeating'
+        duration: str,
         duration_in_months: Optional[int] = None,
-        currency: str = 'jpy',
+        currency: Optional[str] = None,
         name: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        amount_off: Optional[int] = None,
+        percent_off: Optional[float] = None,
+        max_redemptions: Optional[int] = None,
+        redeem_by: Optional[int] = None,
+        applies_to: Optional[Dict[str, List[str]]] = None,
+        **kwargs: Any
     ) -> Dict[str, Any]:
         """
-        Stripeクーポンを作成する
+        Stripeクーポンを作成する (エンドポイントのスキーマに合わせて修正)
         """
         try:
             coupon_params = {
                 'duration': duration,
             }
             
-            # 割引タイプに基づいてパラメータを設定
-            if discount_type == 'percentage':
-                coupon_params['percent_off'] = discount_value
-            elif discount_type == 'fixed':
-                coupon_params['amount_off'] = int(discount_value)
-                coupon_params['currency'] = currency
+            # 割引タイプに基づいてパラメータを設定 (amount_off と percent_off を直接使用)
+            if percent_off is not None:
+                if not 0 < percent_off <= 100:
+                    raise ValueError("Percentage discount must be between 0 and 100.")
+                coupon_params['percent_off'] = percent_off
+            elif amount_off is not None:
+                if amount_off <= 0:
+                     raise ValueError("Fixed amount discount must be positive.")
+                if not currency:
+                    raise ValueError("Currency is required when amount_off is set.")
+                coupon_params['amount_off'] = amount_off # JPYは円単位の整数
+                coupon_params['currency'] = currency.lower()
             else:
-                raise ValueError("discount_typeは 'percentage' または 'fixed' である必要があります")
-                
+                 raise ValueError("Either percent_off or amount_off must be provided.")
+
             # リピート期間を設定（durationが'repeating'の場合のみ必要）
-            if duration == 'repeating' and duration_in_months:
-                coupon_params['duration_in_months'] = duration_in_months
-                
+            if duration == 'repeating':
+                 if not duration_in_months:
+                     raise ValueError("duration_in_months is required when duration is repeating.")
+                 coupon_params['duration_in_months'] = duration_in_months
+            elif duration_in_months is not None:
+                # duration が repeating でない場合は duration_in_months を無視するかエラーにする
+                logger.warning("duration_in_months provided but duration is not 'repeating'. Ignoring.")
+                # または raise ValueError("duration_in_months can only be set when duration is repeating.")
+
             # 名前があれば設定
             if name:
                 coupon_params['name'] = name
@@ -163,12 +179,46 @@ class StripeService:
             # メタデータがあれば設定
             if metadata:
                 coupon_params['metadata'] = metadata
+
+            # 最大利用回数があれば設定
+            if max_redemptions is not None:
+                 if max_redemptions <= 0:
+                      raise ValueError("max_redemptions must be positive.")
+                 coupon_params['max_redemptions'] = max_redemptions
+            
+            # 有効期限があれば設定
+            if redeem_by is not None:
+                 coupon_params['redeem_by'] = redeem_by
+                 
+            # 適用対象商品があれば設定
+            if applies_to is not None:
+                coupon_params['applies_to'] = applies_to
+
+            # kwargs を追加
+            coupon_params.update(kwargs)
                 
+            logger.info(f"Stripe Coupon 作成実行パラメータ: {coupon_params}")
             coupon = stripe.Coupon.create(**coupon_params)
+            logger.info(f"Stripe Coupon 作成成功: {coupon.id}")
             return coupon
-        except Exception as e:
-            logger.error(f"クーポン作成エラー: {str(e)}")
-            raise
+        except ValueError as ve: # 設定値のバリデーションエラー
+            logger.error(f"Stripe Coupon 作成パラメータエラー: {ve}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(ve)
+            )
+        except stripe.error.StripeError as e: # Stripe APIエラー
+            logger.error(f"Stripe Coupon 作成 API エラー: {e.user_message or e}")
+            raise HTTPException(
+                status_code=e.http_status or status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=e.user_message or "Stripe API Error during coupon creation"
+            )
+        except Exception as e: # その他の予期せぬエラー
+            logger.exception(f"Stripe Coupon 作成中に予期せぬエラー: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unexpected error during coupon creation"
+            )
 
     @staticmethod
     def create_promotion_code(
@@ -620,3 +670,123 @@ class StripeService:
              logger.error(f"Stripe Coupon ({coupon_id}) の無効化中に予期せぬエラー: {e}", exc_info=True)
              # raise HTTPException(...) # 必要なら例外を発生
              return None # ここではNoneを返す 
+
+    @staticmethod
+    def list_coupons(
+        limit: int = 10,
+        created: Optional[Dict[str, int]] = None,
+        starting_after: Optional[str] = None,
+        ending_before: Optional[str] = None,
+        **kwargs: Any # 他のStripeパラメータを許容する場合
+    ) -> List[Dict[str, Any]]:
+        """Stripe Coupon のリストを取得する"""
+        try:
+            list_params = {
+                'limit': limit,
+                'expand': ['data.applies_to'] # applies_to フィールドを展開して商品情報を取得
+            }
+            if created:
+                list_params['created'] = created
+            if starting_after:
+                list_params['starting_after'] = starting_after
+            if ending_before:
+                list_params['ending_before'] = ending_before
+            
+            # kwargs を追加して他のフィルタリングオプションをサポート
+            list_params.update(kwargs)
+
+            coupons = stripe.Coupon.list(**list_params)
+            logger.info(f"Stripe Coupon リスト取得成功: {len(coupons.data)} 件")
+            return coupons.data
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe Coupon リスト取得 API エラー: {e.user_message}")
+            raise # エンドポイント側でHTTPExceptionに変換するため、ここではStripeErrorを再raise
+        except Exception as e:
+            logger.exception(f"Stripe Coupon リスト取得中に予期せぬエラー: {e}")
+            raise # 同様にエンドポイント側で処理
+
+    @staticmethod
+    def retrieve_coupon(coupon_id: str) -> Dict[str, Any]:
+        """
+        指定されたIDのStripe Couponを取得する
+        """
+        try:
+            coupon = stripe.Coupon.retrieve(coupon_id, expand=['applies_to'])
+            logger.info(f"Stripe Coupon 取得成功: {coupon.id}")
+            return coupon
+        except stripe.error.InvalidRequestError as e:
+            if "No such coupon" in str(e):
+                 logger.warning(f"Stripe Coupon {coupon_id} が見つかりません。")
+                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Coupon {coupon_id} not found")
+            logger.error(f"Stripe Coupon ({coupon_id}) 取得 API エラー: {e.user_message}")
+            raise HTTPException(status_code=e.http_status or status.HTTP_400_BAD_REQUEST, detail=e.user_message or "Stripe API Error")
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe Coupon ({coupon_id}) 取得 API エラー: {e.user_message}")
+            raise HTTPException(status_code=e.http_status or status.HTTP_400_BAD_REQUEST, detail=e.user_message or "Stripe API Error")
+        except Exception as e:
+            logger.exception(f"Stripe Coupon ({coupon_id}) 取得中に予期せぬエラー: {e}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error during coupon retrieval")
+
+    @staticmethod
+    def update_coupon(
+        coupon_id: str,
+        name: Optional[str] = None,
+        metadata: Optional[Dict[str, str]] = None,
+        **kwargs: Any # 他の更新可能パラメータを許容する場合
+    ) -> Dict[str, Any]:
+        """Stripe Coupon を更新する (主に name と metadata)"""
+        try:
+            update_params = {}
+            if name is not None:
+                update_params['name'] = name
+            if metadata is not None:
+                update_params['metadata'] = metadata
+            
+            # kwargs を追加して他の更新をサポート (注意: Stripeが許可するフィールドのみ)
+            update_params.update(kwargs)
+
+            if not update_params:
+                logger.warning(f"Stripe Coupon ({coupon_id}) の更新パラメータが指定されていません。")
+                # 更新するものがない場合はそのままクーポン情報を返す (retrieve を呼ぶ)
+                return StripeService.retrieve_coupon(coupon_id)
+
+            updated_coupon = stripe.Coupon.modify(coupon_id, **update_params)
+            logger.info(f"Stripe Coupon 更新成功: {updated_coupon.id}")
+            return updated_coupon
+        except stripe.error.InvalidRequestError as e:
+            if "No such coupon" in str(e):
+                 logger.warning(f"更新しようとした Stripe Coupon {coupon_id} が見つかりません。")
+                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Coupon {coupon_id} not found")
+            logger.error(f"Stripe Coupon ({coupon_id}) 更新 API エラー: {e.user_message}")
+            raise HTTPException(status_code=e.http_status or status.HTTP_400_BAD_REQUEST, detail=e.user_message or "Stripe API Error")
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe Coupon ({coupon_id}) 更新 API エラー: {e.user_message}")
+            raise HTTPException(status_code=e.http_status or status.HTTP_400_BAD_REQUEST, detail=e.user_message or "Stripe API Error")
+        except Exception as e:
+            logger.exception(f"Stripe Coupon ({coupon_id}) 更新中に予期せぬエラー: {e}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error during coupon update")
+
+    @staticmethod
+    def delete_coupon(coupon_id: str) -> None:
+        """Stripe Coupon を削除する"""
+        try:
+            stripe.Coupon.delete(coupon_id)
+            logger.info(f"Stripe Coupon 削除成功: {coupon_id}")
+            # 成功時は何も返さない (void)
+        except stripe.error.InvalidRequestError as e:
+            # 削除しようとしたクーポンが存在しない場合
+            if "No such coupon" in str(e):
+                 logger.warning(f"削除しようとしたStripe Coupon {coupon_id} が見つかりません。")
+                 # すでに存在しない場合は成功とみなすか、エラーにするかは要件による
+                 # ここでは Not Found を raise する
+                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Coupon {coupon_id} not found")
+            # クーポンが現在サブスクリプションなどで利用中の場合など、削除できないケース
+            # Stripe API のエラーメッセージに基づいて詳細なハンドリングが可能
+            logger.error(f"Stripe Coupon ({coupon_id}) 削除 API エラー: {e.user_message}")
+            raise HTTPException(status_code=e.http_status or status.HTTP_400_BAD_REQUEST, detail=e.user_message or "Stripe API Error")
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe Coupon ({coupon_id}) 削除 API エラー: {e.user_message}")
+            raise HTTPException(status_code=e.http_status or status.HTTP_400_BAD_REQUEST, detail=e.user_message or "Stripe API Error")
+        except Exception as e:
+            logger.exception(f"Stripe Coupon ({coupon_id}) 削除中に予期せぬエラー: {e}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error during coupon deletion") 

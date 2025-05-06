@@ -44,39 +44,66 @@ const baseFormObjectSchema = z.object({
 });
 
 // Refine the base schema
-const formSchema = baseFormObjectSchema.refine(data => {
-    // Basic required fields for creation (won't apply strictly in edit mode due to .partial() later? No, refine applies always)
-    // We need to rely on the onSubmit logic to differentiate create/update validation rigour.
-    // This refine focuses on INTERDEPENDENCIES.
-
+const formSchema = baseFormObjectSchema.superRefine((data, ctx) => {
     const discountValueStr = data.discountValue || ''
 
-    // If amount type, value must be positive int, and currency must exist
+    // --- Interdependency checks ---
+
+    // 1. Discount Type/Value/Currency Check
     if (data.discountType === 'amount') {
         const amount = parseInt(discountValueStr, 10);
-        if (isNaN(amount) || amount <= 0) return false;
-        if (!data.currency) return false;
+        if (isNaN(amount) || amount <= 0) {
+             ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: "割引額は正の整数で入力してください。",
+                path: ["discountValue"],
+             });
+        }
+        if (!data.currency) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: "通貨を選択してください。",
+                path: ["currency"],
+            });
+        }
     }
-    // If percent type, value must be between 0 and 100
     else if (data.discountType === 'percent') {
         const percent = parseFloat(discountValueStr);
-        if (isNaN(percent) || percent <= 0 || percent > 100) return false;
+        if (isNaN(percent) || percent <= 0 || percent > 100) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: "割引率は0より大きく100以下の数値を入力してください。",
+                path: ["discountValue"],
+            });
+        }
     }
-    // If neither type is selected (e.g., during initial form load for create), it might be invalid state
-    // BUT zodResolver might not call refine until a field is touched. Rely on onSubmit.
+    // Don't require discountType on initial load, but check on submit if needed (handled in onSubmit)
 
-    // If duration is repeating, duration_in_months must be positive int
+    // 2. Duration/Duration in Months Check
     if (data.duration === 'repeating' && (!data.duration_in_months || data.duration_in_months <= 0)) {
-        return false;
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "期間が「繰り返し」の場合、月数を正の整数で入力してください。",
+            path: ["duration_in_months"],
+        });
     }
 
-    return true;
-}, {
-    // Generic message, specific errors handled in onSubmit or with superRefine
-    message: "入力内容に不整合があります。割引タイプ/値、期間、通貨などを確認してください。",
-    // path: [], // Consider adding specific paths if possible
-});
+    // 3. ★ NEW: Forever duration only allowed with percent discount ★
+    if (data.duration === 'forever' && data.discountType === 'amount') {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "期間「永続」はパーセント割引でのみ利用可能です。固定額割引は選択できません。",
+            path: ["duration"], // Or path: ["discountType"]
+        });
+        // Optionally add issue to discountType as well
+        ctx.addIssue({
+             code: z.ZodIssueCode.custom,
+             message: "期間「永続」が選択されているため、固定額割引は利用できません。",
+             path: ["discountType"],
+        });
+    }
 
+});
 
 export const CouponFormModal: React.FC<CouponFormModalProps> = ({ isOpen, onClose, initialData }) => {
   const queryClient = useQueryClient();
@@ -140,10 +167,10 @@ export const CouponFormModal: React.FC<CouponFormModalProps> = ({ isOpen, onClos
 
   // --- Mutations ---
   const createMutation = useMutation({
-    mutationFn: couponAdminService.createAdminStripeCoupon,
+    mutationFn: couponAdminService.createAndImportCoupon,
     onSuccess: () => {
       toast({ title: "成功", description: "Couponが作成されました。" });
-      queryClient.invalidateQueries({ queryKey: ['adminStripeCoupons'] });
+      queryClient.invalidateQueries({ queryKey: ['adminDbCoupons'] });
       onClose(); // Close modal on success
     },
     onError: (error: Error) => {
@@ -152,11 +179,11 @@ export const CouponFormModal: React.FC<CouponFormModalProps> = ({ isOpen, onClos
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: { couponId: string, updateData: StripeCouponUpdate }) =>
-      couponAdminService.updateAdminStripeCoupon(data.couponId, data.updateData),
+    mutationFn: ({ couponId, updateData }: { couponId: string; updateData: StripeCouponUpdate }) =>
+      couponAdminService.updateDbCoupon(couponId, updateData),
     onSuccess: () => {
       toast({ title: "成功", description: "Couponが更新されました。" });
-      queryClient.invalidateQueries({ queryKey: ['adminStripeCoupons'] });
+      queryClient.invalidateQueries({ queryKey: ['adminDbCoupons'] });
       onClose(); // Close modal on success
     },
     onError: (error: Error) => {
@@ -227,7 +254,7 @@ export const CouponFormModal: React.FC<CouponFormModalProps> = ({ isOpen, onClos
         } else if (values.discountType === 'amount') {
              const amountValue = values.discountValue ? parseInt(values.discountValue, 10) : undefined;
              if (amountValue === undefined || isNaN(amountValue) || amountValue <= 0) {
-                 form.setError("discountValue", { type: "manual", message: "割引額は正の整数値を入力してください（セント単位）。" });
+                 form.setError("discountValue", { type: "manual", message: "割引額は正の整数値を入力してください。" });
                  return;
              }
             createPayload.amount_off = amountValue;

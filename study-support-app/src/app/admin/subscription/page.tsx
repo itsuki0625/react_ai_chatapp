@@ -5,10 +5,12 @@ import { SubscriptionManagement } from '@/components/admin/SubscriptionManagemen
 import { AdminNavBar } from '@/components/common/AdminNavBar';
 
 export default function SubscriptionManagementPage() {
-  return (
-    <div>
-      <AdminNavBar />
-      <SubscriptionManagement />
-    </div>
-  );
+    return (
+        <div className="p-4">
+            <AdminNavBar />
+            <div className="mt-6">
+                <SubscriptionManagement />
+            </div>
+        </div>
+    );
 } 

@@ -142,9 +142,8 @@ async def create_db_coupon(db: AsyncSession, coupon_in: StripeCouponCreate) -> S
         logger.error(f"DB Coupon 作成エラー (Stripe ID: {coupon_in.stripe_coupon_id}): {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="DB Couponの作成に失敗しました。")
 
-async def get_db_coupon(db: AsyncSession, coupon_db_id: UUID) -> Optional[StripeCoupon]:
-    """DB UUIDでStripeCouponレコードを取得"""
-    result = await db.execute(select(StripeCoupon).filter(StripeCoupon.id == coupon_db_id))
+async def get_db_coupon(db: AsyncSession, coupon_id: UUID) -> Optional[StripeCoupon]:
+    result = await db.execute(select(StripeCoupon).filter(StripeCoupon.id == coupon_id))
     return result.scalars().first()
 
 async def get_db_coupon_by_stripe_id(db: AsyncSession, stripe_coupon_id: str) -> Optional[StripeCoupon]:
@@ -162,48 +161,96 @@ async def get_all_db_coupons(db: AsyncSession, skip: int = 0, limit: int = 100) 
     )
     return result.scalars().all()
 
-async def update_db_coupon(db: AsyncSession, coupon_db_id: UUID, coupon_in: StripeCouponUpdate) -> Optional[StripeCoupon]:
-    """DB上のStripeCouponレコードを更新 (主に is_active, metadata)"""
-    db_coupon = await get_db_coupon(db, coupon_db_id)
+async def update_db_coupon(db: AsyncSession, coupon_id: UUID, coupon_update: StripeCouponUpdate) -> Optional[StripeCoupon]:
+    db_coupon = await get_db_coupon(db, coupon_id)
     if not db_coupon:
         return None
 
-    update_data = coupon_in.model_dump(exclude_unset=True)
-    # metadata は metadata_ にマッピング
-    if 'metadata' in update_data:
-        db_coupon.metadata_ = update_data.pop('metadata')
+    update_data = coupon_update.model_dump(exclude_unset=True)
+    if not update_data: # 更新データがなければ何もしない
+        return db_coupon
 
+    logger.debug(f"Updating DB Coupon {coupon_id} with data: {update_data}")
     for key, value in update_data.items():
         setattr(db_coupon, key, value)
+
+    # updated_at は自動更新されるはずだが、明示的に更新しても良い
+    # db_coupon.updated_at = datetime.now(timezone.utc)
 
     try:
         await db.commit()
         await db.refresh(db_coupon)
+        logger.info(f"Successfully updated DB Coupon {coupon_id}")
         return db_coupon
     except Exception as e:
         await db.rollback()
-        logger.error(f"DB Coupon 更新エラー (ID: {coupon_db_id}): {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="DB Couponの更新に失敗しました。")
+        logger.error(f"Error committing DB update for Coupon {coupon_id}: {e}", exc_info=True)
+        raise # エラーを再raiseしてエンドポイント側で処理
 
-# (DB Coupon の削除関数は、関連する Promotion Code がある場合などを考慮して慎重に設計する必要あり)
+async def delete_db_coupon(db: AsyncSession, coupon_id: UUID) -> bool:
+    db_coupon = await get_db_coupon(db, coupon_id)
+    if not db_coupon:
+        return False # 対象が見つからない
 
+    logger.info(f"Deleting DB Coupon {coupon_id} (Stripe ID: {db_coupon.stripe_coupon_id})")
+    try:
+        await db.delete(db_coupon)
+        await db.commit()
+        logger.info(f"Successfully deleted DB Coupon {coupon_id}")
+        return True
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error committing DB deletion for Coupon {coupon_id}: {e}", exc_info=True)
+        raise # エラーを再raiseしてエンドポイント側で処理
 
 # --- CampaignCode CRUD 操作 (修正) ---
 
 async def create_campaign_code(db: AsyncSession, campaign_code: CampaignCodeCreate, creator: User) -> CampaignCode:
-    # --- ★ 紐付ける Coupon をDBから取得 ---
-    db_coupon = await get_db_coupon(db, campaign_code.coupon_id)
+    # ── DB に存在しなければ Stripe から取得して登録 ──
+    db_coupon = await get_db_coupon_by_stripe_id(db, campaign_code.stripe_coupon_id)
     if not db_coupon:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Coupon with DB ID '{campaign_code.coupon_id}' not found."
-        )
-    if not db_coupon.is_active:
-         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Coupon '{db_coupon.name or db_coupon.stripe_coupon_id}' is not active."
-        )
-    # --- ★ ここまで追加 ---
+        logger.warning(f"Stripe Coupon ID {campaign_code.stripe_coupon_id} provided but not found in DB. Attempting to import from Stripe.") # ログ追加
+        try:
+            # Stripe API からクーポン取得
+            # ★ retrieve_coupon が存在しない場合は、list_coupons などで代替するか、Stripe SDK を直接使う
+            # stripe_obj = StripeService.retrieve_coupon(campaign_code.stripe_coupon_id)
+            # ↓ Stripe SDK を直接使う例 (StripeService に retrieve がない場合)
+            import stripe
+            stripe_obj = stripe.Coupon.retrieve(campaign_code.stripe_coupon_id) # Stripe SDK を直接利用
+
+            # DB スキーマに沿ってインサート
+            # ★ StripeCouponCreate のフィールドに合わせて調整が必要
+            coupon_in = StripeCouponCreate(
+                stripe_coupon_id=stripe_obj.id, # .id でアクセス
+                amount_off=stripe_obj.amount_off, # .amount_off でアクセス
+                percent_off=stripe_obj.percent_off, # .percent_off でアクセス
+                name=stripe_obj.name, # .name でアクセス
+                duration=stripe_obj.duration, # .duration でアクセス
+                duration_in_months=stripe_obj.duration_in_months, # .duration_in_months でアクセス
+                # ★ redeem_by は Unix タイムスタンプ (int) なのでそのまま渡す
+                redeem_by=stripe_obj.redeem_by,
+                metadata=stripe_obj.metadata, # .metadata でアクセス
+                livemode=stripe_obj.livemode, # .livemode でアクセス
+                # created と valid は StripeCouponCreate に含まれていない場合がある
+                # 必要であればスキーマに追加するか、ここで設定しない
+            )
+            logger.info(f"Importing Stripe Coupon {stripe_obj.id} into DB.")
+            db_coupon = await create_db_coupon(db, coupon_in)
+            logger.info(f"Successfully imported Stripe Coupon {stripe_obj.id} as DB Coupon {db_coupon.id}.")
+        except stripe.error.InvalidRequestError as e:
+             if "No such coupon" in str(e):
+                 logger.error(f"Stripe Coupon {campaign_code.stripe_coupon_id} not found on Stripe either.")
+                 raise HTTPException(
+                     status_code=status.HTTP_404_NOT_FOUND,
+                     detail=f"Stripe Coupon with ID '{campaign_code.stripe_coupon_id}' not found on Stripe."
+                 )
+             else:
+                 logger.error(f"Stripe API error while retrieving coupon {campaign_code.stripe_coupon_id}: {e}")
+                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve coupon from Stripe.")
+        except Exception as e:
+            logger.exception(f"Unexpected error during Stripe Coupon import for {campaign_code.stripe_coupon_id}: {e}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to import coupon from Stripe.")
+    # ─────────────────────────────────────────────
 
     # タイムゾーン除去 (valid_from, valid_until がスキーマに残っている場合)
     naive_valid_from = campaign_code.valid_from.replace(tzinfo=None) if campaign_code.valid_from else None
@@ -292,16 +339,22 @@ async def get_campaign_code_by_code(db: AsyncSession, code: str) -> Optional[Cam
     )
     return result.scalars().first()
 
-async def get_all_campaign_codes(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[CampaignCode]:
-    # --- ★ Coupon 情報も一緒にロード ---
-    result = await db.execute(
-        select(CampaignCode)
-        .options(selectinload(CampaignCode.coupon)) # Couponリレーションをロード
-        .order_by(CampaignCode.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-    )
-    return result.scalars().unique().all() # unique() を追加推奨
+async def get_all_campaign_codes(
+    db: AsyncSession,
+    skip: int = 0,
+    limit: int = 100,
+    is_active: Optional[bool] = None,
+):
+    """
+    Retrieve all campaign codes.
+    """
+    query = select(CampaignCode)
+    # is_active フィルタが指定されたら絞り込む
+    if is_active is not None:
+        query = query.where(CampaignCode.is_active == is_active)
+    query = query.order_by(CampaignCode.created_at.desc()).offset(skip).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
 
 async def get_user_campaign_codes(db: AsyncSession, owner_id: UUID, skip: int = 0, limit: int = 100) -> List[CampaignCode]:
     result = await db.execute(

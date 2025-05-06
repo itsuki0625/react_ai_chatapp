@@ -78,45 +78,45 @@ class PaymentHistoryResponse(PaymentHistoryBase):
 
 # --- ★ Stripe Coupon Schemas --- 
 class StripeCouponBase(BaseModel):
-    stripe_coupon_id: str = Field(..., description="Stripe上のCoupon ID")
+    # stripe_coupon_id: str # DB 登録後に付与されるので Base には含めない
     name: Optional[str] = None
-    duration: str = Field(..., description="'once', 'forever', or 'repeating'")
-    duration_in_months: Optional[int] = None
     amount_off: Optional[int] = None
     percent_off: Optional[float] = None
-    currency: Optional[str] = None
-    redeem_by: Optional[datetime] = None
-    max_redemptions: Optional[int] = None
-    is_active: bool = True
-    metadata_: Optional[Dict[str, Any]] = Field(None, alias='metadata') # DBモデルに合わせてエイリアスを設定
-
-class StripeCouponCreate(BaseModel): # DBに保存するためのスキーマ (APIから直接受け取ることは少ないかも)
-    stripe_coupon_id: str
-    name: Optional[str] = None
-    duration: str
-    duration_in_months: Optional[int] = None
-    amount_off: Optional[int] = None
-    percent_off: Optional[float] = None
-    currency: Optional[str] = None
-    redeem_by: Optional[datetime] = None
-    max_redemptions: Optional[int] = None
-    is_active: bool = True
-    metadata: Optional[Dict[str, Any]] = None # API入力は metadata
-
-class StripeCouponUpdate(BaseModel): # 更新用 (主に is_active や metadata)
-    is_active: Optional[bool] = None
+    currency: Optional[str] = None # ★ 追加 (amount_off とセットで必要)
+    duration: str # 'forever', 'once', 'repeating'
+    duration_in_months: Optional[int] = None # duration='repeating' の場合必須
+    redeem_by: Optional[int] = None # Unix timestamp
     metadata: Optional[Dict[str, Any]] = None
-    name: Optional[str] = None # 名前も更新可能にするか
+    livemode: Optional[bool] = None # Stripe API から取得時に設定
+
+    # --- DB に保存するか検討するフィールド ---
+    # max_redemptions: Optional[int] = None
+    # valid: Optional[bool] = None # Stripe 側で管理
+    # times_redeemed: Optional[int] = None # Stripe 側で管理
+
+class StripeCouponCreate(StripeCouponBase):
+    # ★ DB 登録時には stripe_coupon_id は不要だが、
+    #    Stripe API 作成 -> DB 登録 の流れでは、API 作成後に ID が決まる。
+    #    エンドポイント側で API レスポンスから設定するため、Create スキーマには含めないか、
+    #    あるいは Optional にしておく。ここでは含めない方針とする。
+    stripe_coupon_id: Optional[str] = Field(None, description="Stripe API で作成後に設定されます。入力不要。")
+
+    # バリデーションを追加しても良い (例: amount_off と currency はセット、percent_off と排他など)
+
+class StripeCouponUpdate(BaseModel):
+    # 更新可能なフィールドを定義 (例: metadata, name)
+    name: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    # 注意: Stripe Coupon の主要な属性 (割引額、期間など) は一度作成すると変更できないことが多い
 
 class StripeCouponResponse(StripeCouponBase):
-    id: UUID # DB上のID
-    times_redeemed: int = 0
+    id: UUID # DB の UUID
+    stripe_coupon_id: str # Stripe の Coupon ID
     created_at: datetime
     updated_at: datetime
 
     class Config:
-        from_attributes = True
-        populate_by_name = True # エイリアス(metadata)を有効にする
+        from_attributes = True # ORM モデルからの変換を有効化
 
 # --- Campaign Code Schemas (修正) --- 
 class CampaignCodeBase(BaseModel):
@@ -129,7 +129,8 @@ class CampaignCodeBase(BaseModel):
 
 class CampaignCodeCreate(CampaignCodeBase):
     # stripe_coupon_id: str # ← 文字列のStripe IDではなくDBのIDを使う
-    coupon_id: UUID # ★ 紐付ける StripeCoupon テーブルの UUID (必須)
+    # coupon_id: UUID # ★ 紐付ける StripeCoupon テーブルの UUID (必須)
+    stripe_coupon_id: str = Field(..., description="紐付けるStripe CouponのID") # ★ 修正: Stripe Coupon ID を直接受け取る
 
 class CampaignCodeUpdate(BaseModel):
     description: Optional[str] = None
