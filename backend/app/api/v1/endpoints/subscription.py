@@ -449,9 +449,20 @@ async def stripe_webhook(
             else:
                 logger.info(f"新規サブスクリプション作成 (Stripe ID: {stripe_subscription_id})")
                 stripe_sub_data = StripeService.get_subscription(stripe_subscription_id)
+                plan_data = stripe_sub_data.get('items', {}).get('data', [{}])[0].get('plan', {})
+                plan_name = plan_data.get('nickname') if plan_data and plan_data.get('nickname') is not None else 'プラン名不明'
+                # もしproduct名も考慮するなら:
+                # product_id = plan_data.get('product') if plan_data else None
+                # if product_id:
+                #     try:
+                #         product_info = StripeService.get_product(product_id)
+                #         plan_name = product_info.get('name', plan_name) # nicknameよりproduct名を優先する場合など
+                #     except Exception as e_prod:
+                #         logger.warning(f"Stripe Product {product_id} の取得に失敗: {e_prod}")
+
                 new_sub_data = {
                     "user_id": user_id,
-                    "plan_name": stripe_sub_data.get('items', {}).get('data', [{}])[0].get('plan', {}).get('nickname', 'プラン名不明'),
+                    "plan_name": plan_name,
                     "price_id": price_id,
                     "stripe_subscription_id": stripe_subscription_id,
                     "stripe_customer_id": stripe_customer_id,
