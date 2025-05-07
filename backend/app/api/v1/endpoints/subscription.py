@@ -13,29 +13,28 @@ from app.api.deps import get_async_db, get_current_user
 from app.services.stripe_service import StripeService
 from app.crud import subscription as crud_subscription
 from app.crud import user as crud_user # ユーザー情報取得用にインポート
-from app.models.user import User as UserModel # UserModel をインポート
-from app.models.subscription import Subscription as SubscriptionModel, CampaignCode # CampaignCode もインポート
+from app.crud import crud_role # crud_role をインポート
+from app.models.user import User as UserModel, Role # CampaignCode もインポート
+from app.models.subscription import CampaignCode # SubscriptionModelは不要になったので削除
 
 # --- スキーマのインポート (修正) ---
 from app.schemas.subscription import (
     SubscriptionResponse,
     PaymentHistoryResponse,
-    CampaignCodeResponse, # ★ ユーザー向けに返す可能性もあるため維持
-    VerifyCampaignCodeRequest, # ★ 修正後のスキーマ
-    VerifyCampaignCodeResponse, # ★ 修正後のスキーマ
-    CreateCheckoutRequest, # ★ 修正後のスキーマ
+    CampaignCodeResponse,
+    VerifyCampaignCodeRequest,
+    VerifyCampaignCodeResponse,
+    CreateCheckoutRequest,
     CheckoutSessionResponse,
     ManageSubscriptionRequest,
-    SubscriptionPlanResponse # ★ Stripeプラン用スキーマ
+    SubscriptionPlanResponse
 )
+from app.schemas.user import UserUpdate, UserStatus as SchemaUserStatus # UserUpdate と UserStatus をインポート
 # --- ここまで ---
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["subscriptions"])
-
-# Stripe APIキーの設定 (StripeService内で設定されるため不要な場合が多い)
-# stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
 @router.get("/stripe-plans", response_model=List[SubscriptionPlanResponse])
@@ -44,59 +43,104 @@ async def get_stripe_plans(
     db: AsyncSession = Depends(get_async_db) # DBセッションはロギング等で使う可能性を考慮して残すか検討
 ):
     """
-    利用可能なサブスクリプションプラン（Stripe Price）を取得します。
-    （注意: このエンドポイントはDBではなくStripeから直接データを取得します）
+    Stripeからアクティブな商品と価格のリストを取得します。
+    各商品には複数の価格が含まれる可能性がありますが、ここでは簡易的に
+    商品ごとに最初の有効な価格のみを返すことを想定しています。
+    実際の要件に応じて、価格のフィルタリングや選択ロジックの調整が必要です。
     """
     try:
-        # StripeService を使用して価格リストを取得
-        # SubscriptionPlanResponse は from_attributes=False なのでDBモデル不要
-        stripe_prices = StripeService.list_prices(active=True, limit=100) # 有効な価格のみ
+        # Stripeから有効な商品リストを取得
+        # products = StripeService.list_products(active=True, limit=100) # 例: 上限100件
+        # ↑ list_products は expand オプションがないため、直接価格情報は取れない
 
-        # Stripeの価格データを SubscriptionPlanResponse に変換
-        plans = []
-        for price in stripe_prices:
-            # 必要な情報が price['product'] に展開されているか確認
-            product_info = price.get('product', {})
-            if not isinstance(product_info, dict): # ID文字列の場合、別途商品情報を取得する必要がある
-                try:
-                    product_info = StripeService.get_product(str(product_info)) if product_info else {}
-                except Exception:
-                    logger.warning(f"Failed to retrieve product info for price {price.id}. Skipping plan.")
-                    product_info = {} # エラーでも処理を続ける
+        # 代わりに、有効な価格を expand=['data.product'] で取得する
+        all_prices_raw = StripeService.list_prices(active=True, limit=100) # type: ignore
 
-            # 価格データからスキーマを作成
-            plan_data = {
-                "id": price.id, # 価格IDをプランIDとして使用
-                "name": product_info.get('name', 'プラン名不明'), # 商品名を使用
-                "description": product_info.get('description'),
-                "price_id": price.id,
-                "amount": price.unit_amount,
-                "currency": price.currency,
-                "interval": price.recurring.get('interval') if price.recurring else 'unknown',
-                "is_active": price.active,
-                # created_at, updated_at は Stripe の created タイムスタンプを使うか、固定値にする
-                "created_at": datetime.fromtimestamp(price.created),
-                "updated_at": datetime.fromtimestamp(price.created) # Stripe Price に updated はない
-            }
-            plans.append(SubscriptionPlanResponse(**plan_data))
+        # フロントエンドが期待する SubscriptionPlanResponse の形式に変換
+        # ここでは、1つの価格が1つのプランに対応すると仮定
+        active_plans: List[SubscriptionPlanResponse] = []
+        if not all_prices_raw:
+            return []
+        
+        processed_products = set() # 重複して商品を追加しないように管理
 
-        return plans
+        for price_data in all_prices_raw:
+            product_data = price_data.get('product')
+            if not product_data or not isinstance(product_data, dict) or product_data.get('id') in processed_products:
+                continue # 商品データがないか、既に処理済みの場合はスキップ
+            
+            # product_data が Product オブジェクト全体であることを確認
+            if not product_data.get('active', False):
+                continue # 商品自体が無効ならスキップ
+
+            plan = SubscriptionPlanResponse(
+                id=product_data.get('id'), # 商品IDをプランIDとして使用
+                name=product_data.get('name', '名称未設定'),
+                description=product_data.get('description'),
+                price_id=price_data.get('id'), # 価格ID
+                amount=price_data.get('unit_amount', 0),
+                currency=price_data.get('currency', 'jpy'),
+                interval=price_data.get('recurring', {}).get('interval', 'month'),
+                is_active=price_data.get('active', False) and product_data.get('active', False),
+                created_at=datetime.fromtimestamp(product_data.get('created')).isoformat(), # タイムスタンプをISO形式に
+                updated_at=datetime.fromtimestamp(product_data.get('updated')).isoformat(), # タイムスタンプをISO形式に
+                # features は metadata から取得するなどのロジックが必要 (ここでは省略)
+                features=product_data.get('metadata', {}).get('features', '').split(',') if product_data.get('metadata', {}).get('features') else []
+            )
+            active_plans.append(plan)
+            processed_products.add(product_data.get('id'))
+
+        return active_plans
+
     except Exception as e:
         logger.error(f"Stripeプラン取得エラー: {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="プラン情報の取得に失敗しました。")
-
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="料金プランの取得に失敗しました。")
 
 @router.get("/user-subscription", response_model=Optional[SubscriptionResponse])
 async def get_user_subscription(
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_user)
 ):
-    """
-    現在のユーザーのアクティブなサブスクリプションを取得します。
-    """
+    """ユーザーの現在アクティブなサブスクリプションを取得します。"""
     subscription = await crud_subscription.get_active_user_subscription(db, user_id=current_user.id)
-    return subscription # 返り値は SubscriptionResponse | None
+    if not subscription:
+        return None
+        # raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="アクティブなサブスクリプションが見つかりません。")
+    
+    # Subscription モデルから SubscriptionResponse スキーマへの変換
+    # plan_name が必要。Subscription モデルに plan リレーションがある前提
+    plan_name = "プラン情報なし"
+    if subscription.plan: # Subscriptionモデルに plan リレーションがある場合
+        plan_name = subscription.plan.name
+    elif subscription.price_id: # price_idからStripe APIでプラン名を取得する（負荷高いので注意）
+        try:
+            price_data = StripeService.get_price(subscription.price_id)
+            if price_data and price_data.get('product'):
+                product_id = price_data['product']
+                if isinstance(product_id, str):
+                    product_info = StripeService.get_product(product_id)
+                    plan_name = product_info.get('name', plan_name)
+                elif isinstance(product_id, dict): # Productオブジェクトが展開されている場合
+                    plan_name = product_id.get('name', plan_name)
+        except Exception as e:
+            logger.warning(f"Stripeからプラン名取得中にエラー (PriceID: {subscription.price_id}): {e}")
 
+    return SubscriptionResponse(
+        id=str(subscription.id),
+        user_id=str(subscription.user_id),
+        stripe_customer_id=subscription.stripe_customer_id,
+        stripe_subscription_id=subscription.stripe_subscription_id,
+        status=subscription.status,
+        plan_name=plan_name, # Plan名を設定
+        price_id=subscription.price_id, # subscriptionテーブルにprice_idカラムがあると仮定
+        current_period_start=subscription.current_period_start.isoformat() if subscription.current_period_start else None,
+        current_period_end=subscription.current_period_end.isoformat() if subscription.current_period_end else None,
+        cancel_at=subscription.cancel_at.isoformat() if subscription.cancel_at else None,
+        canceled_at=subscription.canceled_at.isoformat() if subscription.canceled_at else None,
+        is_active=subscription.is_active,
+        created_at=subscription.created_at.isoformat(),
+        updated_at=subscription.updated_at.isoformat(),
+    )
 
 @router.get("/payment-history", response_model=List[PaymentHistoryResponse])
 async def get_payment_history(
@@ -105,12 +149,9 @@ async def get_payment_history(
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_user)
 ):
-    """
-    現在のユーザーの支払い履歴を取得します。
-    """
+    """ユーザーの支払い履歴を取得します。"""
     history = await crud_subscription.get_user_payment_history(db, user_id=current_user.id, skip=skip, limit=limit)
     return history
-
 
 @router.post("/verify-campaign-code", response_model=VerifyCampaignCodeResponse)
 async def verify_campaign_code(
@@ -120,24 +161,65 @@ async def verify_campaign_code(
     current_user: Optional[UserModel] = Depends(get_current_user) # Optional に
 ):
     """
-    キャンペーンコードの有効性を検証します。
+    キャンペーンコードを検証します。
     """
+    db_code = await crud_subscription.get_campaign_code_by_code(db, request_data.code)
+    if not db_code or not db_code.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="無効なキャンペーンコードです。")
+
+    if db_code.valid_until and db_code.valid_until < datetime.utcnow().replace(tzinfo=None): # naive datetimeと比較
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="キャンペーンコードの有効期限が切れています。")
+
+    if db_code.max_uses is not None and db_code.used_count >= db_code.max_uses:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="キャンペーンコードの利用回数上限に達しています。")
+    
+    # Stripe Coupon ID があるか確認 (これがないと割引計算が難しい)
+    if not db_code.stripe_coupon_id:
+        logger.error(f"DB CampaignCode {db_code.code} に stripe_coupon_id が設定されていません。")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="キャンペーンコードの設定に問題があります。")
+
     try:
-        # ★ 修正: 修正された CRUD 関数を呼び出す
-        verification_result = await crud_subscription.verify_campaign_code(
-            db=db,
-            code=request_data.code,
-            price_id=request_data.price_id # price_id も渡す (将来的な利用のため)
-        )
-        # ★ 修正: CRUD関数の返り値を VerifyCampaignCodeResponse に変換
-        # crud 関数の返り値 Dict をそのまま利用できるか、スキーマでラップするか検討
-        # crud 関数の返り値のキー名とスキーマのフィールド名が一致していればそのまま返せる
-        return VerifyCampaignCodeResponse(**verification_result)
-    except HTTPException as e:
-        raise e # CRUD関数内で発生したHTTPExceptionはそのまま返す
+        stripe_coupon = StripeService.retrieve_coupon(db_code.stripe_coupon_id) # type: ignore
     except Exception as e:
-        logger.error(f"キャンペーンコード検証エラー (Code: {request_data.code}): {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="キャンペーンコードの検証中にエラーが発生しました。")
+        logger.error(f"Stripe Coupon ({db_code.stripe_coupon_id}) 取得エラー: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="割引情報の取得に失敗しました。")
+
+    # プランの価格を取得 (リクエストから plan_id または price_id を受け取る想定)
+    # ここでは request_data.price_id を使用
+    original_amount = 0
+    try:
+        price_data = StripeService.get_price(request_data.price_id)
+        original_amount = price_data.get('unit_amount', 0)
+    except Exception:
+        # 価格取得に失敗しても、コードの有効性だけは返すこともできる
+        logger.warning(f"価格情報 (Price ID: {request_data.price_id}) の取得に失敗。割引額計算はスキップ。")
+        # raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="プラン価格の取得に失敗しました。")
+
+    discounted_amount = original_amount
+    discount_type = None
+    discount_value = 0
+
+    if stripe_coupon.get('percent_off') is not None:
+        percent_off = stripe_coupon['percent_off']
+        discounted_amount = original_amount * (1 - percent_off / 100)
+        discount_type = 'percentage'
+        discount_value = percent_off
+    elif stripe_coupon.get('amount_off') is not None:
+        amount_off = stripe_coupon['amount_off']
+        discounted_amount = max(0, original_amount - amount_off)
+        discount_type = 'fixed'
+        discount_value = amount_off
+
+    return VerifyCampaignCodeResponse(
+        valid=True,
+        message="キャンペーンコードが適用されました。",
+        discount_type=discount_type, # type: ignore
+        discount_value=discount_value,
+        original_amount=original_amount,
+        discounted_amount=int(discounted_amount),
+        campaign_code_id=str(db_code.id),
+        stripe_coupon_id=db_code.stripe_coupon_id
+    )
 
 
 @router.post("/create-checkout", response_model=CheckoutSessionResponse)
@@ -158,31 +240,18 @@ async def create_checkout_session(
                     name=current_user.full_name,
                     metadata={'user_id': str(current_user.id)}
                 )
-            # ★ 注意: DBに stripe_customer_id を保存する処理が必要
-            # webhook で customer.created をハンドルするか、ここで Subscription を更新する
-            # ここでは webhook に任せる想定で進める (あるいは既存Subscriptionがあれば更新)
             logger.info(f"新規Stripe Customer作成: {stripe_customer_id} for User: {current_user.id}")
 
-        # メタデータ設定
         metadata = {
                 'user_id': str(current_user.id),
             'price_id': request_data.price_id,
-            'plan_id': request_data.plan_id or request_data.price_id # plan_id がなければ price_id を使う
+            'plan_id': request_data.plan_id or request_data.price_id
         }
 
-        # --- ★ 割引情報の処理 (修正) ---
         discounts = []
-        if request_data.coupon_id: # ★ coupon_id (Stripe Coupon ID) が渡された場合
-            # ここで coupon_id が有効か Stripe に問い合わせることも可能だが、
-            # Checkout Session 作成時に Stripe 側で検証されるため、必須ではない。
-            # DB に保存されている Coupon かどうかのチェックは行っても良いかもしれない。
-            # db_coupon = await crud_subscription.get_db_coupon_by_stripe_id(db, request_data.coupon_id)
-            # if not db_coupon or not db_coupon.is_active:
-            #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="指定されたクーポンは無効です。")
+        if request_data.coupon_id:
             discounts.append({'coupon': request_data.coupon_id})
-            metadata['applied_coupon_id'] = request_data.coupon_id # メタデータにも記録
-
-        # --- ★ ここまで ---
+            metadata['applied_coupon_id'] = request_data.coupon_id
 
         session_response = StripeService.create_checkout_session(
             customer_id=stripe_customer_id,
@@ -190,13 +259,13 @@ async def create_checkout_session(
             success_url=request_data.success_url,
             cancel_url=request_data.cancel_url,
             metadata=metadata,
-            discounts=discounts # ★ 修正: 作成した discounts を渡す
+            discounts=discounts
         )
 
-        return session_response # CheckoutSessionResponse を返す
+        return session_response
 
     except HTTPException as e:
-        raise e # StripeService等で発生したHTTPExceptionはそのまま返す
+        raise e
     except Exception as e:
         logger.error(f"チェックアウトセッション作成エラー (User: {current_user.id}, Price: {request_data.price_id}): {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="チェックアウトセッションの作成に失敗しました。")
@@ -204,7 +273,7 @@ async def create_checkout_session(
 
 @router.post("/create-portal-session")
 async def create_portal_session(
-    request_data: Dict[str, str], # return_url を含む想定
+    request_data: Dict[str, str],
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_user)
 ):
@@ -237,48 +306,56 @@ async def manage_subscription(
     current_user: UserModel = Depends(get_current_user)
 ):
     """
-    サブスクリプションの管理（キャンセル、再開、プラン変更）を行います。
+    サブスクリプションを管理します (キャンセル、再開、プラン変更など)。
     """
+    action = request_data.action
+    subscription_id = request_data.subscription_id
+    new_plan_id = request_data.plan_id # Stripe Price ID
+
+    if not subscription_id and action != 'update': # update以外はsubscription_id必須
+         # プラン変更(update)の場合、既存サブスクリプションIDがないケースも考慮するかもしれないが、
+         # 通常は既存サブスクリプションに対して操作を行う
+         # ここでは、ユーザーの現在アクティブなサブスクリプションIDを取得するロジックを入れることも検討
+        active_sub = await crud_subscription.get_active_user_subscription(db, current_user.id)
+        if not active_sub or not active_sub.stripe_subscription_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="操作対象のサブスクリプションが見つかりません。")
+        subscription_id = active_sub.stripe_subscription_id
+    
+    if not subscription_id: # それでも subscription_id がない場合はエラー
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="StripeサブスクリプションIDが必要です。")
+
     try:
-        action = request_data.action
-        subscription_id = request_data.subscription_id # キャンセル、再開には必要
-        new_price_id = request_data.plan_id # プラン変更（更新）時に使用
-
-        # DBから現在のアクティブなサブスクリプションを取得 (Stripe Sub IDを取得するため)
-        current_db_sub = await crud_subscription.get_active_user_subscription(db, user_id=current_user.id)
-        if not current_db_sub or not current_db_sub.stripe_subscription_id:
-             # アクションによってはサブスクリプションIDがリクエストに含まれる場合もある
-             if not subscription_id:
-                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="アクティブなサブスクリプションが見つかりません。")
-             stripe_sub_id_to_manage = subscription_id
-        else:
-             stripe_sub_id_to_manage = current_db_sub.stripe_subscription_id
-
-        result = None
         if action == "cancel":
-            result = StripeService.cancel_subscription(stripe_sub_id_to_manage, cancel_at_period_end=True)
-            # DB更新はWebhook (customer.subscription.updated) に任せるのが一般的
+            # Stripe でキャンセル (期間終了時にキャンセル)
+            stripe_sub = StripeService.cancel_subscription(subscription_id, cancel_at_period_end=True)
+            # DBも更新
+            await crud_subscription.update_subscription_status_from_stripe(db, subscription_id, stripe_sub)
+            return {"message": "サブスクリプションは期間終了時に解約されます。", "subscription": stripe_sub}
+        
         elif action == "reactivate":
-            result = StripeService.reactivate_subscription(stripe_sub_id_to_manage)
-            # DB更新はWebhook (customer.subscription.updated) に任せる
+            stripe_sub = StripeService.reactivate_subscription(subscription_id)
+            await crud_subscription.update_subscription_status_from_stripe(db, subscription_id, stripe_sub)
+            return {"message": "サブスクリプションが再開されました。", "subscription": stripe_sub}
+        
         elif action == "update":
-            if not new_price_id:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新しいプランID (price_id) が必要です。")
-            result = StripeService.update_subscription(stripe_sub_id_to_manage, new_price_id)
-            # DB更新はWebhook (customer.subscription.updated) に任せる
+            if not new_plan_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新しいプランIDが必要です。")
+            stripe_sub = StripeService.update_subscription(subscription_id, new_plan_id)
+            # DBも更新 (プラン名、価格IDなども更新)
+            await crud_subscription.update_subscription_plan_from_stripe(db, subscription_id, stripe_sub, new_plan_id)
+            return {"message": "サブスクリプションプランが変更されました。", "subscription": stripe_sub}
+        
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="無効なアクションです。")
 
-        return {"status": "success", "result": result}
-
-    except HTTPException as e:
-        raise e
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe APIエラー (Action: {action}, SubID: {subscription_id}): {e}")
+        raise HTTPException(status_code=e.http_status or status.HTTP_500_INTERNAL_SERVER_ERROR, detail=e.user_message or "Stripe APIエラー")
     except Exception as e:
-        logger.error(f"サブスクリプション管理エラー (User: {current_user.id}, Action: {request_data.action}): {e}", exc_info=True)
+        logger.error(f"サブスクリプション管理エラー (Action: {action}, SubID: {subscription_id}): {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="サブスクリプションの管理に失敗しました。")
 
 
-# --- ★ ユーザー向けキャンペーンコード取得 (必要であれば) ---
 @router.get("/campaign-codes", response_model=List[CampaignCodeResponse])
 async def get_my_campaign_codes(
     skip: int = 0,
@@ -286,16 +363,13 @@ async def get_my_campaign_codes(
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_user)
 ):
-    """
-    現在のユーザーが作成したキャンペーンコード一覧を取得します。
-    （アフィリエイト機能などで利用する場合）
-    """
-    # ★ crud_subscription.get_user_campaign_codes を使用
-    codes = await crud_subscription.get_user_campaign_codes(db, owner_id=current_user.id, skip=skip, limit=limit)
+    """管理者が作成した（または特定のユーザーに紐づく）有効なキャンペーンコード一覧を取得"""
+    # ここでは簡易的に全ての有効なコードを返す（管理者用を想定）
+    # ユーザー個別のコードを扱う場合は、owner_id などでフィルタリングが必要
+    codes = await crud_subscription.get_all_active_campaign_codes(db, skip=skip, limit=limit)
     return codes
 
 
-# --- Webhook エンドポイント (修正) ---
 @router.post("/webhook")
 async def stripe_webhook(
     request: Request,
@@ -304,23 +378,23 @@ async def stripe_webhook(
 ):
     """
     StripeからのWebhookイベントを処理します。
+    主にサブスクリプションのステータス変更や支払い完了イベントをハンドルします。
     """
     payload = await request.body()
+    endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
+
     try:
-        event = StripeService.verify_webhook_signature(payload.decode('utf-8'), stripe_signature)
+        event = StripeService.verify_webhook_signature(payload.decode(), stripe_signature)
     except ValueError as e:
-        # Invalid payload
-        logger.error(f"Webhook ペイロードエラー: {e}")
+        logger.error(f"Webhookペイロード解析エラー: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payload")
-    except stripe.error.SignatureVerificationError as e:
-        # Invalid signature
-        logger.error(f"Webhook 署名検証エラー: {e}")
+    except stripe.error.SignatureVerificationError as e: # type: ignore
+        logger.error(f"Webhook署名検証エラー: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid signature")
     except Exception as e:
         logger.error(f"Webhook 処理エラー（署名検証中）: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Webhook processing error")
 
-    # イベントタイプに基づいて処理
     event_type = event['type']
     data = event['data']['object']
 
@@ -332,23 +406,19 @@ async def stripe_webhook(
             logger.info(f"Checkout Session Completed: {session.id}")
             metadata = session.get('metadata', {})
             user_id_str = metadata.get('user_id')
-            price_id = metadata.get('price_id') # Stripe Price ID
-            plan_id_metadata = metadata.get('plan_id') # 念のため
+            price_id = metadata.get('price_id')
             stripe_subscription_id = session.get('subscription')
             stripe_customer_id = session.get('customer')
-            # --- ★ 割引情報の取得 ---
-            applied_coupon_id = metadata.get('applied_coupon_id') # メタデータからStripe Coupon ID取得
+            applied_coupon_id = metadata.get('applied_coupon_id')
             db_campaign_code: Optional[CampaignCode] = None
+
             if applied_coupon_id:
-                # Stripe Coupon ID から DBの CampaignCode を検索する必要がある
                 db_coupon = await crud_subscription.get_db_coupon_by_stripe_id(db, applied_coupon_id)
                 if db_coupon and db_coupon.campaign_codes:
-                    # 簡易的に最初のCampaignCodeを使う（より厳密な紐付けが必要な場合あり）
                     db_campaign_code = db_coupon.campaign_codes[0]
                     logger.info(f"Checkoutに適用されたDB Campaign Code ID: {db_campaign_code.id} (via Stripe Coupon: {applied_coupon_id})")
                 else:
                     logger.warning(f"メタデータのStripe Coupon ID {applied_coupon_id} に対応するDB CampaignCodeが見つかりません。")
-            # --- ★ ここまで ---
 
             if not user_id_str:
                 logger.error("Webhook checkout.session.completed: metadataにuser_idがありません")
@@ -360,15 +430,10 @@ async def stripe_webhook(
                  logger.error(f"Webhook checkout.session.completed: 無効なuser_id形式です: {user_id_str}")
                  return {"status": "error", "message": "Invalid user_id format"}
 
-
-            # サブスクリプション情報をDBに保存または更新
-            # 既存のサブスクリプションがあるか確認 (Stripe Sub ID で)
             existing_sub = await crud_subscription.get_subscription_by_stripe_id(db, stripe_subscription_id)
 
             if existing_sub:
-                 # 既存サブスクリプションを更新 (再アクティブ化など)
                  logger.info(f"既存サブスクリプション更新 (Stripe ID: {stripe_subscription_id})")
-                 # Stripeから最新のサブスクリプション情報を取得
                  stripe_sub_data = StripeService.get_subscription(stripe_subscription_id)
                  update_data = {
                      "status": stripe_sub_data.get('status'),
@@ -377,53 +442,75 @@ async def stripe_webhook(
                      "cancel_at": datetime.fromtimestamp(stripe_sub_data.get('cancel_at')) if stripe_sub_data.get('cancel_at') else None,
                      "canceled_at": datetime.fromtimestamp(stripe_sub_data.get('canceled_at')) if stripe_sub_data.get('canceled_at') else None,
                      "is_active": stripe_sub_data.get('status') in ['active', 'trialing'],
-                     # ★ キャンペーンコードIDも更新（Checkoutで適用されたもの）
                      "campaign_code_id": db_campaign_code.id if db_campaign_code else existing_sub.campaign_code_id,
-                     "stripe_customer_id": stripe_customer_id # 念のため顧客IDも更新
+                     "stripe_customer_id": stripe_customer_id
                  }
                  await crud_subscription.update_subscription(db, existing_sub.id, update_data)
-
             else:
-                # 新規サブスクリプションを作成
                 logger.info(f"新規サブスクリプション作成 (Stripe ID: {stripe_subscription_id})")
-                # Stripeからサブスクリプション情報を取得してDBに保存
                 stripe_sub_data = StripeService.get_subscription(stripe_subscription_id)
                 new_sub_data = {
                     "user_id": user_id,
-                    "plan_name": stripe_sub_data.get('items', {}).get('data', [{}])[0].get('plan', {}).get('nickname', 'プラン名不明'), # Plan名を取得
-                    "price_id": price_id, # メタデータから
+                    "plan_name": stripe_sub_data.get('items', {}).get('data', [{}])[0].get('plan', {}).get('nickname', 'プラン名不明'),
+                    "price_id": price_id,
                     "stripe_subscription_id": stripe_subscription_id,
                     "stripe_customer_id": stripe_customer_id,
                     "status": stripe_sub_data.get('status'),
                     "current_period_start": datetime.fromtimestamp(stripe_sub_data.get('current_period_start')),
                     "current_period_end": datetime.fromtimestamp(stripe_sub_data.get('current_period_end')),
                     "is_active": stripe_sub_data.get('status') in ['active', 'trialing'],
-                    # ★ キャンペーンコードIDを設定
                     "campaign_code_id": db_campaign_code.id if db_campaign_code else None,
-                    # plan_id (DBのFK) を設定 - price_id からプランを検索する必要がある
-                    # ここでは簡易的に plan_name を保存しているが、FK制約がある場合は注意
-                    # plan = await crud_subscription.get_plan_by_price_id(db, price_id) # このような関数が必要
-                    # if plan: new_sub_data["plan_id"] = plan.id
                 }
                 await crud_subscription.create_subscription(db, crud_subscription.SubscriptionCreate(**new_sub_data))
 
-            # --- ★ キャンペーンコード使用回数をインクリメント ---
+            # --- ★ 購入商品に紐づくロールをユーザーに割り当て --- (ここから修正)
+            if session.get('line_items'):
+                for item in session.get('line_items', {}).get('data', []):
+                    price_obj = item.get('price')
+                    if price_obj and price_obj.get('product'):
+                        stripe_product_id = price_obj.get('product')
+                        try:
+                            product_data = StripeService.get_product(stripe_product_id)
+                            if product_data and product_data.get('metadata'):
+                                assigned_role_id_str = product_data.get('metadata', {}).get('assigned_role')
+                                if assigned_role_id_str:
+                                    logger.info(f"商品 {stripe_product_id} に紐づくロールID(str): {assigned_role_id_str} をユーザー {user_id} に割り当て試行")
+                                    try:
+                                        assigned_role_id = UUID(assigned_role_id_str)
+                                        target_role_obj = await crud_role.get_role(db, role_id=assigned_role_id)
+
+                                        if target_role_obj:
+                                            target_role_name = target_role_obj.name
+                                            user_to_update = await crud_user.get_user(db, user_id)
+                                            if user_to_update:
+                                                await crud_user.update_user(db, db_user=user_to_update, user_in=UserUpdate(role=target_role_name))
+                                                logger.info(f"ユーザー {user_id} のプライマリロールを '{target_role_name}' (ID: {assigned_role_id}) に更新しました。")
+                                            else:
+                                                logger.warning(f"ロール割り当て対象のユーザー {user_id} がDBで見つかりません。")
+                                        else:
+                                            logger.error(f"指定されたロールID {assigned_role_id} に該当するロールがDBで見つかりません。")
+                                    except ValueError:
+                                        logger.error(f"メタデータの assigned_role '{assigned_role_id_str}' は有効なUUIDではありません。")
+                                    except Exception as e_role_assign:
+                                        logger.error(f"ロール割り当て処理中に予期せぬエラー: {e_role_assign}", exc_info=True)
+                                else:
+                                    logger.info(f"商品 {stripe_product_id} のメタデータに assigned_role が設定されていません。")
+                        except Exception as e_get_product:
+                            logger.error(f"Stripe商品 {stripe_product_id} の情報取得またはロール割り当て処理中にエラー: {e_get_product}", exc_info=True)
+                        break # 通常サブスクリプションは商品一つなので、最初のitemで処理を終える
+            # --- ★ ロール割り当て処理ここまで ---
+
             if db_campaign_code:
                 await crud_subscription.increment_campaign_code_usage(db, db_campaign_code.id)
-                # TODO: CampaignCodeRedemption レコードを作成する
-            # --- ★ ここまで ---
 
-            # ユーザーのステータスを更新 (例: 'active' に)
             user = await crud_user.get_user(db, user_id)
-            if user and user.status != 'active':
-                 await crud_user.update_user(db, db_user=user, user_in=crud_user.UserUpdate(status='active'))
-
+            if user and user.status != SchemaUserStatus.ACTIVE:
+                 await crud_user.update_user(db, db_user=user, user_in=UserUpdate(status=SchemaUserStatus.ACTIVE))
 
         elif event_type == 'invoice.payment_succeeded':
             invoice = data
             logger.info(f"Invoice Payment Succeeded: {invoice.id}")
             stripe_subscription_id = invoice.get('subscription')
-            stripe_customer_id = invoice.get('customer')
             stripe_payment_intent_id = invoice.get('payment_intent')
 
             if stripe_subscription_id:

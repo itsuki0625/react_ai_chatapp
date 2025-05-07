@@ -89,7 +89,7 @@ export interface CreateCheckoutRequest {
 }
 
 export interface ManageSubscriptionRequest {
-  subscription_id: string;
+  subscription_id?: string;
   action: 'cancel' | 'reactivate' | 'update';
   plan_id?: string;
 }

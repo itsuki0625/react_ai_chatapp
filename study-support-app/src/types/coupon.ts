@@ -68,20 +68,23 @@ export type StripeCouponCreate = z.infer<typeof StripeCouponCreateSchema>;
 export type StripeCouponUpdate = z.infer<typeof StripeCouponUpdateSchema>;
 
 // DB から取得する Coupon の型定義 (Interface を正とする)
+// APIレスポンスのキー名に合わせる
 export interface StripeCouponResponse {
   id: string; // DB の UUID
-  stripe_coupon_id: string; // ★ Stripe の Coupon ID
+  stripe_coupon_id: string;
   name?: string | null;
   duration: 'forever' | 'once' | 'repeating';
-  valid: boolean; // Stripe API の valid と同じか、DB 側で管理するフラグか要確認
+  valid: boolean | null; // APIではnullの場合がある
   times_redeemed: number;
-  created: number; // DB レコード作成日時 (Unix timestamp)
+  stripe_created_timestamp: number | null; // Stripeオブジェクトの作成日時 (Unix timestamp)
+  created_at: string; // DBレコード作成日時 (ISOString)
+  updated_at: string; // DBレコード更新日時 (ISOString)
   amount_off?: number | null;
   percent_off?: number | null;
+  currency?: string | null;
   duration_in_months?: number | null;
   max_redemptions?: number | null;
-  redeem_by?: number | null; // Unix timestamp
-  updated_at: number; // Unix timestamp (DB record update)
-  metadata_?: { [key: string]: string } | null; // DB の metadata カラム (末尾にアンダースコア)
-  // 必要に応じて他の DB カラムに対応するフィールドを追加
+  redeem_by_timestamp?: number | null; // Unix timestamp (APIのキー名に合わせる)
+  livemode: boolean | null; // APIから返ってくる可能性を考慮
+  metadata_?: { [key: string]: string } | null;
 } 

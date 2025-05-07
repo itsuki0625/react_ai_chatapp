@@ -1,4 +1,4 @@
-from pydantic import BaseModel, UUID4, Field, validator
+from pydantic import BaseModel, UUID4, Field, validator, field_validator
 from pydantic import computed_field
 from typing import Optional, List, Any, Dict
 from datetime import datetime
@@ -85,14 +85,15 @@ class StripeCouponBase(BaseModel):
     currency: Optional[str] = None # ★ 追加 (amount_off とセットで必要)
     duration: str # 'forever', 'once', 'repeating'
     duration_in_months: Optional[int] = None # duration='repeating' の場合必須
-    redeem_by: Optional[int] = None # Unix timestamp
-    metadata: Optional[Dict[str, Any]] = None
+    redeem_by: Optional[int] = Field(None, alias='redeem_by_timestamp', description="Unix timestamp for when the coupon expires. Maps to model's redeem_by_timestamp.")
+    metadata: Optional[Dict[str, Any]] = Field(None, alias='metadata_', description="Metadata for the coupon. Maps to model's metadata_ attribute.")
     livemode: Optional[bool] = None # Stripe API から取得時に設定
 
-    # --- DB に保存するか検討するフィールド ---
-    # max_redemptions: Optional[int] = None
-    # valid: Optional[bool] = None # Stripe 側で管理
-    # times_redeemed: Optional[int] = None # Stripe 側で管理
+    # --- DB に保存するフィールドを追加 ---
+    max_redemptions: Optional[int] = None
+    valid: Optional[bool] = None # Stripe APIレスポンスの valid をDBに保存
+    times_redeemed: Optional[int] = Field(0, description="Stripe APIレスポンスの times_redeemed をDBに保存 (新規作成時は通常0)")
+    created: Optional[int] = Field(None, alias='stripe_created_timestamp', description="Stripe object creation timestamp (Unix). Maps to model's stripe_created_timestamp.")
 
 class StripeCouponCreate(StripeCouponBase):
     # ★ DB 登録時には stripe_coupon_id は不要だが、
@@ -112,11 +113,36 @@ class StripeCouponUpdate(BaseModel):
 class StripeCouponResponse(StripeCouponBase):
     id: UUID # DB の UUID
     stripe_coupon_id: str # Stripe の Coupon ID
-    created_at: datetime
-    updated_at: datetime
+    
+    # TimestampMixinからのフィールドを明示的に追加する場合
+    db_created_at: datetime = Field(alias="created_at") # DBレコードの作成日時
+    db_updated_at: datetime = Field(alias="updated_at") # DBレコードの更新日時
+
+    # metadata が辞書でない場合（例: MetaDataオブジェクト）に辞書に変換するバリデータ
+    @field_validator('metadata', mode='before')
+    @classmethod
+    def convert_metadata_to_dict(cls, v: Any) -> Optional[Dict[str, Any]]:
+        if v is None:
+            return None
+        if isinstance(v, dict):
+            return v
+        # MetaData() のようなオブジェクトを辞書に変換する試み (もし属性があれば)
+        # 実際の MetaData オブジェクトの構造に合わせて調整が必要な場合がある
+        if hasattr(v, '__dict__'): # 最も単純な辞書変換
+            try:
+                # 辞書に変換可能な属性を持つか？
+                # もしくは、特定のメソッド（例: .to_dict()）を持つか？
+                # ここでは単純に __dict__ を試す
+                return dict(v.__dict__)
+            except Exception:
+                # 変換に失敗した場合は None または空の辞書を返すか、エラーにする
+                return {}
+        # その他の予期しない型の場合は空の辞書かNoneを返す
+        return {}
 
     class Config:
         from_attributes = True # ORM モデルからの変換を有効化
+        populate_by_name = True # alias を有効にするため
 
 # --- Campaign Code Schemas (修正) --- 
 class CampaignCodeBase(BaseModel):
@@ -166,6 +192,12 @@ class VerifyCampaignCodeResponse(BaseModel):
     stripe_coupon_id: Optional[str] = None # ★ Stripe Coupon IDも返すように変更
     # coupon: Optional[StripeCouponResponse] = None # ★ ネストして返す場合
 
+    # --- フロントエンド表示用の割引情報を追加 ---
+    discount_type: Optional[str] = None
+    discount_value: Optional[float] = None # 割引率(%) または 割引額(基本通貨単位)
+    original_amount: Optional[int] = None  # 割引前の金額 (基本通貨単位)
+    discounted_amount: Optional[int] = None # 割引後の金額 (基本通貨単位)
+
 # --- Checkout Session (修正) ---
 class CreateCheckoutRequest(BaseModel):
     price_id: str
@@ -189,25 +221,3 @@ class ManageSubscriptionRequest(BaseModel):
 class WebhookEventValidation(BaseModel):
     signature: str
     payload: str 
-
-# --- Discount Type Schemas (現状維持または削除検討) ---
-class DiscountTypeBase(BaseModel):
-    name: str = Field(..., max_length=100)
-    description: Optional[str] = None
-    is_percentage: bool
-
-class DiscountTypeCreate(DiscountTypeBase):
-    pass
-
-class DiscountTypeUpdate(BaseModel):
-    name: Optional[str] = Field(None, max_length=100)
-    description: Optional[str] = None
-    is_percentage: Optional[bool] = None
-
-class DiscountTypeResponse(DiscountTypeBase):
-    id: UUID
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True 

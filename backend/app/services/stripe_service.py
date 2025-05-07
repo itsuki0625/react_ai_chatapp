@@ -7,7 +7,7 @@ import logging
 from ..models.user import User
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
-from app.models.subscription import CampaignCode, DiscountType
+from app.models.subscription import CampaignCode
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -478,12 +478,20 @@ class StripeService:
             if name is not None: params['name'] = name
             if description is not None: params['description'] = description
             if active is not None: params['active'] = active
-            if metadata is not None: params['metadata'] = metadata
+            # --- Log received metadata ---
+            logger.debug(f"Received metadata for product {product_id}: {metadata}")
+            if metadata is not None: # If metadata is an empty dict {}, it will be sent to Stripe to clear existing metadata.
+                params['metadata'] = metadata
+            # --- End log ---
 
             if not params:
                  logger.warning(f"Stripe Product ({product_id}) の更新パラメータが指定されていません。")
                  # 更新するものがない場合はそのまま商品情報を返す
                  return StripeService.get_product(product_id)
+
+            # --- Log parameters being sent to Stripe ---
+            logger.debug(f"Calling stripe.Product.modify for {product_id} with params: {params}")
+            # --- End log ---
 
             product = stripe.Product.modify(product_id, **params)
             logger.info(f"Stripe Product 更新成功: {product.id}")
@@ -577,7 +585,7 @@ class StripeService:
     @staticmethod
     def create_stripe_coupon(
         campaign_code_db: CampaignCode, # DBに保存するCampaignCodeオブジェクトを受け取る
-        discount_type_db: DiscountType # 関連するDiscountTypeオブジェクトも受け取る
+        discount_type_db: Any # 関連するDiscountTypeオブジェクトも受け取る  <- DiscountTypeをAnyに変更
     ) -> Optional[stripe.Coupon]:
         """
         データベースのキャンペーンコード情報に基づいてStripe Couponを作成する。
@@ -592,21 +600,6 @@ class StripeService:
                 }
             }
 
-            # 割引タイプに応じてパラメータを設定
-            if discount_type_db.name == 'percentage': # 割引タイプ名で判定 (DBに保存されている名前を確認)
-                if not 0 < campaign_code_db.discount_value <= 100:
-                     raise ValueError("Percentage discount must be between 0 and 100.")
-                coupon_params["percent_off"] = campaign_code_db.discount_value
-            elif discount_type_db.name == 'fixed_amount': # 割引タイプ名で判定
-                if campaign_code_db.discount_value <= 0:
-                     raise ValueError("Fixed amount discount must be positive.")
-                # Stripeはセント/最小通貨単位で指定 (JPYの場合はそのまま整数)
-                coupon_params["amount_off"] = int(campaign_code_db.discount_value)
-                coupon_params["currency"] = "jpy" # JPYの場合はセント換算不要
-            else:
-                logger.error(f"未対応の割引タイプです: {discount_type_db.name}")
-                # 例外を発生させる方が、呼び出し元でハンドリングしやすい
-                raise ValueError(f"Unsupported discount type: {discount_type_db.name}")
 
             # 有効期限 (redeem_by) を設定 (StripeはUnixタイムスタンプ)
             if campaign_code_db.valid_until:

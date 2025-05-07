@@ -147,9 +147,9 @@ export const CampaignCodeManagement: React.FC = () => {
     initialData: [],
   });
 
-  const { data: coupons, isLoading: isLoadingCoupons, error: couponsError } = useQuery<StripeCouponResponse[]>({
+  const { data: coupons, isLoading: isLoadingCoupons, error: couponsError } = useQuery<StripeCouponResponse[], Error>({
     queryKey: ['adminStripeCoupons'],
-    queryFn: () => couponAdminService.listAdminStripeCoupons({ limit: 100 }).then(res => res.items || []),
+    queryFn: () => couponAdminService.listAdminDbCoupons(100),
   });
 
   const [newCode, setNewCode] = useState({
@@ -330,11 +330,14 @@ export const CampaignCodeManagement: React.FC = () => {
               name="stripe_coupon_id"
               value={newCode.stripe_coupon_id}
               onChange={handleInputChange}
-              options={coupons?.map(c => ({ value: c.id, label: `${c.name || c.id} (${c.percent_off ? `${c.percent_off}%` : (c.amount_off ? `${c.amount_off}${c.currency?.toUpperCase()}` : 'N/A')})` })) || []}
+              options={coupons?.map(c => ({ 
+                value: c.stripe_coupon_id,
+                label: `${c.name || c.stripe_coupon_id} (ID: ${c.stripe_coupon_id})`
+              })) || []}
               required
             />
             {isLoadingCoupons && <p className="text-sm text-gray-500 mt-1">クーポン読み込み中...</p>}
-            {couponsError && <p className="text-sm text-red-600 mt-1">クーポン読み込みエラー</p>}
+            {couponsError && <p className="text-sm text-red-600 mt-1">クーポン読み込みエラー: {couponsError.message}</p>}
           </FormField>
           <FormField label="説明" error={formErrors.description}>
             <Input name="description" value={newCode.description} onChange={handleInputChange} placeholder="例: 初回ユーザー向け割引" />

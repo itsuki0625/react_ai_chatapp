@@ -63,10 +63,6 @@ from .subscription import (
     CheckoutSessionResponse,
     ManageSubscriptionRequest,
     WebhookEventValidation,
-    DiscountTypeBase,
-    DiscountTypeCreate,
-    DiscountTypeUpdate,
-    DiscountTypeResponse,
 )
 from .learning_path import (
     LearningPathBase, LearningPathCreate, LearningPathUpdate, LearningPathResponse,
@@ -139,7 +135,6 @@ __all__ = [
     "CreateCheckoutRequest",
     "CheckoutSessionResponse",
     "ManageSubscriptionRequest", "WebhookEventValidation",
-    "DiscountTypeBase", "DiscountTypeCreate", "DiscountTypeUpdate", "DiscountTypeResponse",
     # Learning Path
     "LearningPathBase", "LearningPathCreate", "LearningPathUpdate", "LearningPathResponse",
     "LearningPathItemBase", "LearningPathItemCreate", "LearningPathItemUpdate", "LearningPathItemResponse",

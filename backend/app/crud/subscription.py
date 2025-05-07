@@ -9,20 +9,19 @@ from sqlalchemy.exc import IntegrityError
 import uuid
 import logging
 
-from app.models.subscription import Subscription, PaymentHistory, CampaignCode, DiscountType, StripeCoupon
+from app.models.subscription import Subscription, PaymentHistory, CampaignCode, StripeCoupon
 from app.models.user import User
 from app.schemas.subscription import (
     SubscriptionCreate,
     PaymentHistoryCreate,
     CampaignCodeCreate,
     CampaignCodeUpdate,
-    DiscountTypeCreate,
-    DiscountTypeUpdate,
     StripeCouponCreate,
     StripeCouponUpdate,
     StripeCouponResponse
 )
 from app.services.stripe_service import StripeService
+import stripe
 
 logger = logging.getLogger(__name__)
 
@@ -121,22 +120,68 @@ async def update_payment_history(db: AsyncSession, payment_id: UUID, payment_dat
 
 async def create_db_coupon(db: AsyncSession, coupon_in: StripeCouponCreate) -> StripeCoupon:
     """DBにStripeCouponレコードを作成"""
-    # Stripe ID の重複チェック
+    if not coupon_in.stripe_coupon_id:
+        logger.error("create_db_coupon called without stripe_coupon_id in coupon_in")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="stripe_coupon_id is required to create a DB coupon record."
+        )
+
     existing_coupon = await get_db_coupon_by_stripe_id(db, coupon_in.stripe_coupon_id)
     if existing_coupon:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Stripe Coupon ID '{coupon_in.stripe_coupon_id}' already exists in DB."
         )
-    db_coupon = StripeCoupon(
-        **coupon_in.model_dump(exclude={'metadata'}), # スキーマから基本情報をコピー
-        metadata_=coupon_in.metadata # エイリアスに合わせて設定
-    )
+
+    db_coupon_fields = coupon_in.model_dump(exclude_unset=True)
+
+    if 'metadata' in db_coupon_fields:
+        db_coupon_fields['metadata_'] = db_coupon_fields.pop('metadata')
+    else:
+        db_coupon_fields['metadata_'] = None
+
+    # スキーマの `redeem_by` (int) をモデルの `redeem_by_timestamp` (int) にマッピング
+    if 'redeem_by' in db_coupon_fields and db_coupon_fields['redeem_by'] is not None:
+        db_coupon_fields['redeem_by_timestamp'] = db_coupon_fields.pop('redeem_by')
+    elif 'redeem_by' in db_coupon_fields: # redeem_by が None の場合
+        db_coupon_fields.pop('redeem_by') # redeem_by_timestamp には設定しない (モデル側で nullable)
+
+    # スキーマの `created` (Stripeのintタイムスタンプ) をモデルの `stripe_created_timestamp` (int) にマッピング
+    if 'created' in db_coupon_fields and db_coupon_fields['created'] is not None:
+        db_coupon_fields['stripe_created_timestamp'] = db_coupon_fields.pop('created')
+    elif 'created' in db_coupon_fields: # created が None の場合
+        db_coupon_fields.pop('created')
+
+    # `id` は coupon_in に含まれないので削除 (DBで自動生成)
+    # また、StripeCouponCreate には db_created_at, db_updated_at はないので、それらも除外
+    db_coupon_fields.pop('id', None)
+    db_coupon_fields.pop('db_created_at', None) 
+    db_coupon_fields.pop('db_updated_at', None)
+
+    try:
+        logger.debug(f"Creating StripeCoupon DB model instance with fields: {db_coupon_fields}")
+        db_coupon = StripeCoupon(**db_coupon_fields)
+    except TypeError as e:
+        logger.error(f"Error creating StripeCoupon model instance: {e}. Fields: {db_coupon_fields}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"DB Couponモデルの作成に失敗しました。フィールドの不整合の可能性があります: {str(e)}"
+        )
+
     db.add(db_coupon)
     try:
         await db.commit()
         await db.refresh(db_coupon)
+        logger.info(f"DB Coupon record created successfully. DB ID: {db_coupon.id}, Stripe ID: {db_coupon.stripe_coupon_id}")
         return db_coupon
+    except IntegrityError as e: 
+        await db.rollback()
+        logger.error(f"DB Coupon 作成エラー (IntegrityError) for Stripe ID {coupon_in.stripe_coupon_id}: {e}", exc_info=True)
+        original_error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+        if "violates unique constraint" in original_error_msg or "already exists" in original_error_msg:
+             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"DB Coupon record conflict: {original_error_msg}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"DB Coupon作成時にデータ整合性エラーが発生しました: {original_error_msg}")
     except Exception as e:
         await db.rollback()
         logger.error(f"DB Coupon 作成エラー (Stripe ID: {coupon_in.stripe_coupon_id}): {e}", exc_info=True)
@@ -212,32 +257,28 @@ async def create_campaign_code(db: AsyncSession, campaign_code: CampaignCodeCrea
         logger.warning(f"Stripe Coupon ID {campaign_code.stripe_coupon_id} provided but not found in DB. Attempting to import from Stripe.") # ログ追加
         try:
             # Stripe API からクーポン取得
-            # ★ retrieve_coupon が存在しない場合は、list_coupons などで代替するか、Stripe SDK を直接使う
-            # stripe_obj = StripeService.retrieve_coupon(campaign_code.stripe_coupon_id)
-            # ↓ Stripe SDK を直接使う例 (StripeService に retrieve がない場合)
-            import stripe
-            stripe_obj = stripe.Coupon.retrieve(campaign_code.stripe_coupon_id) # Stripe SDK を直接利用
+            # ★ StripeService を経由するように修正
+            stripe_obj = StripeService.retrieve_coupon(campaign_code.stripe_coupon_id) # await を削除
 
             # DB スキーマに沿ってインサート
             # ★ StripeCouponCreate のフィールドに合わせて調整が必要
             coupon_in = StripeCouponCreate(
                 stripe_coupon_id=stripe_obj.id, # .id でアクセス
-                amount_off=stripe_obj.amount_off, # .amount_off でアクセス
-                percent_off=stripe_obj.percent_off, # .percent_off でアクセス
-                name=stripe_obj.name, # .name でアクセス
-                duration=stripe_obj.duration, # .duration でアクセス
-                duration_in_months=stripe_obj.duration_in_months, # .duration_in_months でアクセス
-                # ★ redeem_by は Unix タイムスタンプ (int) なのでそのまま渡す
-                redeem_by=stripe_obj.redeem_by,
-                metadata=stripe_obj.metadata, # .metadata でアクセス
-                livemode=stripe_obj.livemode, # .livemode でアクセス
-                # created と valid は StripeCouponCreate に含まれていない場合がある
-                # 必要であればスキーマに追加するか、ここで設定しない
+                amount_off=stripe_obj.get('amount_off'), # .get()で安全にアクセス
+                percent_off=stripe_obj.get('percent_off'), # .get()で安全にアクセス
+                name=stripe_obj.get('name'), # .get()で安全にアクセス
+                duration=stripe_obj.get('duration'), # .get()で安全にアクセス
+                duration_in_months=stripe_obj.get('duration_in_months'), # .get()で安全にアクセス
+                redeem_by=stripe_obj.get('redeem_by'), # Unix タイムスタンプ (int) なのでそのまま渡す
+                metadata=stripe_obj.get('metadata'), # .get()で安全にアクセス
+                livemode=stripe_obj.get('livemode'), # .get()で安全にアクセス
+                valid=stripe_obj.get('valid'),
+                created=stripe_obj.get('created')
             )
             logger.info(f"Importing Stripe Coupon {stripe_obj.id} into DB.")
             db_coupon = await create_db_coupon(db, coupon_in)
             logger.info(f"Successfully imported Stripe Coupon {stripe_obj.id} as DB Coupon {db_coupon.id}.")
-        except stripe.error.InvalidRequestError as e:
+        except stripe.error.InvalidRequestError as e: 
              if "No such coupon" in str(e):
                  logger.error(f"Stripe Coupon {campaign_code.stripe_coupon_id} not found on Stripe either.")
                  raise HTTPException(
@@ -247,6 +288,9 @@ async def create_campaign_code(db: AsyncSession, campaign_code: CampaignCodeCrea
              else:
                  logger.error(f"Stripe API error while retrieving coupon {campaign_code.stripe_coupon_id}: {e}")
                  raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve coupon from Stripe.")
+        except HTTPException as e: 
+            logger.error(f"Error retrieving/importing coupon {campaign_code.stripe_coupon_id} via StripeService: {e.detail}")
+            raise 
         except Exception as e:
             logger.exception(f"Unexpected error during Stripe Coupon import for {campaign_code.stripe_coupon_id}: {e}")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to import coupon from Stripe.")
@@ -512,7 +556,7 @@ async def verify_campaign_code(db: AsyncSession, code: str, price_id: str) -> Di
             "discount_type": None, "discount_value": None,
             "original_amount": None, "discounted_amount": None
         }
-    if not db_coupon.is_active:
+    if not db_coupon.valid: # ★ is_active から valid に変更
         return {
             "valid": False, "message": "関連するクーポンが無効です。",
             "campaign_code_id": campaign_code.id, "coupon_id": campaign_code.coupon_id,
@@ -521,6 +565,8 @@ async def verify_campaign_code(db: AsyncSession, code: str, price_id: str) -> Di
             "original_amount": None, "discounted_amount": None
         }
 
+    logger.info(f"Verifying campaign code: Step 3 completed. DB Coupon valid: {db_coupon.valid}")
+
     # --- 4. 割引情報の計算 --- 
     discount_type: Optional[str] = None
     discount_value: Optional[float] = None
@@ -528,10 +574,13 @@ async def verify_campaign_code(db: AsyncSession, code: str, price_id: str) -> Di
     discounted_amount: Optional[int] = None
 
     try:
-        # Stripeから価格情報を取得 (割引計算のために必要)
+        logger.info(f"Verifying campaign code: Attempting to fetch price data for price_id: {price_id}")
         price_data = StripeService.get_price(price_id)
         original_amount = price_data.get("unit_amount")
+        logger.info(f"Verifying campaign code: Original amount from Stripe: {original_amount}")
+
         if original_amount is None:
+            logger.error(f"Failed to get original_amount for price_id: {price_id}")
             raise ValueError("価格情報から元の金額を取得できませんでした")
 
         # DB Coupon 情報から割引を計算
@@ -540,16 +589,18 @@ async def verify_campaign_code(db: AsyncSession, code: str, price_id: str) -> Di
             discount_value = db_coupon.percent_off
             discount = int(original_amount * (discount_value / 100))
             discounted_amount = max(0, original_amount - discount)
+            logger.info(f"Verifying campaign code: Calculated percentage discount. Type: {discount_type}, Value: {discount_value}, Discounted Amount: {discounted_amount}")
         elif db_coupon.amount_off:
             discount_type = "fixed"
-            # amount_off はセント/基本通貨単位なのでそのまま使う (JPYの場合)
             discount_value = db_coupon.amount_off
             discounted_amount = max(0, original_amount - discount_value)
+            logger.info(f"Verifying campaign code: Calculated fixed amount discount. Type: {discount_type}, Value: {discount_value}, Discounted Amount: {discounted_amount}")
         else:
-            # 割引情報がない場合 (エラーとするか、割引なしとして扱うか)
-            logger.warning(f"Coupon {db_coupon.id} に割引情報 (percent_off/amount_off) がありません。")
-            # ここでは割引なしとして扱う
+            logger.warning(f"Coupon {db_coupon.id} has no discount information (percent_off/amount_off). Using original amount.")
             discounted_amount = original_amount
+            # 割引情報がない場合でも、discount_type や discount_value を何らかの形で設定するか、
+            # フロントエンド側でこれらのキーが存在しない場合の表示を考慮する必要があるかもしれません。
+            # 例えば、discount_type = "none", discount_value = 0 とするなど。
 
     except Exception as e:
         logger.error(f"割引計算中にエラーが発生しました (Price ID: {price_id}, Coupon ID: {db_coupon.id}): {e}", exc_info=True)
@@ -562,6 +613,8 @@ async def verify_campaign_code(db: AsyncSession, code: str, price_id: str) -> Di
             "original_amount": original_amount, # 元の金額は返す
             "discounted_amount": None
         }
+    
+    logger.info(f"Verifying campaign code: Final response being returned: valid={True}, message='有効なキャンペーンコードです', cc_id={campaign_code.id}, c_id={db_coupon.id}, sc_id={db_coupon.stripe_coupon_id}, dtype={discount_type}, dvalue={discount_value}, orig_amt={original_amount}, disc_amt={discounted_amount}")
 
     # --- 5. 成功レスポンス --- 
     return {
@@ -576,58 +629,6 @@ async def verify_campaign_code(db: AsyncSession, code: str, price_id: str) -> Di
         "original_amount": original_amount,
         "discounted_amount": discounted_amount
     }
-
-# --- DiscountType CRUD 操作 (現状維持または削除検討) ---
-async def get_discount_type(db: AsyncSession, discount_type_id: UUID) -> Optional[DiscountType]:
-    result = await db.execute(
-        select(DiscountType).filter(DiscountType.id == discount_type_id)
-    )
-    return result.scalars().first()
-
-async def get_discount_type_by_name(db: AsyncSession, name: str) -> Optional[DiscountType]:
-    result = await db.execute(
-        select(DiscountType).filter(DiscountType.name == name)
-    )
-    return result.scalars().first()
-
-async def get_all_discount_types(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[DiscountType]:
-    result = await db.execute(
-        select(DiscountType).offset(skip).limit(limit)
-    )
-    return result.scalars().all()
-
-async def create_discount_type(db: AsyncSession, discount_type: DiscountTypeCreate) -> DiscountType:
-    existing = await get_discount_type_by_name(db, discount_type.name)
-    if existing:
-        raise HTTPException(status_code=400, detail=f"Discount type with name '{discount_type.name}' already exists.")
-    db_discount_type = DiscountType(**discount_type.model_dump())
-    db.add(db_discount_type)
-    await db.commit()
-    await db.refresh(db_discount_type)
-    return db_discount_type
-
-async def update_discount_type(db: AsyncSession, discount_type_id: UUID, discount_type_data: DiscountTypeUpdate) -> Optional[DiscountType]:
-    discount_type = await get_discount_type(db, discount_type_id)
-    if not discount_type:
-        return None
-    update_data = discount_type_data.model_dump(exclude_unset=True)
-    if "name" in update_data:
-        existing = await get_discount_type_by_name(db, update_data["name"])
-        if existing and existing.id != discount_type_id:
-            raise HTTPException(status_code=400, detail=f"Discount type with name '{update_data['name']}' already exists.")
-    for key, value in update_data.items():
-        setattr(discount_type, key, value)
-    await db.commit()
-    await db.refresh(discount_type)
-    return discount_type
-
-async def delete_discount_type(db: AsyncSession, discount_type_id: UUID) -> bool:
-    discount_type = await get_discount_type(db, discount_type_id)
-    if not discount_type:
-        return False
-    db.delete(discount_type)
-    await db.commit()
-    return True
 
 # --- Stripe顧客ID 操作 ---
 async def get_stripe_customer_id(db: AsyncSession, user_id: UUID) -> Optional[str]:

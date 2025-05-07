@@ -24,13 +24,13 @@ const handleApiError = async (response: Response, defaultMessage: string): Promi
 
 // --- DB 操作 ---
 // DB クーポンリスト取得
-export const listAdminDbCoupons = async (limit: number = 100): Promise<{ items: StripeCouponResponse[] }> => {
+export const listAdminDbCoupons = async (limit: number = 100): Promise<StripeCouponResponse[]> => {
   const url = `${API_BASE_URL}/api/v1/admin/stripe-coupons?limit=${limit}`;
   const response = await fetchWithAuth(url);
   if (!response.ok) {
     await handleApiError(response, 'クーポンリストの取得に失敗しました');
   }
-  return (await response.json()) as { items: StripeCouponResponse[] };
+  return (await response.json()) as StripeCouponResponse[];
 };
 
 // クーポン作成 (Stripe + DB)

@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ProductList } from '@/components/admin/subscription/ProductList';
 import { PriceList } from '@/components/admin/subscription/PriceList';
 import { CampaignCodeManagement } from '@/components/admin/subscription/CampaignCodeManagement';
-import { DiscountTypeList } from '@/components/admin/subscription/DiscountTypeList';
+// import { DiscountTypeList } from '@/components/admin/subscription/DiscountTypeList';
 // --- Coupon Imports Start ---
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { couponAdminService } from '@/services/couponService';
@@ -41,7 +41,7 @@ const formatDiscount = (coupon: StripeCouponResponse): string => {
             currency: 'JPY',
             minimumFractionDigits: 0
         });
-        return formatter.format(coupon.amount_off / 100);
+        return formatter.format(coupon.amount_off);
     }
     return '0';
 };
@@ -68,7 +68,7 @@ const formatCouponValue = (coupon: StripeCouponResponse): string => {
     if (coupon.amount_off) {
         // DB側に通貨情報がないため、固定で JPY を使用
         const formatter = new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', minimumFractionDigits: 0 });
-        return formatter.format(coupon.amount_off / 100);
+        return formatter.format(coupon.amount_off);
     }
     return 'N/A'; // Should not happen if data is valid
 };
@@ -133,7 +133,7 @@ const CouponManagement = () => {
     isLoading: isLoadingCoupons,
     error: couponsError,
     refetch: refetchCoupons,
-  } = useQuery<{ items: StripeCouponResponse[] }>({
+  } = useQuery<StripeCouponResponse[], Error>({
     queryKey: ['adminDbCoupons'],
     queryFn: () => couponAdminService.listAdminDbCoupons(100),
   });
@@ -236,7 +236,7 @@ const CouponManagement = () => {
           {couponsError ? (
               <div className="text-red-500">クーポンデータの読み込みエラー: {couponsError.message}</div>
           ) : (
-              <DataTable columns={columns} data={couponsResponse?.items ?? []} isLoading={isLoadingCoupons} />
+              <DataTable columns={columns} data={couponsResponse ?? []} isLoading={isLoadingCoupons} />
           )}
 
           {/* --- Delete Confirmation Dialog --- */}
@@ -283,7 +283,6 @@ export const SubscriptionManagement: React.FC = () => {
             <TabsTrigger value="products">商品設定</TabsTrigger>
             <TabsTrigger value="prices">価格設定</TabsTrigger>
             <TabsTrigger value="campaigns">キャンペーンコード</TabsTrigger>
-            <TabsTrigger value="discount_types">割引タイプ</TabsTrigger>
             <TabsTrigger value="coupons">クーポン</TabsTrigger>
           </TabsList>
           <TabsContent value="products">
@@ -294,9 +293,6 @@ export const SubscriptionManagement: React.FC = () => {
           </TabsContent>
           <TabsContent value="campaigns">
             <CampaignCodeManagement />
-          </TabsContent>
-          <TabsContent value="discount_types">
-            <DiscountTypeList />
           </TabsContent>
           <TabsContent value="coupons">
             <CouponManagement />

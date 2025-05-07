@@ -90,16 +90,27 @@ class StripeCoupon(Base, TimestampMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     stripe_coupon_id = Column(String, nullable=False, unique=True, index=True)
     name = Column(String)
-    duration = Column(String, nullable=False)
+    duration = Column(String, nullable=False) # 'forever', 'once', 'repeating'
     duration_in_months = Column(Integer)
     amount_off = Column(Integer)
     percent_off = Column(Float)
     currency = Column(String)
-    redeem_by = Column(DateTime)
+    
+    redeem_by_timestamp = Column('redeem_by', Integer, nullable=True)
+
     max_redemptions = Column(Integer)
     times_redeemed = Column(Integer, default=0)
-    is_active = Column(Boolean, default=True)
-    metadata_ = Column('metadata', JSON)
+    
+    valid = Column(Boolean, nullable=True) # スキーマの `valid` に合わせる
+                                        
+    livemode = Column(Boolean, nullable=True) # スキーマに合わせて追加
+
+    # Stripeオブジェクトの作成日時 (Unix timestamp)
+    stripe_created_timestamp = Column('stripe_created', Integer, nullable=True) # 追加
+
+    metadata_ = Column('metadata', JSON) # 'metadata' というカラム名でJSON型
+
+    # TimestampMixin が created_at, updated_at (DBレコードのタイムスタンプ) を提供
 
     campaign_codes = relationship("CampaignCode", back_populates="coupon")
 
@@ -133,14 +144,6 @@ class CampaignCode(Base, TimestampMixin):
         if self.valid_until and self.valid_until < now: return False
         if self.max_uses is not None and self.used_count >= self.max_uses: return False
         return True
-
-class DiscountType(Base, TimestampMixin):
-    __tablename__ = 'discount_types'
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String, nullable=False, unique=True)  # 'percentage', 'fixed' etc.
-    description = Column(String)
-
 
 class CampaignCodeRedemption(Base, TimestampMixin):
     __tablename__ = 'campaign_code_redemptions'

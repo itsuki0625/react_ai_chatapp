@@ -77,9 +77,9 @@ const getColumns = (onEdit: (coupon: StripeCouponResponse) => void, onDelete: (c
         cell: ({ row }) => row.getValue("valid") ? <span className="text-green-600">有効</span> : <span className="text-red-600">無効</span>,
     },
     {
-        accessorKey: "created",
-        header: "作成日時",
-        cell: ({ row }) => formatTimestamp(row.getValue("created")),
+        accessorKey: "stripe_created_timestamp",
+        header: "作成日時 (Stripe)",
+        cell: ({ row }) => formatTimestamp(row.getValue("stripe_created_timestamp")),
     },
     {
         accessorKey: "times_redeemed",
@@ -147,14 +147,19 @@ const AdminCouponsPage = () => {
     const [editingCoupon, setEditingCoupon] = useState<StripeCouponResponse | null>(null);
 
     // Fetch coupons query
-    const { data: couponsResponse, isLoading, error } = useQuery({ // Renamed from couponsData to couponsResponse
+    const { data: couponsResponse, isLoading, error } = useQuery({
         queryKey: ['adminStripeCoupons'],
-        queryFn: () => couponAdminService.listAdminStripeCoupons({ limit: 100 }), // Fetch more initially or implement pagination
+        queryFn: () => couponAdminService.listAdminDbCoupons(100),
     });
 
+    // ★ ここにログを追加
+    console.log("AdminCouponsPage - isLoading:", isLoading);
+    console.log("AdminCouponsPage - error:", error);
+    console.log("AdminCouponsPage - couponsResponse:", couponsResponse);
+
     // Delete coupon mutation
-    const deleteMutation = useMutation({ // Correct hook name
-        mutationFn: couponAdminService.deleteAdminStripeCoupon,
+    const deleteMutation = useMutation({
+        mutationFn: couponAdminService.deleteDbCoupon,
         onSuccess: () => {
             toast({ title: "成功", description: "Couponが削除されました。" });
             queryClient.invalidateQueries({ queryKey: ['adminStripeCoupons'] });
@@ -191,9 +196,16 @@ const AdminCouponsPage = () => {
         return (
             <AdminLayout>
                 <div className="text-red-500">エラー: {error.message}</div>
+                 {/* ★ エラー時にもレスポンス内容をログに出力してみる */}
+                <p>Error details:</p>
+                <pre>{JSON.stringify(error, null, 2)}</pre>
             </AdminLayout>
         );
     }
+
+    // ★ DataTableに渡す直前のデータもログに出力
+    const tableData = couponsResponse ?? [];
+    console.log("AdminCouponsPage - tableData for DataTable:", tableData);
 
     return (
         <AdminLayout>
@@ -211,7 +223,7 @@ const AdminCouponsPage = () => {
                 initialData={editingCoupon}
              />
 
-            <DataTable columns={columns} data={couponsResponse?.items ?? []} isLoading={isLoading} /> 
+            <DataTable columns={columns} data={tableData} isLoading={isLoading} /> 
 
         </AdminLayout>
     );

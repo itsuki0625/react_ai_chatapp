@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, UUID4
+from pydantic import BaseModel, Field, UUID4, model_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -8,7 +8,7 @@ class StripeProductBase(BaseModel):
     name: str = Field(..., description="商品名")
     description: Optional[str] = Field(None, description="商品の説明")
     active: bool = Field(True, description="有効フラグ")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="メタデータ")
+    metadata: Optional[Dict[str, str]] = Field(None, description="メタデータ (キーも値も文字列)")
 
 class StripeProductCreate(StripeProductBase):
     pass
@@ -17,26 +17,26 @@ class StripeProductUpdate(BaseModel):
     name: Optional[str] = Field(None, description="商品名")
     description: Optional[str] = Field(None, description="商品の説明")
     active: Optional[bool] = Field(None, description="有効フラグ")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="メタデータ")
+    metadata: Optional[Dict[str, str]] = Field(None, description="メタデータ (キーも値も文字列)")
 
 # Stripe APIからのレスポンス用
 class StripeProductResponse(StripeProductBase):
     id: str = Field(..., description="Stripe Product ID")
-    # Stripe APIレスポンスはUnixタイムスタンプなので、datetimeに変換するか、
-    # Pydantic側でintとして受け取るか、バリデーションで変換処理を入れる
     created: int # Unix timestamp
     updated: int # Unix timestamp
-    # object: str = 'product'
-    # livemode: bool
-    # package_dimensions: Optional[Dict[str, Any]] = None
-    # shippable: Optional[bool] = None
-    # statement_descriptor: Optional[str] = None
-    # tax_code: Optional[str] = None
-    # unit_label: Optional[str] = None
-    # url: Optional[str] = None
+    assigned_role_name: Optional[str] = Field(None, description="購入後に割り当てるロール名")
+
+    @model_validator(mode='before')
+    @classmethod
+    def extract_assigned_role(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            metadata = data.get('metadata')
+            if isinstance(metadata, dict):
+                data['assigned_role_name'] = metadata.get('assigned_role')
+        return data
 
     class Config:
-        from_attributes = True # Stripeオブジェクトからの変換を試みる
+        from_attributes = True
 
 # --- Price Schemas ---
 
@@ -52,7 +52,7 @@ class StripePriceBase(BaseModel):
     currency: str = Field(..., description="通貨コード (例: jpy)")
     recurring: Optional[StripeRecurring] = Field(None, description="定期課金設定。Noneの場合は都度払い") # 都度払い対応
     active: bool = Field(True, description="有効フラグ")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="メタデータ")
+    metadata: Optional[Dict[str, str]] = Field(None, description="メタデータ")
     lookup_key: Optional[str] = Field(None, description="ルックアップキー")
     # nickname: Optional[str] = None
     # tiers_mode: Optional[str] = None
@@ -68,7 +68,7 @@ class StripePriceCreate(StripePriceBase):
 
 class StripePriceUpdate(BaseModel):
     active: Optional[bool] = Field(None, description="有効フラグ")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="メタデータ")
+    metadata: Optional[Dict[str, str]] = Field(None, description="メタデータ")
     lookup_key: Optional[str] = Field(None, description="ルックアップキー")
     # nickname: Optional[str] = None
     # tax_behavior: Optional[str] = None

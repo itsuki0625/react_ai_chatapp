@@ -5,26 +5,34 @@ export interface StripeRecurring {
   interval_count: number;
 }
 
+export interface StripeProductMetadata {
+  assigned_role?: string;
+  features?: string;
+  // 他のメタデータキーもここに追加可能
+}
+
 export interface StripeProductBase {
   name: string;
   description?: string | null;
   active: boolean;
-  metadata?: Record<string, string | number | boolean | null> | null;
+  metadata?: StripeProductMetadata;
+  images?: string[];
 }
 
 export type StripeProductCreate = StripeProductBase;
 
 export interface StripeProductUpdate {
-  name?: string | null;
+  name?: string;
   description?: string | null;
-  active?: boolean | null;
-  metadata?: Record<string, string | number | boolean | null> | null;
+  active?: boolean;
+  metadata?: StripeProductMetadata;
 }
 
 export interface StripeProductResponse extends StripeProductBase {
   id: string;
   created: number; // Unix timestamp
   updated: number; // Unix timestamp
+  assigned_role_name?: string;
 }
 
 export interface StripePriceBase {

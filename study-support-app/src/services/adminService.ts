@@ -1,7 +1,7 @@
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import { CampaignCode, CampaignCodeCreatePayload } from '@/types/subscription';
 import { getApiBaseUrl } from './api';
-import { AdminUser } from '@/types/user';
+import { AdminUser, Role } from '@/types/user';
 
 // APIのベースURLを取得
 const API_URL = getApiBaseUrl();
@@ -223,6 +223,26 @@ export const deleteUser = async (userId: string): Promise<void> => {
   }
 };
 
+// ★ ロール一覧取得関数を追加
+/**
+ * システムに登録されている全てのロールの一覧を取得します。
+ */
+export const getRoles = async (): Promise<Role[]> => {
+  const url = `${API_URL}${ADMIN_API_PREFIX}/roles`;
+  try {
+    const response = await fetchWithAuth(url);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+      console.error('Failed to fetch roles:', errorData.detail);
+      throw new Error(errorData.detail || 'Failed to fetch roles');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('getRoles error:', error);
+    throw error;
+  }
+};
+
 // StripeAPIエラーレスポンスの型
 interface StripeErrorResponse {
   detail?: string;
@@ -433,4 +453,5 @@ export const adminService = {
   getUserDetails: getUserDetails,
   updateUser: updateUser,
   deleteUser: deleteUser,
+  getRoles: getRoles,
 };

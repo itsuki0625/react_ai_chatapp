@@ -26,7 +26,7 @@ from .system import (
 )
 from .subscription import (
     Subscription, SubscriptionPlan, PaymentHistory, PaymentMethod, 
-    CampaignCode, DiscountType, CampaignCodeRedemption, Invoice, InvoiceItem
+    CampaignCode, CampaignCodeRedemption, Invoice, InvoiceItem
 )
 from .enums import (
     SessionType, SessionStatus, SenderType, MessageType, DocumentStatus,
@@ -136,7 +136,6 @@ __all__ = [
     "PaymentHistory",
     "PaymentMethod",
     "CampaignCode",
-    "DiscountType",
     "CampaignCodeRedemption",
     "Invoice",
     "InvoiceItem",

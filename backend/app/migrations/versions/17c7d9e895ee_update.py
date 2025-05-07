@@ -40,7 +40,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_stripe_coupons_stripe_coupon_id'), 'stripe_coupons', ['stripe_coupon_id'], unique=True)
     op.add_column('campaign_codes', sa.Column('stripe_promotion_code_id', sa.String(), nullable=True))
-    op.add_column('campaign_codes', sa.Column('coupon_id', sa.UUID(), nullable=False))
+    op.add_column('campaign_codes', sa.Column('coupon_id', sa.UUID(), nullable=True))
     op.drop_constraint('campaign_codes_code_key', 'campaign_codes', type_='unique')
     op.create_index(op.f('ix_campaign_codes_code'), 'campaign_codes', ['code'], unique=True)
     op.create_index(op.f('ix_campaign_codes_coupon_id'), 'campaign_codes', ['coupon_id'], unique=False)

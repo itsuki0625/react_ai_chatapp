@@ -69,7 +69,7 @@ export function PlanSelection() {
     // 現在のURLを取得して success/cancel URL を生成
     const currentUrl = window.location.href;
     // Payment success/cancel pages might need to be created
-    const successUrl = `${window.location.origin}/payment/success?session_id={CHECKOUT_SESSION_ID}`; 
+    const successUrl = `${window.location.origin}/subscription/success?session_id={CHECKOUT_SESSION_ID}`; 
     const cancelUrl = currentUrl; 
 
     checkoutMutation.mutate({

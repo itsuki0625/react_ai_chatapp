@@ -117,7 +117,7 @@ export const CouponFormModal: React.FC<CouponFormModalProps> = ({ isOpen, onClos
       duration: initialData?.duration ?? 'once',
       duration_in_months: initialData?.duration_in_months === null ? undefined : initialData?.duration_in_months,
       max_redemptions: initialData?.max_redemptions === null ? undefined : initialData?.max_redemptions,
-      redeem_by: initialData?.redeem_by ? initialData.redeem_by : undefined,
+      redeem_by: initialData?.redeem_by_timestamp ? initialData.redeem_by_timestamp : undefined,
       metadata: initialData?.metadata_ ? JSON.stringify(initialData.metadata_, null, 2) : '{}',
       discountType: initialData?.percent_off ? 'percent' : (initialData?.amount_off ? 'amount' : undefined),
       discountValue: initialData?.percent_off?.toString() ?? initialData?.amount_off?.toString() ?? '',
@@ -126,7 +126,7 @@ export const CouponFormModal: React.FC<CouponFormModalProps> = ({ isOpen, onClos
   });
 
    const [redeemByDate, setRedeemByDate] = useState<Date | undefined>(
-        initialData?.redeem_by ? new Date(initialData.redeem_by * 1000) : undefined
+        initialData?.redeem_by_timestamp ? new Date(initialData.redeem_by_timestamp * 1000) : undefined
     );
 
   // Reset form when initialData changes (e.g., opening edit modal)
@@ -134,14 +134,14 @@ export const CouponFormModal: React.FC<CouponFormModalProps> = ({ isOpen, onClos
     if (initialData) {
       const discountType = initialData.percent_off ? 'percent' : (initialData.amount_off ? 'amount' : undefined);
       const discountValue = initialData.percent_off?.toString() ?? initialData.amount_off?.toString() ?? '';
-       const redeemDate = initialData.redeem_by ? new Date(initialData.redeem_by * 1000) : undefined;
+       const redeemDate = initialData.redeem_by_timestamp ? new Date(initialData.redeem_by_timestamp * 1000) : undefined;
 
       form.reset({
         name: initialData.name ?? '',
         duration: initialData.duration ?? 'once',
         duration_in_months: initialData.duration_in_months === null || initialData.duration_in_months === undefined ? undefined : initialData.duration_in_months,
         max_redemptions: initialData.max_redemptions === null || initialData.max_redemptions === undefined ? undefined : initialData.max_redemptions,
-        redeem_by: initialData.redeem_by === null || initialData.redeem_by === undefined ? undefined : initialData.redeem_by,
+        redeem_by: initialData.redeem_by_timestamp === null || initialData.redeem_by_timestamp === undefined ? undefined : initialData.redeem_by_timestamp,
         metadata: initialData.metadata_ ? JSON.stringify(initialData.metadata_, null, 2) : '{}',
         discountType: discountType,
         discountValue: discountValue,
@@ -383,7 +383,7 @@ export const CouponFormModal: React.FC<CouponFormModalProps> = ({ isOpen, onClos
                             <FormItem className="flex-1">
                             <FormLabel>割引額 *</FormLabel>
                             <FormControl>
-                                <Input type="number" placeholder="例: 500 (セント単位)" {...field} step="1" min="1" />
+                                <Input type="number" placeholder="例: 500 (金額)" {...field} step="1" min="1" />
                             </FormControl>
                             <FormMessage />
                             </FormItem>

@@ -17,6 +17,9 @@ import { Badge } from "@/components/ui/badge";
 // Popover は不要になったので削除
 // import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"; 
 import { StripeProductWithPricesResponse } from "@/types/stripe";
+import { useQuery } from '@tanstack/react-query'; // 追加
+import { getRoles } from '@/services/adminService'; // 追加
+import { Role } from '@/types/user'; // 追加
 
 // オプション型から onEditPrice を削除
 interface ProductColumnsOptions {
@@ -148,6 +151,28 @@ export const columns = ({ onEdit, onArchive }: ProductColumnsOptions): ColumnDef
     cell: ({ row }: { row: Row<StripeProductWithPricesResponse> }) => {
       const isActive = row.getValue("active") as boolean;
       return <Badge variant={isActive ? "outline" : "secondary"}>{isActive ? "有効" : "無効"}</Badge>;
+    },
+  },
+  {
+    accessorKey: "metadata.assigned_role",
+    header: "割り当てロール",
+    cell: ({ row }: { row: Row<StripeProductWithPricesResponse> }) => {
+      const assignedRoleId = row.original.metadata?.assigned_role;
+
+      const { data: roles, isLoading, error } = useQuery<Role[], Error>({
+        queryKey: ['roles'],
+        queryFn: getRoles,
+        staleTime: 1000 * 60 * 5,
+      });
+
+      if (isLoading) return <span className="text-xs text-muted-foreground">読込中...</span>;
+      if (error) return <span className="text-xs text-red-500">エラー</span>;
+      
+      if (assignedRoleId && roles) {
+        const role = roles.find(r => r.id === assignedRoleId);
+        return role ? <Badge variant="outline">{role.name}</Badge> : <span className="text-xs text-muted-foreground">不明なロールID</span>;
+      }
+      return <span className="text-xs text-muted-foreground">割り当てなし</span>;
     },
   },
   // 価格列 (prices) を削除
