@@ -219,7 +219,7 @@ export const PriceList: React.FC = () => {
     }
 
     try {
-      await adminService.deletePrice(priceId);
+      await adminService.archivePrice(priceId);
       // 成功したら価格リストを更新
       fetchPrices();
       alert('価格設定が非アクティブ化されました');
@@ -252,74 +252,71 @@ export const PriceList: React.FC = () => {
   // 価格を作成/更新する
   const handleSubmitPrice = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // フォームのバリデーション
-    const errors: { [key: string]: string } = {};
-    
-    if (!newPrice.product) {
-      errors.product = '商品を選択してください';
-    }
-    if (!newPrice.unit_amount || Number(newPrice.unit_amount) <= 0) {
-      errors.unit_amount = '0より大きい金額を入力してください';
+    setFormErrors({}); // エラーをリセット
+
+    // バリデーション
+    let errors: { [key: string]: string } = {};
+    if (!newPrice.product) errors.product = '商品を選択してください。';
+    if (!newPrice.unit_amount || parseFloat(newPrice.unit_amount) <= 0) {
+      errors.unit_amount = '有効な価格を入力してください。';
     }
     if (newPrice.type === 'recurring') {
-      if (!newPrice.interval) {
-        errors.interval = '請求周期を選択してください';
-      }
-      if (!newPrice.interval_count || Number(newPrice.interval_count) <= 0) {
-        errors.interval_count = '請求周期の回数は0より大きい値を入力してください';
+      if (!newPrice.interval) errors.interval = '繰り返し間隔を選択してください。';
+      if (!newPrice.interval_count || parseInt(newPrice.interval_count, 10) <= 0) {
+        errors.interval_count = '有効な繰り返し回数を入力してください。';
       }
     }
-    
+
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       return;
     }
-    
+
+    const pricePayload = {
+      product_id: newPrice.product, // ★修正: product -> product_id
+      unit_amount: Math.round(parseFloat(newPrice.unit_amount) * 100), // 円単位からセント単位へ
+      currency: newPrice.currency,
+      active: true, // 新規作成時は常にアクティブ
+      nickname: newPrice.nickname || undefined,
+      recurring: newPrice.type === 'recurring' ? {
+        interval: newPrice.interval as 'day' | 'week' | 'month' | 'year',
+        interval_count: parseInt(newPrice.interval_count, 10),
+      } : undefined,
+      // lookup_key: newPrice.lookup_key || undefined, // 必要であれば
+    };
+
     try {
-      // バックエンドの StripePriceCreate スキーマに合わせたデータを作成
-      const priceDataPayload = {
-        product: newPrice.product,
-        unit_amount: parseInt(newPrice.unit_amount, 10),
-        currency: newPrice.currency, 
-        active: true, 
-        recurring: newPrice.type === 'recurring' ? {
-          interval: newPrice.interval as 'day' | 'week' | 'month' | 'year',
-          interval_count: parseInt(newPrice.interval_count, 10),
-        } : undefined,
-      };
-
-      console.log("Submitting Price Data:", priceDataPayload);
-      
+      setIsLoading(true);
       if (isEditModalOpen && currentPrice) {
-        // --- 編集ロジック --- (今回は新規作成エラーなので、一旦既存のまま)
-        // TODO: Edit logic should use PUT /admin/prices/{priceId} instead
-        // For now, log a warning and proceed with old logic (or block edit)
-        console.warn("Price edit uses create+delete logic, consider updating to PUT endpoint.");
-        await adminService.createPrice(priceDataPayload);
-        await adminService.deletePrice(currentPrice.id);
-        alert('価格設定が更新されました。(旧ロジック)');
-
+        // ★編集処理 (Stripeでは価格の主要項目は変更不可なので、実際はアーカイブして新規作成が推奨される)
+        // ここでは例として nickname の更新や active の切り替えのみを想定
+        // const updatedPriceData = {
+        //   active: newPrice.active, // active状態の更新
+        //   nickname: newPrice.nickname || undefined,
+        // };
+        // await adminService.updatePrice(currentPrice.id, updatedPriceData); // updatePrice が adminService に必要
+        alert('価格の編集は現在サポートされていません。一度非アクティブ化し、新しい価格を作成してください。');
+        // 現状は編集をスキップし、モーダルを閉じる
       } else {
-        // --- 新規作成ロジック --- 
-        await adminService.createPrice(priceDataPayload);
-        alert('新しい価格設定が作成されました。');
+        await adminService.createPrice(pricePayload);
+        alert('新しい価格が作成されました。');
       }
-      
-      // モーダルを閉じて価格リストを更新
+      fetchPrices();
       setIsAddModalOpen(false);
       setIsEditModalOpen(false);
-      fetchPrices();
+      setCurrentPrice(null);
       resetForm();
-    } catch (err) { // エラーハンドリングを改善
+    } catch (err: any) {
       console.error('価格の保存中にエラーが発生しました:', err);
-      let errorMessage = '価格の保存中にエラーが発生しました';
-      if (axios.isAxiosError(err) && err.response?.data?.detail) {
-          errorMessage = `エラー: ${err.response.data.detail}`;
-      } else if (err instanceof Error) {
-          errorMessage = err.message;
+      // APIからのエラーメッセージがあれば表示
+      const apiErrorMessage = err.response?.data?.detail || err.message || '価格の保存中にエラーが発生しました';
+      alert(apiErrorMessage);
+      if (err.response?.data?.errors) {
+        // FastAPI のバリデーションエラーなど、詳細なエラー情報がある場合
+        setFormErrors(err.response.data.errors);
       }
-      alert(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
