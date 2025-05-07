@@ -255,7 +255,7 @@ export const PriceList: React.FC = () => {
     setFormErrors({}); // エラーをリセット
 
     // バリデーション
-    let errors: { [key: string]: string } = {};
+    const errors: { [key: string]: string } = {};
     if (!newPrice.product) errors.product = '商品を選択してください。';
     if (!newPrice.unit_amount || parseFloat(newPrice.unit_amount) <= 0) {
       errors.unit_amount = '有効な価格を入力してください。';
