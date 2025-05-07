@@ -20,7 +20,7 @@ from app.models.personal_statement import PersonalStatement, PersonalStatementSu
 
 from app.models.chat import ChatSession, ChatMessage, ChatAttachment
 from app.models.checklist import ChecklistEvaluation
-from app.models.subscription import DiscountType, CampaignCode, SubscriptionPlan
+from app.models.subscription import CampaignCode, SubscriptionPlan
 
 from app.models.base import TimestampMixin, Base
 from app.models.enums import DocumentStatus, PersonalStatementStatus, SessionType, SessionStatus, MessageSender, ChatType
@@ -126,9 +126,6 @@ def create_user_related_data(db: Session):
         # Campaign Code Management
         'campaign_code_read': 'キャンペーンコード情報を閲覧する',
         'campaign_code_write': 'キャンペーンコードを作成・削除する',
-        # Discount Type Management
-        'discount_type_read': '割引タイプ情報を閲覧する',
-        'discount_type_write': '割引タイプを作成・更新・削除する',
         # Study Plan Management
         'study_plan_read': '学習計画を閲覧する',
         'study_plan_write': '学習計画を作成・更新・削除する',
@@ -1005,6 +1002,83 @@ def create_subscription_related_data(db: Session):
         print(f"An error occurred during discount type seeding: {e}")
         db.rollback() # エラー時はロールバック
         return # キャンペーンコード作成に進まない
+
+    # ========= キャンペーンコードデータ (自動作成を無効化) =========
+    # print("Seeding campaign codes...")
+    # try:
+    #     campaign_codes_data = [
+    #         {
+    #             "code": "WELCOME10",
+    #             "description": "新規登録者向け10%割引",
+    #             "discount_type_name": "percentage",
+    #             "discount_value": 10.0,
+    #             "max_uses": 1000,
+    #             "valid_until": datetime.utcnow() + timedelta(days=365)
+    #         },
+    #         {
+    #             "code": "SPRING500",
+    #             "description": "春のキャンペーン500円引き",
+    #             "discount_type_name": "fixed",
+    #             "discount_value": 500.0,
+    #             "max_uses": 500,
+    #             "valid_until": datetime.utcnow() + timedelta(days=90)
+    #         },
+    #         {
+    #             "code": "EXPIREDCODE",
+    #             "description": "期限切れテストコード",
+    #             "discount_type_name": "percentage",
+    #             "discount_value": 5.0,
+    #             "max_uses": 10,
+    #             "valid_until": datetime.utcnow() - timedelta(days=1) # 期限切れ
+    #         },
+    #         {
+    #             "code": "USEDUPCODE",
+    #             "description": "使用上限テストコード",
+    #             "discount_type_name": "fixed",
+    #             "discount_value": 100.0,
+    #             "max_uses": 0, # 使用上限0
+    #             "valid_until": datetime.utcnow() + timedelta(days=30)
+    #         }
+    #     ]
+    #
+    #     added_codes = False
+    #     for data in campaign_codes_data:
+    #         # 既存チェック
+    #         existing_code = db.query(CampaignCode).filter(CampaignCode.code == data["code"]).first()
+    #         if not existing_code:
+    #             discount_type = discount_types.get(data["discount_type_name"])
+    #             if not discount_type:
+    #                 print(f"Warning: Discount type '{data['discount_type_name']}' not found for campaign code '{data['code']}'. Skipping.")
+    #                 continue
+    #
+    #             # モデル定義に合わせて修正が必要 (例: redemption_count が存在しない)
+    #             # new_code = CampaignCode(
+    #             #     id=uuid.uuid4(),
+    #             #     code=data["code"],
+    #             #     description=data["description"],
+    #             #     discount_type_id=discount_type.id,
+    #             #     discount_value=data["discount_value"],
+    #             #     max_uses=data["max_uses"],
+    #             #     # redemption_count=0, # モデルに存在しない場合コメントアウト
+    #             #     used_count=0, # モデルに合わせて修正 (もし used_count があれば)
+    #             #     is_active=True,
+    #             #     valid_until=data["valid_until"]
+    #             # )
+    #             # db.add(new_code)
+    #             # print(f"Added campaign code: {data['code']}")
+    #             added_codes = True
+    #
+    #     if added_codes:
+    #         db.flush()
+    #         print("Campaign codes flushed.")
+    #     else:
+    #         print("All required campaign codes already exist.")
+    #
+    # except Exception as e:
+    #     print(f"An error occurred during campaign code seeding: {e}")
+    #     db.rollback() # エラー時はロールバック 
+
+    logger.info("Subscription related demo data (DiscountType, CampaignCode, SubscriptionPlan) insertion skipped or needs rework as DiscountType is removed.")
 
     # ========= キャンペーンコードデータ (自動作成を無効化) =========
     # print("Seeding campaign codes...")

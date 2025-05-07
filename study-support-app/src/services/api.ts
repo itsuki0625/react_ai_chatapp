@@ -18,8 +18,17 @@ export const getAxiosConfig = async (requireAuth = true) => {
   if (requireAuth && typeof window !== 'undefined') {
     try {
       const session = await getSession();
-      if (session?.accessToken) {
-        config.headers['Authorization'] = `Bearer ${session.accessToken}`;
+      if (session?.user?.accessToken) {
+        config.headers['Authorization'] = `Bearer ${session.user.accessToken}`;
+      } else if (session) {
+        config.headers['X-Session-Token'] = 'true';
+        if (typeof session.user?.email === 'string') {
+          config.headers['X-User-Email'] = session.user.email;
+        }
+        if (typeof session.user?.name === 'string') {
+          config.headers['X-User-Name'] = encodeURIComponent(session.user.name);
+        }
+        console.warn('API Service: Session found but no accessToken. Using custom headers as fallback.');
       } else {
         console.warn('API Service: 認証トークンが見つかりません');
       }

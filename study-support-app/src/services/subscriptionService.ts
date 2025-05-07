@@ -31,6 +31,10 @@ import {
 } from '../types/subscription';
 import { getSession } from 'next-auth/react';
 
+// StripeProductWithPricesResponse のインポートは、以下の新しい型定義を使うため不要になるか、
+// APIの型として別途定義するならそちらに合わせます。
+// import { StripeProductWithPricesResponse } from '@/types/stripe'; 
+
 // ブラウザ環境かサーバー環境かによって適切なAPIのベースURLを使用
 const API_URL = typeof window !== 'undefined' 
   ? `${process.env.NEXT_PUBLIC_BROWSER_API_URL || 'http://localhost:5050'}/api/v1`
@@ -51,8 +55,8 @@ const getAxiosConfig = async (requireAuth = true) => {
   if (requireAuth && typeof window !== 'undefined') {
     try {
       const session = await getSession();
-      if (session?.accessToken) { // accessToken を確認
-        config.headers['Authorization'] = `Bearer ${session.accessToken}`; // Authorization ヘッダーを設定
+      if (session?.user?.accessToken) {
+        config.headers['Authorization'] = `Bearer ${session.user.accessToken}`;
       } else if (session) {
         // 以前のカスタムヘッダーロジック（警告付き）
         config.headers['X-Session-Token'] = 'true';
@@ -89,25 +93,58 @@ export const subscriptionService = {
   // サブスクリプションプラン一覧取得 - Stripeから直接取得
   getSubscriptionPlans: async (): Promise<SubscriptionPlan[]> => {
     try {
-      // Stripeから価格情報を取得
-      const response = await axios.get<SubscriptionPlan[]>(
+      type APIRawPlan = {
+        id: string; 
+        name: string;
+        description: string | null;
+        price_id: string; 
+        amount: number;
+        currency: string;
+        interval: string; 
+        is_active: boolean;
+        created_at: string; 
+        updated_at: string; 
+        features?: string[];
+      };
+
+      const response = await axios.get<APIRawPlan[]>(
         `${API_URL}/subscriptions/stripe-plans`,
-        await getAxiosConfig(false) // 認証不要
+        await getAxiosConfig(false)
       );
-      
-      // Stripeのレスポンスを適切な形式に変換
+
       if (response.data && Array.isArray(response.data)) {
-        return response.data.map(plan => ({
-          ...plan,
-          // Stripe価格IDをプランIDとして使用
-          id: plan.price_id,
-        }));
+        const plans: SubscriptionPlan[] = response.data.map(apiPlan => {
+          return {
+            id: apiPlan.id || apiPlan.price_id,
+            name: apiPlan.name,
+            description: apiPlan.description,
+            price_id: apiPlan.price_id,
+            amount: apiPlan.amount,
+            currency: apiPlan.currency,
+            interval: apiPlan.interval,
+            is_active: apiPlan.is_active,
+            created_at: apiPlan.created_at,
+            updated_at: apiPlan.updated_at,
+            features: apiPlan.features || [],
+          };
+        });
+        console.log("subscriptionService.ts getSubscriptionPlans (corrected):", plans);
+        return plans;
       }
-      
-      return response.data;
+      console.warn("getSubscriptionPlans: No data or data is not an array", response.data);
+      return [];
     } catch (error) {
-      console.error('Failed to fetch subscription plans from Stripe:', error);
-      throw error;
+      console.error('Failed to fetch subscription plans in subscriptionService:', error);
+      if (isAxiosError(error)) {
+        console.error('Axios error details:', {
+          message: error.message,
+          status: error.response?.status,
+          data: error.response?.data,
+        });
+      } else {
+        console.error('Non-Axios error details:', error);
+      }
+      throw error; 
     }
   },
 
@@ -157,7 +194,7 @@ export const subscriptionService = {
       const config = await getAxiosConfig(requireAuth);
       const response = await axios.post<VerifyCampaignCodeResponse>(
         `${API_URL}/subscriptions/verify-campaign-code`,
-        { code, price_id: planId }, // plan_idの代わりにprice_idを使用
+        { code, price_id: planId }, 
         config
       );
       return response.data;
@@ -173,14 +210,9 @@ export const subscriptionService = {
     success_url: string,
     cancel_url: string,
     metadata?: Record<string, string>,
-    discountInfo?: {
-      campaign_code: string;
-      discount_type: string;
-      discount_value: number;
-    }
-  ): Promise<string> => {
+    stripeCouponId?: string // Optional: Stripe Coupon ID
+  ): Promise<string | { url: string }> => {
     try {
-      // 認証状態を確認
       const session = await getSession();
       if (!session) {
         console.error('チェックアウトセッション作成失敗: ユーザーが認証されていません');
@@ -193,7 +225,7 @@ export const subscriptionService = {
         plan_id: price_id,
         success_url,
         cancel_url,
-        campaign_code: discountInfo?.campaign_code
+        coupon_id: stripeCouponId // ★ coupon_id として stripeCouponId を渡す
       };
 
       console.log('チェックアウトセッションリクエストデータ:', data);
@@ -205,7 +237,7 @@ export const subscriptionService = {
       try {
         const response = await axios.post<CheckoutSession>(
           `${API_URL}/subscriptions/create-checkout`,
-          data,
+          data, // ★ 修正したリクエストデータ
           config
         );
         
@@ -244,41 +276,49 @@ export const subscriptionService = {
     }
   },
 
-  // カスタマーポータルセッション作成 - 認証必要
-  createPortalSession: async (returnUrl: string): Promise<{ url: string }> => {
+  // 顧客ポータルセッション作成 - 認証必要
+  createPortalSession: async (return_url: string): Promise<{ url: string }> => {
     try {
-      const config = await getAxiosConfig(true);
+      const session = await getSession();
+      if (!session) {
+        console.error('ポータルセッション作成失敗: ユーザーが認証されていません');
+        throw new Error('認証されていません。ログインしてください。');
+      }
+
+      const config = await getAxiosConfig(true); // 認証ヘッダーを取得
       const response = await axios.post<{ url: string }>(
         `${API_URL}/subscriptions/create-portal-session`,
-        { return_url: returnUrl },
+        { return_url }, // リクエストボディに return_url を含める
         config
       );
-      return response.data;
+
+      if (!response.data || !response.data.url) {
+        console.error('ポータルセッションURLがレスポンスに含まれていません', response.data);
+        throw new Error('ポータルセッションURLが取得できませんでした');
+      }
+      return response.data; // { url: "..." } を返す
     } catch (error) {
+      console.error('ポータルセッション作成エラー:', error);
       if (isAxiosError(error) && error.response?.status === 401) {
         throw new Error('認証セッションが無効です。再ログインしてください。');
       }
+      // その他のエラーはそのままスローするか、カスタムエラーに変換
       throw error;
     }
   },
 
-  // サブスクリプション管理（キャンセル、再開、更新など） - 認証必要
-  manageSubscription: async (data: ManageSubscriptionRequest): Promise<Record<string, unknown>> => {
+  // サブスクリプション管理 (プラン変更など) - 認証必要
+  manageSubscription: async (data: ManageSubscriptionRequest): Promise<Subscription> => {
     try {
-      // price_idをplan_idとして使用するように修正
-      const requestData = {
-        ...data,
-        price_id: data.plan_id,
-      };
-      
       const config = await getAxiosConfig(true);
-      const response = await axios.post<Record<string, unknown>>(
+      const response = await axios.post<Subscription>(
         `${API_URL}/subscriptions/manage-subscription`,
-        requestData,
+        data,
         config
       );
       return response.data;
     } catch (error) {
+      console.error('サブスクリプション管理エラー:', error);
       if (isAxiosError(error) && error.response?.status === 401) {
         throw new Error('認証セッションが無効です。再ログインしてください。');
       }
@@ -286,26 +326,18 @@ export const subscriptionService = {
     }
   },
 
-  // キャンペーンコード一覧取得 - 認証必要
-  getCampaignCodes: async (skip = 0, limit = 20, ownerId?: string): Promise<CampaignCode[]> => {
+  // 利用可能なキャンペーンコード一覧取得 (認証は任意、状況による)
+  getAvailableCampaignCodes: async (requireAuth = false): Promise<CampaignCode[]> => {
     try {
-      const config = await getAxiosConfig(true);
-      if (!config.params) config.params = {};
-      config.params.skip = skip;
-      config.params.limit = limit;
-      if (ownerId) config.params.owner_id = ownerId;
-      
+      const config = await getAxiosConfig(requireAuth);
       const response = await axios.get<CampaignCode[]>(
-        `${API_URL}/subscriptions/campaign-codes`, 
+        `${API_URL}/subscriptions/campaign-codes`,
         config
       );
       return response.data;
     } catch (error) {
-      if (isAxiosError(error) && error.response?.status === 401) {
-        console.warn('認証エラー: キャンペーンコードを取得できません');
-        return [];
-      }
+      console.error('キャンペーンコード一覧取得エラー:', error);
       throw error;
     }
-  }
-}; 
+  },
+};

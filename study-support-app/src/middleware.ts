@@ -22,7 +22,8 @@ export default auth((req) => {
     '/chat',
     '/faq',
     '/statement',
-    '/application' // 志望校管理機能のパス (必要に応じて修正)
+    '/application', // 志望校管理機能のパス (必要に応じて修正)
+    '/subscription' // ★ サブスクリプションページを追加
   ];
   const subscriptionRequiredRoutes = ['/contents', '/chat', '/faq', '/statement'];
 

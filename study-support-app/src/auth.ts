@@ -331,11 +331,23 @@ export const authConfig: NextAuthConfig = {
         const userRole = normalizeRole(token.role);
         // --- ここまで追加 ---
 
+        // --- ★ isAdmin, isTeacher, isStudent を計算 ---
+        const isAdmin = userRole === '管理者';
+        const isTeacher = userRole === '教員';
+        // 管理者でも教員でもない場合は生徒とみなす（'不明' の場合も含む）
+        const isStudent = !isAdmin && !isTeacher;
+        // --- ★ ここまで追加 ---
+
         session.user = {
             ...session.user, // 既存のセッション情報 (name, email, image) を保持
             id: String(token.id || token.sub), // id を token から取得
             // ★ role は正規化した単一の文字列を割り当て
             role: userRole,
+            // --- ★ 計算したフラグを設定 ---
+            isAdmin: isAdmin,
+            isTeacher: isTeacher,
+            isStudent: isStudent,
+            // --- ★ ここまで追加 ---
             status: (token.status as string | undefined) ?? 'pending', // ★ 修正: undefined の場合に 'pending' を設定
             permissions: token.permissions as string[] | undefined,
             grade: token.grade as string | undefined,

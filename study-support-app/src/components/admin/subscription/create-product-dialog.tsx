@@ -4,7 +4,7 @@ import React from 'react';
 import { ControllerRenderProps, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
@@ -15,15 +15,19 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { createProduct } from '@/lib/api/admin'; // API関数
 import { StripeProductCreate, StripeProductResponse } from '@/types/stripe'; // 型定義
+import { getRoles } from '@/services/adminService'; // ★ getRoles をインポート (パスは適宜調整)
+import { Role } from '@/types/user'; // ★ Role型をインポート (パスは適宜調整)
 
 // フォームのバリデーションスキーマ
 const formSchema = z.object({
   name: z.string().min(1, { message: "商品名は必須です。" }),
   description: z.string().optional(),
   active: z.boolean().default(true),
+  assigned_role: z.string().optional(), // ★ 追加: 割り当てるロール名
 });
 
 type ProductFormValues = z.infer<typeof formSchema>;
@@ -43,7 +47,15 @@ export function CreateProductDialog({ isOpen, onClose, onSuccess }: CreateProduc
       name: "",
       description: "",
       active: true,
+      assigned_role: "", // ★ 追加
     },
+  });
+
+  // ロール一覧を取得
+  const { data: roles, isLoading: isLoadingRoles } = useQuery<Role[]>({
+    queryKey: ['adminRoles'],
+    queryFn: getRoles,
+    enabled: isOpen, // ダイアログが開いているときだけ取得
   });
 
   // 商品作成APIを呼び出す Mutation
@@ -55,7 +67,7 @@ export function CreateProductDialog({ isOpen, onClose, onSuccess }: CreateProduc
     mutationFn: createProduct,
     onSuccess: (data) => {
       toast({ title: "成功", description: `商品「${data.name}」を作成しました。` });
-      onSuccess(); // 親コンポーネントに成功を通知 (リスト更新は親で行う)
+      onSuccess(); 
       form.reset(); 
     },
     onError: (error) => {
@@ -66,9 +78,9 @@ export function CreateProductDialog({ isOpen, onClose, onSuccess }: CreateProduc
   const onSubmit = (values: ProductFormValues) => {
     const productToCreate: StripeProductCreate = {
         name: values.name,
-        description: values.description || null,
+        description: values.description || undefined, // null より undefined の方が一般的かも
         active: values.active,
-        metadata: null 
+        metadata: values.assigned_role ? { assigned_role: values.assigned_role } : undefined, // ★ 修正: undefined も許容
     };
     createProductMutation.mutate(productToCreate);
   };
@@ -130,11 +142,39 @@ export function CreateProductDialog({ isOpen, onClose, onSuccess }: CreateProduc
                 </FormItem>
               )}
             />
+            <FormField
+              control={form.control}
+              name="assigned_role"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>割り当てるロール (購入後)</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger disabled={isLoadingRoles}>
+                        <SelectValue placeholder="ロールを選択してください" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="">割り当てなし</SelectItem>
+                      {roles?.map((role) => (
+                        <SelectItem key={role.id} value={role.name}>
+                          {role.name} {role.description ? `(${role.description})` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    この商品を購入したユーザーに自動的に割り当てられるロールです。
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={onClose} disabled={createProductMutation.isPending}>
+              <Button type="button" variant="outline" onClick={onClose} disabled={createProductMutation.isPending || isLoadingRoles}>
                 キャンセル
               </Button>
-              <Button type="submit" disabled={createProductMutation.isPending}>
+              <Button type="submit" disabled={createProductMutation.isPending || isLoadingRoles}>
                 {createProductMutation.isPending ? "作成中..." : "商品を作成"}
               </Button>
             </DialogFooter>
