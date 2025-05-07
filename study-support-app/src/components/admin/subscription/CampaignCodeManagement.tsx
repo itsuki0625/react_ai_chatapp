@@ -11,6 +11,8 @@ import { adminService } from '@/services/adminService';
 import { couponAdminService } from '@/services/couponService';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 
 // モーダルの共通コンポーネント
 const Modal: React.FC<{
@@ -258,6 +260,7 @@ export const CampaignCodeManagement: React.FC = () => {
 
   const handleSubmitNewCampaignCode = async () => {
     setFormErrors({});
+    // eslint-disable-next-line prefer-const
     let errors: { [key: string]: string } = {};
 
     if (!newCode.code) errors.code = "コードは必須です";

@@ -99,7 +99,7 @@ const SettingsPage = () => {
       }
     };
     loadUserSettings();
-  }, [status, session?.user?.id, setUser, user]);
+  }, [status, session, setUser, user, isAuthLoading, isSubLoading]);
 
   useEffect(() => {
     if (selectedFile) {

@@ -288,7 +288,6 @@ export const authConfig: NextAuthConfig = {
       if (token.error) {
         console.error("Session Callback: Token contains error, propagating to session", { error: token.error, errorDetail: token.errorDetail });
         session.error = token.error;
-        // @ts-ignore // 拡張エラー情報をセッションに追加
         session.errorDetail = token.errorDetail;
         // ★ エラー時は必須プロパティにデフォルト値を設定したオブジェクトにする
         session.user = {

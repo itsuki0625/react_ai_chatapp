@@ -198,7 +198,6 @@ export const CouponFormModal: React.FC<CouponFormModalProps> = ({ isOpen, onClos
     console.log("Form values:", values);
 
     // --- Prepare data for API ---
-    let apiData: StripeCouponCreate | StripeCouponUpdate = {};
     let metadataObject: Record<string, string> | undefined;
 
     // Parse metadata JSON string

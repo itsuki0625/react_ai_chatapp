@@ -66,6 +66,24 @@ const ActionsCell = ({ row, onEdit, onArchive }: {
   );
 };
 
+// 新しいコンポーネント: AssignedRoleCell
+const AssignedRoleCell = ({ assignedRoleId }: { assignedRoleId?: string }) => {
+  const { data: roles, isLoading, error } = useQuery<Role[], Error>({
+    queryKey: ['roles'],
+    queryFn: getRoles,
+    staleTime: 1000 * 60 * 5, // 5分間はキャッシュを新鮮とみなす
+  });
+
+  if (isLoading) return <span className="text-xs text-muted-foreground">読込中...</span>;
+  if (error) return <span className="text-xs text-red-500">エラー</span>;
+  
+  if (assignedRoleId && roles) {
+    const role = roles.find(r => r.id === assignedRoleId);
+    return role ? <Badge variant="outline">{role.name}</Badge> : <span className="text-xs text-muted-foreground">不明なロールID</span>;
+  }
+  return <span className="text-xs text-muted-foreground">割り当てなし</span>;
+};
+
 // columns 定義を修正 (引数から onEditPrice を削除)
 export const columns = ({ onEdit, onArchive }: ProductColumnsOptions): ColumnDef<StripeProductWithPricesResponse>[] => [
   // 行展開用の列を追加
@@ -156,24 +174,7 @@ export const columns = ({ onEdit, onArchive }: ProductColumnsOptions): ColumnDef
   {
     accessorKey: "metadata.assigned_role",
     header: "割り当てロール",
-    cell: ({ row }: { row: Row<StripeProductWithPricesResponse> }) => {
-      const assignedRoleId = row.original.metadata?.assigned_role;
-
-      const { data: roles, isLoading, error } = useQuery<Role[], Error>({
-        queryKey: ['roles'],
-        queryFn: getRoles,
-        staleTime: 1000 * 60 * 5,
-      });
-
-      if (isLoading) return <span className="text-xs text-muted-foreground">読込中...</span>;
-      if (error) return <span className="text-xs text-red-500">エラー</span>;
-      
-      if (assignedRoleId && roles) {
-        const role = roles.find(r => r.id === assignedRoleId);
-        return role ? <Badge variant="outline">{role.name}</Badge> : <span className="text-xs text-muted-foreground">不明なロールID</span>;
-      }
-      return <span className="text-xs text-muted-foreground">割り当てなし</span>;
-    },
+    cell: ({ row }: { row: Row<StripeProductWithPricesResponse> }) => <AssignedRoleCell assignedRoleId={row.original.metadata?.assigned_role} />,
   },
   // 価格列 (prices) を削除
   // {

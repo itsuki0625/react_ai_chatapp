@@ -71,7 +71,7 @@ const TargetSchoolSetupPage = () => {
       setFetchError(null);
 
       // ★★★ アクセストークンの取得 (要確認・修正) ★★★
-      const accessToken = session?.accessToken;
+      const accessToken = session?.user?.accessToken;
       if (!accessToken) {
         setFetchError('認証情報が見つかりません。ログインし直してください。');
         toast.error('認証情報が見つかりません。再度ログインしてください。');
@@ -133,7 +133,7 @@ const TargetSchoolSetupPage = () => {
       fetchOptions();
     }
   // status と session が変更されたときにも再実行 (ログイン/ログアウト時など)
-  }, [status, session, router]); 
+  }, [status, session, router, fetchError]); 
 
   // 現在入力中の大学IDを更新
   const handleCurrentUniversityChange = (value: string) => {
@@ -216,7 +216,7 @@ const TargetSchoolSetupPage = () => {
     setIsLoading(true);
     try {
       // ★★★ アクセストークンの取得 (ProfileSetupPage と同様に要確認・修正) ★★★
-      const accessToken = session?.accessToken;
+      const accessToken = session?.user?.accessToken;
       if (!accessToken) {
           toast.error('認証情報が見つかりません。再度ログインしてください。');
           await signOut({ redirect: false });
