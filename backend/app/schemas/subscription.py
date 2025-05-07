@@ -8,7 +8,7 @@ from .base import TimestampMixin
 # ベースモデル
 class SubscriptionBase(BaseModel):
     user_id: UUID
-    plan_name: str
+    plan_id: UUID
     price_id: Optional[str] = None
     status: str
     stripe_customer_id: Optional[str] = None

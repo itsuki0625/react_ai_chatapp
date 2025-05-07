@@ -449,21 +449,26 @@ async def stripe_webhook(
             else:
                 logger.info(f"新規サブスクリプション作成 (Stripe ID: {stripe_subscription_id})")
                 stripe_sub_data = StripeService.get_subscription(stripe_subscription_id)
-                plan_data = stripe_sub_data.get('items', {}).get('data', [{}])[0].get('plan', {})
-                plan_name = plan_data.get('nickname') if plan_data and plan_data.get('nickname') is not None else 'プラン名不明'
-                # もしproduct名も考慮するなら:
-                # product_id = plan_data.get('product') if plan_data else None
-                # if product_id:
-                #     try:
-                #         product_info = StripeService.get_product(product_id)
-                #         plan_name = product_info.get('name', plan_name) # nicknameよりproduct名を優先する場合など
-                #     except Exception as e_prod:
-                #         logger.warning(f"Stripe Product {product_id} の取得に失敗: {e_prod}")
+                # plan_data = stripe_sub_data.get('items', {}).get('data', [{}])[0].get('plan', {}) # plan_dataの取得は不要になるか確認
+                # plan_name = plan_data.get('nickname') if plan_data and plan_data.get('nickname') is not None else 'プラン名不明' # plan_nameも不要
+
+                # ★★★ Stripe Price ID から DBのPlan UUIDを取得 ★★★
+                stripe_price_id = stripe_sub_data.get('items', {}).get('data', [{}])[0].get('price', {}).get('id')
+                db_plan = None
+                if stripe_price_id:
+                    db_plan = await crud_subscription.get_plan_by_price_id(db, stripe_price_id)
+                else:
+                    logger.error("Stripe SubscriptionデータからPrice IDを取得できませんでした。")
+                
+                if not db_plan:
+                     logger.error(f"Stripe Price ID {stripe_price_id} に対応するDBプランが見つかりません。")
+                     raise HTTPException(status_code=500, detail="プラン情報の紐付けに失敗しました。")
+                # ★★★ ここまで ★★★
 
                 new_sub_data = {
                     "user_id": user_id,
-                    "plan_name": plan_name,
-                    "price_id": price_id,
+                    "plan_id": db_plan.id, # ★ DBから取得したUUIDを設定
+                    "price_id": stripe_price_id, # ★ StripeのPrice IDを設定
                     "stripe_subscription_id": stripe_subscription_id,
                     "stripe_customer_id": stripe_customer_id,
                     "status": stripe_sub_data.get('status'),
@@ -472,6 +477,7 @@ async def stripe_webhook(
                     "is_active": stripe_sub_data.get('status') in ['active', 'trialing'],
                     "campaign_code_id": db_campaign_code.id if db_campaign_code else None,
                 }
+                # SubscriptionCreate スキーマの検証 (plan_id が必須になっているはず)
                 await crud_subscription.create_subscription(db, crud_subscription.SubscriptionCreate(**new_sub_data))
 
             # --- ★ 購入商品に紐づくロールをユーザーに割り当て --- (ここから修正)

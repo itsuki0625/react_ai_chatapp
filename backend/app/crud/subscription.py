@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 import uuid
 import logging
 
-from app.models.subscription import Subscription, PaymentHistory, CampaignCode, StripeCoupon
+from app.models.subscription import Subscription, PaymentHistory, CampaignCode, StripeCoupon, SubscriptionPlan
 from app.models.user import User
 from app.schemas.subscription import (
     SubscriptionCreate,
@@ -645,3 +645,20 @@ async def update_stripe_customer_id(db: AsyncSession, user_id: UUID, stripe_cust
         await db.refresh(subscription)
         return True
     return False
+
+# --- ★ Stripe Price IDからプランを取得する関数を追加 --- 
+async def get_plan_by_price_id(db: AsyncSession, stripe_price_id: str) -> Optional[SubscriptionPlan]:
+    """
+    Stripe Price IDを使用してSubscriptionPlanレコードを取得します。
+    """
+    logger.debug(f"Searching for SubscriptionPlan with Stripe Price ID: {stripe_price_id}")
+    result = await db.execute(
+        select(SubscriptionPlan).filter(SubscriptionPlan.price_id == stripe_price_id)
+    )
+    plan = result.scalars().first()
+    if plan:
+        logger.debug(f"Found SubscriptionPlan: ID={plan.id}, Name={plan.name}")
+    else:
+        logger.warning(f"SubscriptionPlan not found for Stripe Price ID: {stripe_price_id}")
+    return plan
+# --- ここまで追加 ---
