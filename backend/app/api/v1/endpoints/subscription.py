@@ -437,10 +437,10 @@ async def stripe_webhook(
                  stripe_sub_data = StripeService.get_subscription(stripe_subscription_id)
                  update_data = {
                      "status": stripe_sub_data.get('status'),
-                     "current_period_start": datetime.fromtimestamp(stripe_sub_data.get('current_period_start')),
-                     "current_period_end": datetime.fromtimestamp(stripe_sub_data.get('current_period_end')),
-                     "cancel_at": datetime.fromtimestamp(stripe_sub_data.get('cancel_at')) if stripe_sub_data.get('cancel_at') else None,
-                     "canceled_at": datetime.fromtimestamp(stripe_sub_data.get('canceled_at')) if stripe_sub_data.get('canceled_at') else None,
+                     "current_period_start": datetime.fromtimestamp(cps) if (cps := stripe_sub_data.get('current_period_start')) is not None else None,
+                     "current_period_end": datetime.fromtimestamp(cpe) if (cpe := stripe_sub_data.get('current_period_end')) is not None else None,
+                     "cancel_at": datetime.fromtimestamp(ca) if (ca := stripe_sub_data.get('cancel_at')) is not None else None,
+                     "canceled_at": datetime.fromtimestamp(cat) if (cat := stripe_sub_data.get('canceled_at')) is not None else None,
                      "is_active": stripe_sub_data.get('status') in ['active', 'trialing'],
                      "campaign_code_id": db_campaign_code.id if db_campaign_code else existing_sub.campaign_code_id,
                      "stripe_customer_id": stripe_customer_id
@@ -456,8 +456,8 @@ async def stripe_webhook(
                     "stripe_subscription_id": stripe_subscription_id,
                     "stripe_customer_id": stripe_customer_id,
                     "status": stripe_sub_data.get('status'),
-                    "current_period_start": datetime.fromtimestamp(stripe_sub_data.get('current_period_start')),
-                    "current_period_end": datetime.fromtimestamp(stripe_sub_data.get('current_period_end')),
+                    "current_period_start": datetime.fromtimestamp(cps) if (cps := stripe_sub_data.get('current_period_start')) is not None else None,
+                    "current_period_end": datetime.fromtimestamp(cpe) if (cpe := stripe_sub_data.get('current_period_end')) is not None else None,
                     "is_active": stripe_sub_data.get('status') in ['active', 'trialing'],
                     "campaign_code_id": db_campaign_code.id if db_campaign_code else None,
                 }
@@ -521,10 +521,10 @@ async def stripe_webhook(
                     stripe_sub_data = StripeService.get_subscription(stripe_subscription_id)
                     update_data = {
                         "status": stripe_sub_data.get('status'),
-                        "current_period_start": datetime.fromtimestamp(stripe_sub_data.get('current_period_start')),
-                        "current_period_end": datetime.fromtimestamp(stripe_sub_data.get('current_period_end')),
-                        "cancel_at": datetime.fromtimestamp(stripe_sub_data.get('cancel_at')) if stripe_sub_data.get('cancel_at') else None,
-                        "canceled_at": datetime.fromtimestamp(stripe_sub_data.get('canceled_at')) if stripe_sub_data.get('canceled_at') else None,
+                        "current_period_start": datetime.fromtimestamp(cps) if (cps := stripe_sub_data.get('current_period_start')) is not None else None,
+                        "current_period_end": datetime.fromtimestamp(cpe) if (cpe := stripe_sub_data.get('current_period_end')) is not None else None,
+                        "cancel_at": datetime.fromtimestamp(ca) if (ca := stripe_sub_data.get('cancel_at')) is not None else None,
+                        "canceled_at": datetime.fromtimestamp(cat) if (cat := stripe_sub_data.get('canceled_at')) is not None else None,
                         "is_active": stripe_sub_data.get('status') in ['active', 'trialing'],
                     }
                     await crud_subscription.update_subscription(db, db_subscription.id, update_data)
@@ -537,7 +537,7 @@ async def stripe_webhook(
                         "stripe_invoice_id": invoice.id,
                         "amount": invoice.amount_paid,
                         "currency": invoice.currency,
-                        "payment_date": datetime.fromtimestamp(invoice.status_transitions.paid_at),
+                        "payment_date": datetime.fromtimestamp(spst) if (spst := invoice.status_transitions.paid_at) is not None else None,
                         "status": "succeeded",
                         "description": f"サブスクリプション支払い ({db_subscription.plan_name})"
                     }
@@ -568,10 +568,10 @@ async def stripe_webhook(
             if db_subscription:
                 update_data = {
                     "status": subscription.status,
-                    "current_period_start": datetime.fromtimestamp(subscription.current_period_start),
-                    "current_period_end": datetime.fromtimestamp(subscription.current_period_end),
-                    "cancel_at": datetime.fromtimestamp(subscription.cancel_at) if subscription.cancel_at else None,
-                    "canceled_at": datetime.fromtimestamp(subscription.canceled_at) if subscription.canceled_at else None,
+                    "current_period_start": datetime.fromtimestamp(cps) if (cps := subscription.current_period_start) is not None else None,
+                    "current_period_end": datetime.fromtimestamp(cpe) if (cpe := subscription.current_period_end) is not None else None,
+                    "cancel_at": datetime.fromtimestamp(ca) if (ca := subscription.cancel_at) is not None else None,
+                    "canceled_at": datetime.fromtimestamp(cat) if (cat := subscription.canceled_at) is not None else None,
                     "is_active": subscription.status in ['active', 'trialing'],
                     # プラン変更があった場合、plan_name, price_id も更新が必要
                     # "plan_name": ...,
