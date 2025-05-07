@@ -15,7 +15,7 @@ from app.crud import subscription as crud_subscription
 from app.crud import user as crud_user # ユーザー情報取得用にインポート
 from app.crud import crud_role # crud_role をインポート
 from app.models.user import User as UserModel, Role # CampaignCode もインポート
-from app.models.subscription import CampaignCode # SubscriptionModelは不要になったので削除
+from app.models.subscription import CampaignCode, SubscriptionPlan as SubscriptionPlanModel # SubscriptionModelは不要になったので削除
 
 # --- スキーマのインポート (修正) ---
 from app.schemas.subscription import (
@@ -39,61 +39,61 @@ router = APIRouter(tags=["subscriptions"])
 
 @router.get("/stripe-plans", response_model=List[SubscriptionPlanResponse])
 async def get_stripe_plans(
-    # 認証は不要なので current_user は削除
-    db: AsyncSession = Depends(get_async_db) # DBセッションはロギング等で使う可能性を考慮して残すか検討
+    db: AsyncSession = Depends(get_async_db),
+    skip: int = 0, # ページネーション用に skip と limit を追加
+    limit: int = 100
 ):
     """
-    Stripeからアクティブな商品と価格のリストを取得します。
-    各商品には複数の価格が含まれる可能性がありますが、ここでは簡易的に
-    商品ごとに最初の有効な価格のみを返すことを想定しています。
-    実際の要件に応じて、価格のフィルタリングや選択ロジックの調整が必要です。
+    データベースからアクティブな料金プラン (SubscriptionPlan) のリストを取得します。
     """
     try:
-        # Stripeから有効な商品リストを取得
-        # products = StripeService.list_products(active=True, limit=100) # 例: 上限100件
-        # ↑ list_products は expand オプションがないため、直接価格情報は取れない
+        # DBからアクティブなSubscriptionPlanのリストを取得
+        # crud_subscription.get_active_subscription_plans は SubscriptionPlanModel のリストを返す
+        db_plans: List[SubscriptionPlanModel] = await crud_subscription.get_active_subscription_plans(db, skip=skip, limit=limit)
 
-        # 代わりに、有効な価格を expand=['data.product'] で取得する
-        all_prices_raw = StripeService.list_prices(active=True, limit=100) # type: ignore
-
-        # フロントエンドが期待する SubscriptionPlanResponse の形式に変換
-        # ここでは、1つの価格が1つのプランに対応すると仮定
-        active_plans: List[SubscriptionPlanResponse] = []
-        if not all_prices_raw:
-            return []
-        
-        processed_products = set() # 重複して商品を追加しないように管理
-
-        for price_data in all_prices_raw:
-            product_data = price_data.get('product')
-            if not product_data or not isinstance(product_data, dict) or product_data.get('id') in processed_products:
-                continue # 商品データがないか、既に処理済みの場合はスキップ
+        response_plans: List[SubscriptionPlanResponse] = []
+        for db_plan_model in db_plans:
+            # SubscriptionPlanResponse に必要なデータをマッピング
+            # SubscriptionPlanResponse の from_attributes = True を活用するため、
+            # 基本的にはそのまま渡せるが、不足するフィールドや変換が必要なフィールドがあればここで対応
             
-            # product_data が Product オブジェクト全体であることを確認
-            if not product_data.get('active', False):
-                continue # 商品自体が無効ならスキップ
+            # stripe_db_product がロードされていることを確認 (get_active_subscription_plansでロード済みのはず)
+            if not db_plan_model.stripe_db_product:
+                 logger.warning(f"SubscriptionPlan (ID: {db_plan_model.id}, Name: {db_plan_model.name}) is missing related StripeDbProduct. Skipping.")
+                 continue
+            
+            # SubscriptionPlanResponseが期待するフィールドをモデルから直接取得して渡す
+            # (from_attributesが正しく機能すれば、多くは自動でマッピングされる)
+            plan_data_for_response = {
+                "id": db_plan_model.id,
+                "name": db_plan_model.name,
+                "description": db_plan_model.description,
+                "price_id": db_plan_model.price_id,
+                "stripe_db_product_id": db_plan_model.stripe_db_product_id, # これは UUID
+                "amount": db_plan_model.amount,
+                "currency": db_plan_model.currency,
+                "interval": db_plan_model.interval,
+                "interval_count": db_plan_model.interval_count,
+                "is_active": db_plan_model.is_active,
+                "features": db_plan_model.features, # JSONフィールド
+                "plan_metadata": db_plan_model.plan_metadata, # JSONフィールド
+                "trial_days": db_plan_model.trial_days,
+                "created_at": db_plan_model.created_at,
+                "updated_at": db_plan_model.updated_at,
+                # SubscriptionPlanResponse に追加のフィールドがあればここでマッピング
+            }
+            try:
+                # model_validate を使用して辞書からPydanticモデルインスタンスを作成
+                validated_plan_response = SubscriptionPlanResponse.model_validate(plan_data_for_response)
+                response_plans.append(validated_plan_response)
+            except Exception as e_validate:
+                logger.error(f"Pydantic validation error for SubscriptionPlan ID {db_plan_model.id} during response model creation: {e_validate}", exc_info=True)
+                # バリデーションエラーが発生したプランはスキップ
 
-            plan = SubscriptionPlanResponse(
-                id=product_data.get('id'), # 商品IDをプランIDとして使用
-                name=product_data.get('name', '名称未設定'),
-                description=product_data.get('description'),
-                price_id=price_data.get('id'), # 価格ID
-                amount=price_data.get('unit_amount', 0),
-                currency=price_data.get('currency', 'jpy'),
-                interval=price_data.get('recurring', {}).get('interval', 'month'),
-                is_active=price_data.get('active', False) and product_data.get('active', False),
-                created_at=datetime.fromtimestamp(product_data.get('created')).isoformat(), # タイムスタンプをISO形式に
-                updated_at=datetime.fromtimestamp(product_data.get('updated')).isoformat(), # タイムスタンプをISO形式に
-                # features は metadata から取得するなどのロジックが必要 (ここでは省略)
-                features=product_data.get('metadata', {}).get('features', '').split(',') if product_data.get('metadata', {}).get('features') else []
-            )
-            active_plans.append(plan)
-            processed_products.add(product_data.get('id'))
-
-        return active_plans
+        return response_plans
 
     except Exception as e:
-        logger.error(f"Stripeプラン取得エラー: {e}", exc_info=True)
+        logger.error(f"DBからの料金プラン取得エラー: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="料金プランの取得に失敗しました。")
 
 @router.get("/user-subscription", response_model=Optional[SubscriptionResponse])

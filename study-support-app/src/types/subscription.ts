@@ -6,6 +6,7 @@ export interface SubscriptionPlan {
   amount: number;
   currency: string;
   interval: string;
+  interval_count: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;

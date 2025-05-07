@@ -17,8 +17,11 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { createProduct } from '@/lib/api/admin'; // API関数
-import { StripeProductCreate, StripeProductResponse } from '@/types/stripe'; // 型定義
+import { adminService } from '@/services/adminService'; // ★ adminService をインポート
+import { 
+  StripeProductCreate, 
+  StripeDbProductData // ★ DB保存後のデータ型をインポート
+} from '@/types/stripe'; // 型定義
 import { getRoles } from '@/services/adminService'; // ★ getRoles をインポート (パスは適宜調整)
 import { Role } from '@/types/user'; // ★ Role型をインポート (パスは適宜調整)
 
@@ -27,7 +30,7 @@ const formSchema = z.object({
   name: z.string().min(1, { message: "商品名は必須です。" }),
   description: z.string().optional(),
   active: z.boolean().default(true),
-  assigned_role: z.string().optional(), // ★ 追加: 割り当てるロール名
+  assigned_role: z.string().optional(), // ★ ここにはロールIDが文字列として入る
 });
 
 type ProductFormValues = z.infer<typeof formSchema>;
@@ -47,7 +50,7 @@ export function CreateProductDialog({ isOpen, onClose, onSuccess }: CreateProduc
       name: "",
       description: "",
       active: true,
-      assigned_role: "", // ★ 追加
+      assigned_role: "__NONE__", // デフォルトは「割り当てなし」を示すID (または空文字)
     },
   });
 
@@ -60,13 +63,14 @@ export function CreateProductDialog({ isOpen, onClose, onSuccess }: CreateProduc
 
   // 商品作成APIを呼び出す Mutation
   const createProductMutation = useMutation<
-    StripeProductResponse, 
+    StripeDbProductData, // ★ レスポンス型を StripeDbProductData に変更
     Error, 
     StripeProductCreate
   >({
-    mutationFn: createProduct,
-    onSuccess: (data) => {
-      toast({ title: "成功", description: `商品「${data.name}」を作成しました。` });
+    mutationFn: adminService.createProduct, // ★ adminService.createProduct を使用
+    onSuccess: (data: StripeDbProductData) => { // ★ data の型を明示
+      // data にはDBのID (data.id) や Stripeの商品ID (data.stripe_product_id) が含まれる
+      toast({ title: "成功", description: `商品「${data.name}」(Stripe ID: ${data.stripe_product_id}) を作成し、DBに保存しました。DB ID: ${data.id}` });
       onSuccess(); 
       form.reset(); 
     },
@@ -78,10 +82,13 @@ export function CreateProductDialog({ isOpen, onClose, onSuccess }: CreateProduc
   const onSubmit = (values: ProductFormValues) => {
     const productToCreate: StripeProductCreate = {
         name: values.name,
-        description: values.description || undefined, // null より undefined の方が一般的かも
+        description: values.description || undefined,
         active: values.active,
-        metadata: values.assigned_role ? { assigned_role: values.assigned_role } : undefined, // ★ 修正: undefined も許容
+        metadata: values.assigned_role && values.assigned_role !== "__NONE__" 
+                    ? { assigned_role: values.assigned_role } // ★ values.assigned_role はロールID
+                    : undefined,
     };
+    console.log("Creating product with metadata:", productToCreate.metadata); // 送信内容確認用ログ
     createProductMutation.mutate(productToCreate);
   };
 
@@ -144,20 +151,25 @@ export function CreateProductDialog({ isOpen, onClose, onSuccess }: CreateProduc
             />
             <FormField
               control={form.control}
-              name="assigned_role"
+              name="assigned_role" // このフィールドにはロールIDがセットされる
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>割り当てるロール (購入後)</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select 
+                    onValueChange={field.onChange} 
+                    value={field.value || "__NONE__"} // field.value にはロールIDが期待される
+                    disabled={isLoadingRoles}
+                  >
                     <FormControl>
-                      <SelectTrigger disabled={isLoadingRoles}>
+                      <SelectTrigger>
                         <SelectValue placeholder="ロールを選択してください" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">割り当てなし</SelectItem>
+                      <SelectItem value="__NONE__">割り当てなし</SelectItem>
                       {roles?.map((role) => (
-                        <SelectItem key={role.id} value={role.name}>
+                        // ★ SelectItemのvalueにrole.idを設定
+                        <SelectItem key={role.id} value={role.id}> 
                           {role.name} {role.description ? `(${role.description})` : ''}
                         </SelectItem>
                       ))}

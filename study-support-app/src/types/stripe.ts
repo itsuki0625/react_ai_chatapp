@@ -42,6 +42,7 @@ export interface StripePriceBase {
   active: boolean;
   metadata?: Record<string, string | number | boolean | null> | null;
   lookup_key?: string | null;
+  nickname?: string | null;
 }
 
 export interface StripePriceCreate extends StripePriceBase {
@@ -54,6 +55,7 @@ export interface StripePriceUpdate {
   active?: boolean | null;
   metadata?: Record<string, string | number | boolean | null> | null;
   lookup_key?: string | null;
+  nickname?: string | null;
 }
 
 export interface StripePriceResponse extends StripePriceBase {
@@ -67,4 +69,16 @@ export interface StripePriceResponse extends StripePriceBase {
 // GET /admin/products のレスポンス型
 export interface StripeProductWithPricesResponse extends StripeProductResponse {
   prices: StripePriceResponse[];
+}
+
+// ★ バックエンドの StripeDbProductResponse に対応するフロントエンドの型 ★
+export interface StripeDbProductData {
+  id: string; // DBのUUID
+  stripe_product_id: string;
+  name: string;
+  description?: string | null;
+  active: boolean;
+  metadata?: { [key: string]: any }; // バックエンドの metadata_ をフロントでは metadata として扱う想定
+  created_at: string; // ISO datetime string
+  updated_at: string; // ISO datetime string
 } 

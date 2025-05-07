@@ -16,7 +16,9 @@ from app.schemas.subscription import (
     CampaignCodeCreate, 
     CampaignCodeResponse,
     CampaignCodeUpdate,
-    StripeCouponCreate, StripeCouponUpdate, StripeCouponResponse
+    StripeCouponCreate, StripeCouponUpdate, StripeCouponResponse,
+    SubscriptionPlanCreate,
+    SubscriptionPlanUpdate
 )
 from app.crud.subscription import (
     create_campaign_code,
@@ -29,7 +31,13 @@ from app.crud.subscription import (
     get_all_db_coupons,
     update_db_coupon,
     delete_db_coupon,
-    get_db_coupon_by_stripe_id
+    get_db_coupon_by_stripe_id,
+    create_stripe_db_product,
+    get_stripe_db_product_by_stripe_id,
+    create_subscription_plan,
+    update_stripe_db_product_by_stripe_id,
+    update_subscription_plan_by_price_id,
+    get_plan_by_price_id
 )
 from app.crud.user import get_multi_users, remove_user, create_user, get_user, update_user, get_user_by_email
 from app.schemas.user import (
@@ -47,7 +55,9 @@ from app.schemas.role import RoleRead # ★ RoleRead をインポート
 from app.schemas.stripe import (
     StripeProductCreate, StripeProductUpdate, StripeProductResponse, StripeProductWithPricesResponse,
     StripePriceCreate, StripePriceUpdate, StripePriceResponse,
-    StripeCouponListFilter, StripeApiCouponResponse
+    StripeCouponListFilter, StripeApiCouponResponse,
+    StripeDbProductCreate, StripeDbProductResponse as StripeDbProductResponseSchema,
+    StripeDbProductUpdate
 )
 
 # --- Userモデルのインポートを追加 ---
@@ -191,82 +201,127 @@ async def get_products(
 ):
     """
     Stripe商品一覧（関連価格情報を含む）を取得する
+    metadata.assigned_role (ロールID) からロール名を取得し、assigned_role_nameに設定する。
     """
     try:
         products_raw = StripeService.list_products(active=active, limit=limit)
         products_with_prices = []
         for prod_raw in products_raw:
             try:
-                # 商品に関連する有効な価格を取得
                 prices_raw = StripeService.list_prices(product_id=prod_raw.id, active=True, limit=100)
                 formatted_prices = []
-                for price_obj in prices_raw: # price_obj は Stripe Price オブジェクト/辞書
+                for price_obj in prices_raw:
                     try:
-                        # product フィールドから Product ID (文字列) を抽出
                         product_field_value = price_obj.get('product')
                         product_id_str = None
-                        if isinstance(product_field_value, dict): # 展開された Product オブジェクト (辞書として扱われることが多い)
+                        if isinstance(product_field_value, dict):
                             product_id_str = product_field_value.get('id')
-                        elif isinstance(product_field_value, str): # 既にID文字列の場合
+                        elif isinstance(product_field_value, str):
                             product_id_str = product_field_value
-                        # stripe.Product オブジェクトの場合 (Stripeライブラリのバージョンによる)
-                        elif hasattr(product_field_value, 'id'): 
-                            product_id_str = product_field_value.id 
+                        elif hasattr(product_field_value, 'id'):
+                            product_id_str = product_field_value.id
 
                         if product_id_str:
-                            # 元のデータをコピーし、productフィールドをID文字列に置き換える
                             price_data_dict = dict(price_obj)
                             price_data_dict['product'] = product_id_str
-                            # Pydanticモデルでバリデーション/変換
                             formatted_prices.append(StripePriceResponse.model_validate(price_data_dict))
                         else:
                              logger.warning(f"Price {price_obj.get('id')} is missing product ID.")
                     except Exception as price_val_e:
                         logger.error(f"Pydantic validation failed for price {price_obj.get('id')}: {price_val_e}")
-                        # エラーがあっても処理を続けるか、ここでエラーを発生させるか選択
                         # continue
 
-                # Productレスポンスモデルでバリデーション/変換
-                product_resp_data = dict(prod_raw)
+                product_resp_data = dict(prod_raw) 
+
+                assigned_role_name_from_db = None
+                if product_resp_data.get('metadata') and isinstance(product_resp_data['metadata'], dict):
+                    role_id_str = product_resp_data['metadata'].get('assigned_role')
+                    if role_id_str:
+                        try:
+                            role_id_uuid = UUID(role_id_str)
+                            role_obj = await crud_role.get_role(db, role_id=role_id_uuid)
+                            if role_obj:
+                                assigned_role_name_from_db = role_obj.name
+                                logger.info(f"Product {prod_raw.id}: Found role name '{assigned_role_name_from_db}' for role ID '{role_id_str}'")
+                            else:
+                                logger.warning(f"Product {prod_raw.id}: Role with ID '{role_id_str}' not found in DB. assigned_role_name will be based on Stripe metadata if available or None.")
+                        except ValueError:
+                            logger.warning(f"Product {prod_raw.id}: assigned_role '{role_id_str}' in metadata is not a valid UUID. assigned_role_name will be based on Stripe metadata if available or None.")
+                        except Exception as e_role:
+                            logger.error(f"Product {prod_raw.id}: Error fetching role name for ID '{role_id_str}': {e_role}", exc_info=True)
+                
                 product_resp = StripeProductWithPricesResponse.model_validate({
                     **product_resp_data,
                     'prices': formatted_prices
                 })
+
+                if assigned_role_name_from_db:
+                    product_resp.assigned_role_name = assigned_role_name_from_db
+                elif product_resp_data.get('metadata') and product_resp_data['metadata'].get('assigned_role') and not assigned_role_name_from_db:
+                    logger.warning(f"Product {prod_raw.id}: assigned_role_name will contain role ID '{product_resp_data['metadata']['assigned_role']}' as role was not found in DB, or it was not a valid UUID.")
+
                 products_with_prices.append(product_resp)
             except Exception as prod_val_e:
-                logger.error(f"Pydantic validation failed for product {prod_raw.get('id')}: {prod_val_e}")
-                # エラーがあっても処理を続けるか、ここでエラーを発生させるか選択
-                # continue
-
+                logger.error(f"Pydantic validation failed for product {prod_raw.get('id')}: {prod_val_e}", exc_info=True)
+        
         return products_with_prices
     except Exception as e:
-        logger.error(f"Stripe商品の取得に失敗しました: {str(e)}", exc_info=True) # エラー詳細をログに出力
+        logger.error(f"Stripe商品の取得に失敗しました: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Stripe商品の取得に失敗しました: {str(e)}"
         )
 
-@router.post("/products", response_model=StripeProductResponse, status_code=status.HTTP_201_CREATED)
-async def create_stripe_product(
-    product_data: StripeProductCreate,
+@router.post("/products", response_model=StripeDbProductResponseSchema, status_code=status.HTTP_201_CREATED)
+async def create_stripe_product_and_store_in_db(
+    product_in: StripeProductCreate,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_permission('admin_access', 'stripe_product_write')),
 ):
     """
-    Stripeに新しい商品を作成します (StripeServiceを使用)
+    Stripe商品を作成し、その情報をDBにも保存する。
+    レスポンスとしてDBに保存された商品情報を返す。
     """
     try:
-        product = StripeService.create_product(
-            name=product_data.name,
-            description=product_data.description,
-            active=product_data.active,
-            metadata=product_data.metadata
+        # 1. Stripe APIを呼び出してStripeに商品を作成
+        #    product_in には name, description, active, metadata が含まれる想定
+        stripe_product_params = {
+            "name": product_in.name,
+            "description": product_in.description,
+            "active": product_in.active,
+            "metadata": product_in.metadata
+        }
+        created_stripe_product = StripeService.create_product(**stripe_product_params)
+        stripe_product_id = created_stripe_product.id
+
+        # 2. DB保存用のデータを作成
+        db_product_data = StripeDbProductCreate(
+            stripe_product_id=stripe_product_id,
+            name=created_stripe_product.name,
+            description=created_stripe_product.description,
+            active=created_stripe_product.active,
+            metadata=dict(created_stripe_product.metadata) if created_stripe_product.metadata else None
         )
-        return product
+
+        # 3. DBにStripeDbProductレコードを作成
+        db_product = await create_stripe_db_product(db, product_in=db_product_data)
+        
+        # 4. DBから取得した情報をレスポンス (StripeDbProductResponseSchemaでシリアライズされる)
+        return db_product 
+
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe APIエラー (商品作成): {e.user_message}", exc_info=True)
+        raise HTTPException(
+            status_code=e.http_status or status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=e.user_message or "Stripeでの商品作成に失敗しました。"
+        )
+    except HTTPException as e: # CRUD操作などでのHTTPExceptionを再throw
+        raise e
     except Exception as e:
+        logger.error(f"商品作成とDB保存処理中に予期せぬエラー: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Stripe商品の作成に失敗しました: {str(e)}"
+            detail="商品の作成中に予期せぬエラーが発生しました。"
         )
 
 @router.put("/products/{product_id}", response_model=StripeProductResponse)
@@ -312,19 +367,44 @@ async def archive_stripe_product(
     current_user: User = Depends(require_permission('admin_access', 'stripe_product_write')),
 ):
     """
-    Stripe商品をアーカイブ（非アクティブ化）します
+    Stripe商品をアーカイブ（非アクティブ化）し、DBの対応レコードも非アクティブ化します。
     """
     try:
-        product = StripeService.archive_product(product_id=product_id)
-        return product
-    except stripe.error.InvalidRequestError as e:
-         if "No such product" in str(e):
-             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="指定された商品が見つかりません")
-         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Stripe APIエラー: {str(e)}")
+        # Stripe APIを呼び出して商品をアーカイブ
+        archived_stripe_product = StripeService.archive_product(product_id=product_id)
+        logger.info(f"Stripe Product {product_id} archived successfully via API.")
+
+        # DBのStripeDbProductのactiveフラグをFalseに更新
+        # Stripe APIのレスポンスで active=false になっていることを確認してからDBを更新
+        if archived_stripe_product and not archived_stripe_product.active:
+            product_update = StripeDbProductUpdate(active=False)
+            updated_db_product = await update_stripe_db_product_by_stripe_id(
+                db, 
+                stripe_product_id=product_id, 
+                product_update_data=product_update
+            )
+            if updated_db_product:
+                logger.info(f"DB StripeProduct {updated_db_product.id} (Stripe ID: {product_id}) marked as inactive.")
+            else:
+                # archive_productが成功しているなら、ここに来る前にもしDBになければそれは別の問題
+                logger.warning(f"Could not find DB StripeProduct with Stripe ID: {product_id} to mark as inactive, though Stripe archiving was successful.")
+        elif archived_stripe_product and archived_stripe_product.active:
+             logger.warning(f"Stripe Product {product_id} was archived via API, but the response still indicates active=true. DB not updated to inactive.")
+        
+        return archived_stripe_product
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe API error (Product archiving for {product_id}): {e.user_message}", exc_info=True)
+        raise HTTPException(
+            status_code=e.http_status or status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=e.user_message or "Stripeでの商品アーカイブに失敗しました。"
+        )
+    except HTTPException as e: # update_stripe_db_product_by_stripe_id などで発生する可能性
+        raise e
     except Exception as e:
+        logger.error(f"商品アーカイブ処理中に予期せぬエラー (Product ID: {product_id}): {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Stripe商品のアーカイブに失敗しました: {str(e)}"
+            detail="商品のアーカイブ中に予期せぬエラーが発生しました。"
         )
 
 # ---------- 価格関連のエンドポイント ---------- #
@@ -375,17 +455,17 @@ async def get_prices(
 @router.post("/prices", response_model=StripePriceResponse, status_code=status.HTTP_201_CREATED)
 async def create_stripe_price(
     price_data: StripePriceCreate,
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_permission('admin_access', 'stripe_price_write')),
 ):
     """
-    Stripeに新しい価格を作成します (StripeServiceを使用)
+    Stripeに新しい価格を作成し、その情報をDBのSubscriptionPlanテーブルにも保存します。
     """
     try:
-        # recurring を Dict に変換する必要があるか確認 (Pydanticが自動変換するはず)
+        # 1. Stripe APIを呼び出してStripeに価格を作成
         recurring_dict = price_data.recurring.model_dump()
-
-        price = StripeService.create_price(
-            product_id=price_data.product_id,
+        created_stripe_price = StripeService.create_price(
+            product_id=price_data.product_id, # これはStripeのProduct ID
             unit_amount=price_data.unit_amount,
             currency=price_data.currency,
             recurring=recurring_dict,
@@ -393,16 +473,79 @@ async def create_stripe_price(
             metadata=price_data.metadata,
             lookup_key=price_data.lookup_key
         )
-        return price
-    except stripe.error.InvalidRequestError as e:
-        # 商品が存在しない場合などのエラーハンドリング
-        if "No such product" in str(e):
-             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="指定された商品が見つかりません")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Stripe APIエラー: {str(e)}")
+        logger.info(f"Stripe Price created successfully: {created_stripe_price.id}")
+
+        # 2. Stripe Product ID から DBの StripeDbProduct を取得
+        db_stripe_product = await get_stripe_db_product_by_stripe_id(db, stripe_product_id=price_data.product_id)
+        if not db_stripe_product:
+            logger.error(f"StripeDbProduct not found in DB for Stripe Product ID: {price_data.product_id}")
+            # ここでエラーを返すか、DBにStripeDbProductも自動作成するかは要件による
+            # 今回はエラーとして処理
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Associated Stripe Product with ID '{price_data.product_id}' not found in the database. Please register the product first."
+            )
+        logger.info(f"Found DB StripeProduct: {db_stripe_product.id} for Stripe Product ID: {price_data.product_id}")
+
+        # 3. SubscriptionPlan の名前と説明を決定
+        #    Priceのnicknameがあればそれをプラン名に、なければProduct名を使う
+        #    説明はProductの説明を使う
+        plan_name = created_stripe_price.nickname
+        if not plan_name and db_stripe_product:
+            plan_name = db_stripe_product.name
+        if not plan_name: # それでも名前がない場合はデフォルト名
+            plan_name = f"Plan for {db_stripe_product.name if db_stripe_product else price_data.product_id}"
+
+        plan_description = db_stripe_product.description if db_stripe_product else None
+
+
+        # 4. DB保存用の SubscriptionPlanCreate スキーマを準備
+        subscription_plan_data_for_db = SubscriptionPlanCreate(
+            name=plan_name,
+            description=plan_description,
+            price_id=created_stripe_price.id, # Stripe Price ID
+            stripe_db_product_id=db_stripe_product.id, # DBのStripeDbProductのUUID
+            amount=created_stripe_price.unit_amount if created_stripe_price.unit_amount is not None else 0, # unit_amountがNoneの場合0に
+            currency=created_stripe_price.currency,
+            interval=created_stripe_price.recurring.interval if created_stripe_price.recurring else "month", # recurringがない場合はデフォルト
+            interval_count=created_stripe_price.recurring.interval_count if created_stripe_price.recurring else 1,
+            is_active=created_stripe_price.active,
+            # features や plan_metadata は必要に応じて設定
+            # trial_days は Stripe Priceオブジェクトから直接は取れないことが多いので、別途設定するか、DBモデル側でデフォルトを持つ
+        )
+        logger.debug(f"SubscriptionPlan data for DB: {subscription_plan_data_for_db.model_dump_json(indent=2)}")
+
+        # 5. DBに SubscriptionPlan レコードを作成
+        try:
+            db_subscription_plan = await create_subscription_plan(db, plan_in=subscription_plan_data_for_db)
+            logger.info(f"SubscriptionPlan created in DB successfully: {db_subscription_plan.id}")
+        except Exception as db_error:
+            # DB保存に失敗した場合、作成したStripe Priceをどうするか？ (例: アーカイブする)
+            # ここでは一旦エラーログを残してStripe Priceはそのままにするが、要検討
+            logger.error(f"Failed to save SubscriptionPlan to DB: {db_error}", exc_info=True)
+            # DBエラーの詳細をクライアントに返すのはセキュリティ上避けるべき場合もある
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to save subscription plan details to the database after creating it in Stripe."
+            )
+
+        # 6. クライアントにStripe Priceのレスポンスを返す
+        #    (StripePriceResponseスキーマでシリアライズされる)
+        return created_stripe_price
+
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe API error (Price creation): {e.user_message}", exc_info=True)
+        raise HTTPException(
+            status_code=e.http_status or status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=e.user_message or "Stripeでの価格作成に失敗しました。"
+        )
+    except HTTPException as e: # 内部で発生したHTTPExceptionを再throw
+        raise e
     except Exception as e:
+        logger.error(f"価格作成とDB保存処理中に予期せぬエラー: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Stripe価格の作成に失敗しました: {str(e)}"
+            detail="価格の作成中に予期せぬエラーが発生しました。"
         )
 
 @router.put("/prices/{price_id}", response_model=StripePriceResponse)
@@ -442,23 +585,47 @@ async def update_stripe_price(
 @router.delete("/prices/{price_id}", response_model=StripePriceResponse)
 async def archive_stripe_price(
     price_id: str,
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_permission('admin_access', 'stripe_price_write')),
 ):
     """
-    Stripe価格をアーカイブ（非アクティブ化）します (StripeServiceを使用)
+    Stripe価格をアーカイブ（非アクティブ化）し、DBの対応するSubscriptionPlanも非アクティブ化します。
     """
     try:
-        # update_price を使って active=False にする
-        price = StripeService.update_price(price_id=price_id, active=False)
-        return price
-    except stripe.error.InvalidRequestError as e:
-         if "No such price" in str(e):
-             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="指定された価格が見つかりません")
-         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Stripe APIエラー: {str(e)}")
+        # Stripe APIを呼び出して価格を非アクティブ化 (active=False で更新)
+        archived_stripe_price = StripeService.update_price(price_id=price_id, active=False)
+        logger.info(f"Stripe Price {price_id} marked as inactive successfully via API.")
+
+        # DBのSubscriptionPlanのis_activeフラグをFalseに更新
+        # Stripe APIのレスポンスで active=false になっていることを確認してからDBを更新
+        if archived_stripe_price and not archived_stripe_price.active:
+            plan_update = SubscriptionPlanUpdate(is_active=False)
+            updated_db_plan = await update_subscription_plan_by_price_id(
+                db, 
+                price_id=price_id, 
+                plan_update_data=plan_update
+            )
+            if updated_db_plan:
+                logger.info(f"DB SubscriptionPlan {updated_db_plan.id} (Price ID: {price_id}) marked as inactive.")
+            else:
+                logger.warning(f"Could not find DB SubscriptionPlan with Price ID: {price_id} to mark as inactive, though Stripe archiving was successful.")
+        elif archived_stripe_price and archived_stripe_price.active:
+            logger.warning(f"Stripe Price {price_id} was archived via API, but the response still indicates active=true. DB not updated to inactive.")
+
+        return archived_stripe_price
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe API error (Price archiving for {price_id}): {e.user_message}", exc_info=True)
+        raise HTTPException(
+            status_code=e.http_status or status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=e.user_message or "Stripeでの価格アーカイブに失敗しました。"
+        )
+    except HTTPException as e: # update_subscription_plan_by_price_id などで発生する可能性
+        raise e
     except Exception as e:
+        logger.error(f"価格アーカイブ処理中に予期せぬエラー (Price ID: {price_id}): {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Stripe価格のアーカイブに失敗しました: {str(e)}"
+            detail="価格のアーカイブ中に予期せぬエラーが発生しました。"
         )
 
 # ---------- キャンペーンコード関連のエンドポイント (修正) ---------- #

@@ -32,26 +32,43 @@ class SubscriptionResponse(SubscriptionBase, TimestampMixin):
     class Config:
         from_attributes = True
 
-# サブスクリプションプラン (Stripeから直接取得するためDBモデルなし)
-class SubscriptionPlanBase(BaseModel):
-    name: str
-    description: Optional[str] = None
-    price_id: str  # Stripeの価格ID
-    amount: int
-    currency: str = "jpy"
-    interval: str
-    is_active: bool = True
 
-class SubscriptionPlanCreate(SubscriptionPlanBase):
+# --- DB 操作用の SubscriptionPlan スキーマ ---
+class SubscriptionPlanDbBase(BaseModel):
+    name: str = Field(..., description="プラン名")
+    description: Optional[str] = Field(None, description="プランの説明")
+    price_id: str = Field(..., description="対応するStripe Price ID")
+    stripe_db_product_id: UUID = Field(..., description="紐づくStripeDbProductのDB ID")
+    amount: int = Field(..., description="金額 (最小通貨単位)")
+    currency: str = Field(default="jpy", description="通貨コード")
+    interval: str = Field(..., description="課金間隔 (例: month, year)")
+    interval_count: int = Field(default=1, description="課金間隔の数値")
+    is_active: bool = Field(default=True, description="有効フラグ")
+    features: Optional[List[str]] = Field(None, description="プランのフィーチャーリスト")
+    plan_metadata: Optional[Dict[str, Any]] = Field(None, description="プラン固有のメタデータ")
+    trial_days: Optional[int] = Field(None, description="トライアル日数")
+
+class SubscriptionPlanCreate(SubscriptionPlanDbBase):
+    # SubscriptionPlanDbBaseに必要なフィールドが全て含まれていれば、追加フィールドは不要
     pass
 
-class SubscriptionPlanResponse(SubscriptionPlanBase):
-    id: str  # Stripe連携のため、StringとしてIDを保持（価格IDと同じ値）
+class SubscriptionPlanUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+    features: Optional[List[str]] = None
+    plan_metadata: Optional[Dict[str, Any]] = None
+    trial_days: Optional[int] = None
+    # price_id, stripe_db_product_id, amount, currency, interval, interval_count は通常更新不可とする
+
+class SubscriptionPlanResponse(SubscriptionPlanDbBase):
+    id: UUID # DBのUUID
     created_at: datetime
     updated_at: datetime
+    # 必要であれば、紐づくStripeDbProductの情報などをネストして含めることも可能
 
     class Config:
-        from_attributes = False  # DBモデルと紐づかないため、Falseに変更
+        from_attributes = True
 
 # 支払い履歴
 class PaymentHistoryBase(BaseModel):

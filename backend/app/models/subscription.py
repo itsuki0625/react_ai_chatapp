@@ -4,6 +4,19 @@ from datetime import datetime
 import uuid
 from .base import Base, TimestampMixin
 
+class StripeDbProduct(Base, TimestampMixin):
+    __tablename__ = 'stripe_db_products'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    stripe_product_id = Column(String, nullable=False, unique=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(String)
+    active = Column(Boolean, default=True)
+    metadata_ = Column('metadata', JSON)
+
+    # Relationships
+    subscription_plans = relationship("SubscriptionPlan", back_populates="stripe_db_product")
+
 class Subscription(Base, TimestampMixin):
     __tablename__ = 'subscriptions'
     
@@ -31,9 +44,10 @@ class SubscriptionPlan(Base, TimestampMixin):
     __tablename__ = 'subscription_plans'
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String, nullable=False, unique=True)
+    name = Column(String, nullable=False, unique=False)
     description = Column(String)
     price_id = Column(String, nullable=False)
+    stripe_db_product_id = Column(UUID(as_uuid=True), ForeignKey('stripe_db_products.id'), nullable=False, index=True)
     amount = Column(Integer, nullable=False)
     currency = Column(String, default='jpy', nullable=False)
     interval = Column(String, nullable=False)  # 'month', 'year'
@@ -46,6 +60,7 @@ class SubscriptionPlan(Base, TimestampMixin):
     # Relationships
     subscriptions = relationship("Subscription", back_populates="plan")
     invoice_items = relationship("InvoiceItem", back_populates="subscription_plan")
+    stripe_db_product = relationship("StripeDbProduct", back_populates="subscription_plans")
 
 class PaymentHistory(Base, TimestampMixin):
     __tablename__ = 'payment_history'

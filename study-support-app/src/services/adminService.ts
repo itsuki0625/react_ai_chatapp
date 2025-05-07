@@ -2,6 +2,13 @@ import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import { CampaignCode, CampaignCodeCreatePayload } from '@/types/subscription';
 import { getApiBaseUrl } from './api';
 import { AdminUser, Role } from '@/types/user';
+import { 
+  StripeProductWithPricesResponse, 
+  StripePriceResponse, 
+  StripeProductCreate,
+  StripeDbProductData,
+  StripeProductResponse
+} from '@/types/stripe';
 
 // APIのベースURLを取得
 const API_URL = getApiBaseUrl();
@@ -306,14 +313,18 @@ const deleteCampaignCode = async (campaignCodeId: string): Promise<void> => {
 
 export const adminService = {
   // Stripe商品関連
-  getProducts: async (): Promise<StripeProduct[]> => {
+  getProducts: async (active?: boolean): Promise<StripeProductWithPricesResponse[]> => {
     try {
-      const response = await fetchWithAuth(`${API_URL}${ADMIN_API_PREFIX}/products`);
+      let url = `${API_URL}${ADMIN_API_PREFIX}/products`;
+      if (active !== undefined) {
+        url += `?active=${active}`;
+      }
+      const response = await fetchWithAuth(url);
       
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          return data;
+          return data as StripeProductWithPricesResponse[];
         } else {
           console.error('商品データが配列形式ではありません:', data);
           return [];
@@ -334,13 +345,8 @@ export const adminService = {
     }
   },
 
-  // Stripe商品作成
-  createProduct: async (productData: {
-    name: string;
-    description?: string;
-    active?: boolean;
-    metadata?: Record<string, string>;
-  }): Promise<StripeProduct> => {
+  // Stripe商品作成 (DBにも保存するAPIを呼び出す)
+  createProduct: async (productData: StripeProductCreate): Promise<StripeDbProductData> => {
     const response = await fetchWithAuth(`${API_URL}${ADMIN_API_PREFIX}/products`, {
       method: 'POST',
       headers: {
@@ -349,37 +355,39 @@ export const adminService = {
       body: JSON.stringify(productData),
     });
     if (response.ok) {
-      return await response.json();
+      return await response.json() as StripeDbProductData;
     } else {
       console.error('商品の作成に失敗しました');
-      throw new Error('商品の作成に失敗しました');
+      const errorData = await response.json().catch(() => ({ message: '商品の作成に失敗しました' }));
+      throw new Error(errorData.message || '商品の作成に失敗しました');
     }
   },
 
-  // Stripe商品削除
-  archiveProduct: async (productId: string): Promise<StripeProduct> => {
+  // Stripe商品削除 (アーカイブ)
+  archiveProduct: async (productId: string): Promise<StripeProductResponse> => {
     const response = await fetchWithAuth(`${API_URL}${ADMIN_API_PREFIX}/products/${productId}`, {
       method: 'DELETE',
     });
     if (response.ok) {
-      return await response.json();
+      return await response.json() as StripeProductResponse;
     } else {
       console.error('商品のアーカイブに失敗しました');
-      throw new Error('商品のアーカイブに失敗しました');
+      const errorData = await response.json().catch(() => ({ message: '商品のアーカイブに失敗しました' }));
+      throw new Error(errorData.message || '商品のアーカイブに失敗しました');
     }
   },
 
   // Stripe価格一覧取得
-  getPrices: async (): Promise<StripePrice[]> => {
+  getPrices: async (): Promise<StripePriceResponse[]> => {
     try {
       const response = await fetchWithAuth(`${API_URL}${ADMIN_API_PREFIX}/prices`);
       
       if (response.ok) {
         const data = await response.json();
-        if (typeof data === 'object' && 'data' in data && Array.isArray(data.data)) {
-          return data.data;
+        if (typeof data === 'object' && data !== null && 'data' in data && Array.isArray(data.data)) {
+          return data.data as StripePriceResponse[];
         } else if (Array.isArray(data)) {
-          return data;
+          return data as StripePriceResponse[];
         } else {
           console.error('価格データが予期せぬ形式です:', data);
           return [];

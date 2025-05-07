@@ -54,7 +54,10 @@ from .checklist import (
 )
 from .subscription import (
     SubscriptionBase, SubscriptionCreate, SubscriptionResponse,
-    SubscriptionPlanBase, SubscriptionPlanCreate, SubscriptionPlanResponse,
+    SubscriptionPlanCreate,
+    SubscriptionPlanResponse,
+    SubscriptionPlanDbBase,
+    SubscriptionPlanUpdate,
     PaymentHistoryBase, PaymentHistoryCreate, PaymentHistoryResponse,
     StripeCouponBase, StripeCouponCreate, StripeCouponUpdate, StripeCouponResponse,
     CampaignCodeBase, CampaignCodeCreate, CampaignCodeUpdate, CampaignCodeResponse,
@@ -127,7 +130,10 @@ __all__ = [
     "ChecklistTemplateBase", "ChecklistTemplateCreate", "ChecklistTemplateResponse",
     # Subscription
     "SubscriptionBase", "SubscriptionCreate", "SubscriptionResponse",
-    "SubscriptionPlanBase", "SubscriptionPlanCreate", "SubscriptionPlanResponse",
+    "SubscriptionPlanCreate",
+    "SubscriptionPlanResponse",
+    "SubscriptionPlanDbBase",
+    "SubscriptionPlanUpdate",
     "PaymentHistoryBase", "PaymentHistoryCreate", "PaymentHistoryResponse",
     "StripeCouponBase", "StripeCouponCreate", "StripeCouponUpdate", "StripeCouponResponse",
     "CampaignCodeBase", "CampaignCodeCreate", "CampaignCodeUpdate", "CampaignCodeResponse",

@@ -1,16 +1,19 @@
-from pydantic import BaseModel, Field, UUID4, model_validator
+from pydantic import BaseModel, Field, UUID4, model_validator, computed_field, AliasChoices
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 # --- Product Schemas ---
 
-class StripeProductBase(BaseModel):
+class StripeProductBaseModel(BaseModel):
     name: str = Field(..., description="商品名")
     description: Optional[str] = Field(None, description="商品の説明")
     active: bool = Field(True, description="有効フラグ")
     metadata: Optional[Dict[str, str]] = Field(None, description="メタデータ (キーも値も文字列)")
 
-class StripeProductCreate(StripeProductBase):
+class StripeProductCreate(StripeProductBaseModel):
     pass
 
 class StripeProductUpdate(BaseModel):
@@ -20,7 +23,7 @@ class StripeProductUpdate(BaseModel):
     metadata: Optional[Dict[str, str]] = Field(None, description="メタデータ (キーも値も文字列)")
 
 # Stripe APIからのレスポンス用
-class StripeProductResponse(StripeProductBase):
+class StripeProductResponse(StripeProductBaseModel):
     id: str = Field(..., description="Stripe Product ID")
     created: int # Unix timestamp
     updated: int # Unix timestamp
@@ -29,10 +32,17 @@ class StripeProductResponse(StripeProductBase):
     @model_validator(mode='before')
     @classmethod
     def extract_assigned_role(cls, data: Any) -> Any:
+        logger.debug(f"StripeProductResponse validator: incoming data for product ID {data.get('id', 'N/A')}: {data}")
         if isinstance(data, dict):
             metadata = data.get('metadata')
             if isinstance(metadata, dict):
-                data['assigned_role_name'] = metadata.get('assigned_role')
+                assigned_role = metadata.get('assigned_role')
+                data['assigned_role_name'] = assigned_role
+                logger.debug(f"StripeProductResponse validator: product ID {data.get('id', 'N/A')}, assigned_role_name set to: {assigned_role}")
+            else:
+                logger.debug(f"StripeProductResponse validator: product ID {data.get('id', 'N/A')}, metadata is not a dict or is None: {metadata}")
+        else:
+            logger.debug(f"StripeProductResponse validator: incoming data is not a dict: {type(data)}")
         return data
 
     class Config:
@@ -133,5 +143,75 @@ class StripeApiCouponResponse(BaseModel):
     metadata: Dict[str, Any] = {}
     applies_to: Optional[Dict[str, Any]] = None
 # ─────────────────────────────────────────────────────────
+
+# --- Stripe DB Product Schemas (For DB interaction) ---
+class StripeDbProductBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    active: bool = True
+    # metadata_: Optional[Dict[str, Any]] = Field(None, alias="metadata") # Baseから削除
+
+    class Config:
+        populate_by_name = True
+
+    # @model_validator(mode='before') # 前回のバリデータは削除またはコメントアウト
+    # @classmethod
+    # def ensure_metadata_is_dict(cls, data: Any) -> Any:
+    #     ...
+
+class StripeDbProductCreate(StripeDbProductBase):
+    stripe_product_id: str
+    metadata: Optional[Dict[str, Any]] = Field(None, validation_alias=AliasChoices('metadata', 'metadata_'))
+
+class StripeDbProductUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    active: Optional[bool] = None
+    metadata: Optional[Dict[str, Any]] = Field(None, validation_alias=AliasChoices('metadata', 'metadata_'))
+
+    class Config:
+        populate_by_name = True
+
+class StripeDbProductResponse(StripeDbProductBase):
+    id: UUID4
+    stripe_product_id: str
+    created_at: datetime
+    updated_at: datetime
+
+    @computed_field # type: ignore[misc]
+    @property
+    def metadata(self) -> Optional[Dict[str, Any]]:
+        # SQLAlchemyモデルインスタンス(self)のmetadata_属性を取得することを想定
+        actual_metadata_obj = getattr(self, 'metadata_', None)
+        if actual_metadata_obj is not None:
+            if isinstance(actual_metadata_obj, dict):
+                return actual_metadata_obj
+            try:
+                return dict(actual_metadata_obj)
+            except (TypeError, ValueError):
+                # 変換に失敗した場合、エラー情報を含む辞書を返すか、Noneを返すか、
+                # あるいは例外を発生させることを検討。
+                # ここでは、問題の特定のためにエラー情報を含む辞書を返す。
+                return {"serialization_error": "metadata could not be converted to dict"}
+        return None
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True
+
+# Potentially update SubscriptionPlan schemas if needed
+# For example, if SubscriptionPlanCreate now needs stripe_db_product_id
+# from .subscription import SubscriptionPlanBase # Assuming SubscriptionPlanBase is in subscription.py
+
+# class SubscriptionPlanCreateDB(SubscriptionPlanBase): # Example, adjust as needed
+#     stripe_db_product_id: UUID4
+
+# class SubscriptionPlanResponseDB(SubscriptionPlanBase):
+#     id: UUID4
+#     stripe_db_product_id: UUID4
+#     created_at: datetime
+#     updated_at: datetime
+#     class Config:
+#         from_attributes = True
 
 # +++ ここまで +++ 

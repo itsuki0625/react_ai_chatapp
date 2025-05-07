@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 import uuid
 import logging
 
-from app.models.subscription import Subscription, PaymentHistory, CampaignCode, StripeCoupon, SubscriptionPlan
+from app.models.subscription import Subscription, PaymentHistory, CampaignCode, StripeCoupon, SubscriptionPlan, StripeDbProduct
 from app.models.user import User
 from app.schemas.subscription import (
     SubscriptionCreate,
@@ -18,8 +18,11 @@ from app.schemas.subscription import (
     CampaignCodeUpdate,
     StripeCouponCreate,
     StripeCouponUpdate,
-    StripeCouponResponse
+    StripeCouponResponse,
+    SubscriptionPlanCreate,
+    SubscriptionPlanUpdate
 )
+from app.schemas.stripe import StripeDbProductCreate, StripeDbProductUpdate, StripeDbProductResponse
 from app.services.stripe_service import StripeService
 import stripe
 
@@ -662,3 +665,200 @@ async def get_plan_by_price_id(db: AsyncSession, stripe_price_id: str) -> Option
         logger.warning(f"SubscriptionPlan not found for Stripe Price ID: {stripe_price_id}")
     return plan
 # --- ここまで追加 ---
+
+# --- ★ StripeDBProduct CRUD 操作 --- 
+async def create_stripe_db_product(db: AsyncSession, product_in: StripeDbProductCreate) -> StripeDbProduct:
+    """DBにStripeDbProductレコードを作成"""
+    # Stripe Product IDの重複チェック
+    existing_product = await get_stripe_db_product_by_stripe_id(db, product_in.stripe_product_id)
+    if existing_product:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Stripe Product ID '{product_in.stripe_product_id}' already exists in DB."
+        )
+    
+    # スキーマのエイリアス(metadata)をモデルのフィールド名(metadata_)に合わせる準備
+    product_data = product_in.model_dump(exclude_unset=True)
+    if 'metadata' in product_data and product_data['metadata'] is not None: # metadata_ from alias
+        product_data['metadata_'] = product_data.pop('metadata')
+    elif 'metadata' in product_data: # metadata が None の場合
+         product_data.pop('metadata') # metadata_ には設定しない
+
+    db_product = StripeDbProduct(**product_data)
+    db.add(db_product)
+    try:
+        await db.commit()
+        await db.refresh(db_product)
+        logger.info(f"StripeDbProduct record created: {db_product.id} (Stripe ID: {db_product.stripe_product_id})")
+        return db_product
+    except IntegrityError as e:
+        await db.rollback()
+        logger.error(f"Error creating StripeDbProduct (IntegrityError) for Stripe ID {product_in.stripe_product_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Database integrity error.")
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error creating StripeDbProduct for Stripe ID {product_in.stripe_product_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create product in DB.")
+
+async def get_stripe_db_product(db: AsyncSession, product_db_id: UUID) -> Optional[StripeDbProduct]:
+    """DB UUIDでStripeDbProductレコードを取得"""
+    result = await db.execute(select(StripeDbProduct).filter(StripeDbProduct.id == product_db_id))
+    return result.scalars().first()
+
+async def get_stripe_db_product_by_stripe_id(db: AsyncSession, stripe_product_id: str) -> Optional[StripeDbProduct]:
+    """Stripe Product IDでStripeDbProductレコードを取得"""
+    result = await db.execute(select(StripeDbProduct).filter(StripeDbProduct.stripe_product_id == stripe_product_id))
+    return result.scalars().first()
+
+async def list_stripe_db_products(db: AsyncSession, skip: int = 0, limit: int = 100, active: Optional[bool] = None) -> List[StripeDbProduct]:
+    """DB上のStripeDbProductレコード一覧を取得 (activeフィルタ付き)"""
+    query = select(StripeDbProduct).order_by(StripeDbProduct.created_at.desc())
+    if active is not None:
+        query = query.filter(StripeDbProduct.active == active)
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+async def update_stripe_db_product(db: AsyncSession, product_db_id: UUID, product_in: StripeDbProductUpdate) -> Optional[StripeDbProduct]:
+    """DB上のStripeDbProductレコードを更新"""
+    db_product = await get_stripe_db_product(db, product_db_id)
+    if not db_product:
+        return None
+
+    update_data = product_in.model_dump(exclude_unset=True)
+    if 'metadata' in update_data and update_data['metadata'] is not None:
+        update_data['metadata_'] = update_data.pop('metadata')
+    elif 'metadata' in update_data: # metadata が None の場合
+         update_data.pop('metadata')
+
+    for key, value in update_data.items():
+        setattr(db_product, key, value)
+    
+    try:
+        await db.commit()
+        await db.refresh(db_product)
+        return db_product
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error updating StripeDbProduct {product_db_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not update product in DB.")
+
+async def delete_stripe_db_product(db: AsyncSession, product_db_id: UUID) -> bool:
+    """DB上のStripeDbProductレコードを削除"""
+    # TODO: 関連するSubscriptionPlanが存在する場合は削除を拒否するロジックを追加検討
+    db_product = await get_stripe_db_product(db, product_db_id)
+    if not db_product:
+        return False
+    
+    try:
+        await db.delete(db_product)
+        await db.commit()
+        return True
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error deleting StripeDbProduct {product_db_id}: {e}", exc_info=True)
+        # 外部キー制約違反などで削除できない場合のエラーハンドリングを具体的にする
+        if "foreign key constraint" in str(e).lower():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot delete product. It is associated with existing plans or subscriptions.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not delete product from DB.")
+
+# --- ここまで StripeDBProduct CRUD 操作 ---
+
+async def create_subscription_plan(db: AsyncSession, plan_in: SubscriptionPlanCreate) -> SubscriptionPlan:
+    """
+    新しいSubscriptionPlanレコードをデータベースに作成します。
+    """
+    # SubscriptionPlanCreate スキーマのデータをモデルのフィールドにマッピング
+    db_plan = SubscriptionPlan(
+        name=plan_in.name,
+        description=plan_in.description,
+        price_id=plan_in.price_id,
+        stripe_db_product_id=plan_in.stripe_db_product_id,
+        amount=plan_in.amount,
+        currency=plan_in.currency,
+        interval=plan_in.interval,
+        interval_count=plan_in.interval_count,
+        is_active=plan_in.is_active,
+        features=plan_in.features if plan_in.features is not None else [],
+        plan_metadata=plan_in.plan_metadata if plan_in.plan_metadata is not None else {},
+        trial_days=plan_in.trial_days
+        # created_at, updated_at は TimestampMixin により自動設定
+    )
+    db.add(db_plan)
+    try:
+        await db.commit()
+        await db.refresh(db_plan)
+        logger.info(f"SubscriptionPlan '{db_plan.name}' (ID: {db_plan.id}) created successfully in DB.")
+        return db_plan
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error creating SubscriptionPlan '{plan_in.name}' in DB: {e}", exc_info=True)
+        raise # エラーを呼び出し元に再raiseして処理させる
+
+async def update_stripe_db_product_by_stripe_id(db: AsyncSession, stripe_product_id: str, product_update_data: StripeDbProductUpdate) -> Optional[StripeDbProduct]:
+    """
+    Stripe Product IDを使用してStripeDbProductレコードを更新します。
+    """
+    db_product = await get_stripe_db_product_by_stripe_id(db, stripe_product_id=stripe_product_id)
+    if not db_product:
+        logger.warning(f"StripeDbProduct not found with Stripe ID: {stripe_product_id} for update.")
+        return None
+
+    update_data = product_update_data.model_dump(exclude_unset=True)
+    if 'metadata' in update_data and update_data['metadata'] is not None:
+        update_data['metadata_'] = update_data.pop('metadata')
+    elif 'metadata' in update_data: # metadata が None の場合
+         update_data.pop('metadata')
+
+
+    for key, value in update_data.items():
+        setattr(db_product, key, value)
+    
+    try:
+        await db.commit()
+        await db.refresh(db_product)
+        logger.info(f"StripeDbProduct with Stripe ID {stripe_product_id} updated successfully.")
+        return db_product
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error updating StripeDbProduct with Stripe ID {stripe_product_id}: {e}", exc_info=True)
+        raise # エラーを呼び出し元に再raise
+
+async def update_subscription_plan_by_price_id(db: AsyncSession, price_id: str, plan_update_data: SubscriptionPlanUpdate) -> Optional[SubscriptionPlan]:
+    """
+    Stripe Price ID を使用して SubscriptionPlan レコードを更新します。
+    """
+    # 既存の get_plan_by_price_id を使用
+    db_plan = await get_plan_by_price_id(db, stripe_price_id=price_id)
+    if not db_plan:
+        logger.warning(f"SubscriptionPlan not found with Price ID: {price_id} for update.")
+        return None
+
+    update_data = plan_update_data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_plan, key, value)
+    
+    try:
+        await db.commit()
+        await db.refresh(db_plan)
+        logger.info(f"SubscriptionPlan with Price ID {price_id} updated successfully.")
+        return db_plan
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error updating SubscriptionPlan with Price ID {price_id}: {e}", exc_info=True)
+        raise
+
+async def get_active_subscription_plans(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[SubscriptionPlan]:
+    """
+    DBからアクティブなSubscriptionPlanのリストを取得します。
+    関連するStripeDbProduct情報もEager Loadします。
+    """
+    result = await db.execute(
+        select(SubscriptionPlan)
+        .options(selectinload(SubscriptionPlan.stripe_db_product)) # StripeDbProductをEager Load
+        .filter(SubscriptionPlan.is_active == True)
+        .order_by(SubscriptionPlan.created_at.desc()) # 例: 作成日時の降順
+        .offset(skip)
+        .limit(limit)
+    )
+    return result.scalars().all()

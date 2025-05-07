@@ -12,6 +12,23 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
+const getIntervalText = (interval?: string, intervalCount?: number): string => {
+  if (!interval) return '';
+  const count = intervalCount && intervalCount > 1 ? intervalCount : '';
+  switch (interval) {
+    case 'day':
+      return `/${count}日`;
+    case 'week':
+      return `/${count}週`;
+    case 'month':
+      return `/${count}月`;
+    case 'year':
+      return `/${count}年`;
+    default:
+      return `/${count}${interval}`;
+  }
+};
+
 export const SubscriptionPlansPage: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -39,6 +56,7 @@ export const SubscriptionPlansPage: React.FC = () => {
   const { toast } = useToast();
 
   const handleSelectPlan = useCallback((plan: SubscriptionPlan) => {
+    console.log('[handleSelectPlan] Selecting:', plan.name);
     setSelectedPlan(plan);
     setCampaignCodeVerificationResult(null);
     setCampaignCode('');
@@ -46,34 +64,35 @@ export const SubscriptionPlansPage: React.FC = () => {
   }, [setSelectedPlan, setCampaignCodeVerificationResult, setCampaignCode, setError]);
 
   useEffect(() => {
-    const planIdFromUrl = searchParams?.get('plan');
-    const codeFromUrl = searchParams?.get('code');
+    console.log('[Effect: Initial Plan Selection] Running. isLoadingPlans:', isLoadingPlans, 'plans.length:', plans.length, 'selectedPlan:', selectedPlan?.name);
+    if (!isLoadingPlans && plans.length > 0 && !selectedPlan) {
+      const planIdFromUrl = searchParams?.get('plan');
+      console.log('[Effect: Initial Plan Selection] planIdFromUrl:', planIdFromUrl);
+      const planToSelect = planIdFromUrl
+        ? plans.find(p => p.id === planIdFromUrl || p.price_id === planIdFromUrl)
+        : plans[0];
 
-    if (!isLoadingPlans && plans.length > 0) {
-        const planToSelect = planIdFromUrl
-            ? plans.find(p => p.id === planIdFromUrl || p.price_id === planIdFromUrl)
-            : plans[0];
-
-        if (planToSelect) {
-            if (!selectedPlan || selectedPlan.price_id !== planToSelect.price_id) {
-                handleSelectPlan(planToSelect);
-            }
-        }
+      if (planToSelect) {
+        console.log('[Effect: Initial Plan Selection] Found planToSelect:', planToSelect.name);
+        handleSelectPlan(planToSelect);
+      } else {
+        console.log('[Effect: Initial Plan Selection] No plan found to select initially.');
+      }
     }
+  }, [plans, isLoadingPlans, searchParams, handleSelectPlan, selectedPlan]);
 
-    if (codeFromUrl && !campaignCode && !campaignCodeVerificationResult) {
-        setCampaignCode(codeFromUrl);
-    }
-
+  useEffect(() => {
+    console.log('[Effect: Loading/Code] Running. isLoadingPlans:', isLoadingPlans, 'isLoadingSubscription:', isLoadingSubscription);
     setIsPageLoading(isLoadingPlans || isLoadingSubscription);
-
-  }, [plans, isLoadingPlans, isLoadingSubscription, searchParams, selectedPlan, campaignCode, campaignCodeVerificationResult, handleSelectPlan]);
+    const codeFromUrl = searchParams?.get('code');
+    if (codeFromUrl && !campaignCode && !campaignCodeVerificationResult) {
+      console.log('[Effect: Loading/Code] Setting campaign code from URL:', codeFromUrl);
+      setCampaignCode(codeFromUrl);
+    }
+  }, [isLoadingPlans, isLoadingSubscription, searchParams, campaignCode, campaignCodeVerificationResult]);
 
   useEffect(() => {
     console.log('SubscriptionPlansPage - Authentication status changed:', session);
-    if (session) {
-        // fetchData();
-    }
   }, [session]);
 
   const handleVerifyCampaignCode = useCallback(async (code: string): Promise<VerifyCampaignCodeResponse> => {
@@ -209,7 +228,6 @@ export const SubscriptionPlansPage: React.FC = () => {
     }
   };
 
-  // ★ レンダリング直前の状態を確認するためのログ
   console.log('[SubscriptionPlansPage] Rendering state:', {
     plans,
     selectedPlan,
@@ -351,7 +369,7 @@ export const SubscriptionPlansPage: React.FC = () => {
                    console.log(`Formatting amount: plan.name = ${plan.name}, plan.amount = ${plan.amount}, type = ${typeof plan.amount}`);
                    return formatAmount(plan.amount);
                  })()}
-                 <span className="text-sm font-normal">/ 月</span>
+                 <span className="text-sm font-normal">{getIntervalText(plan.interval, plan.interval_count)}</span>
                </p>
                <p className="text-gray-600 mb-4">{plan.description}</p>
 
@@ -427,7 +445,7 @@ export const SubscriptionPlansPage: React.FC = () => {
                   return formatAmount(selectedPlan.amount);
                 })()
               )}
-              <span className="text-sm text-gray-600 ml-1">/ 月</span>
+              <span className="text-sm text-gray-600 ml-1">{getIntervalText(selectedPlan.interval, selectedPlan.interval_count)}</span>
             </p>
           </div>
 
