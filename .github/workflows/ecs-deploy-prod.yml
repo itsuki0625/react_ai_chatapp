@@ -1,16 +1,17 @@
-name: Build, Push, and Deploy PROD
+name: Build & Push STG Docker Images to ECR
 
 on:
-  workflow_dispatch: # 手動実行
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
   ECR_REGISTRY: ${{ secrets.AWS_ECR_REGISTRY }}
 
 jobs:
-  # ─────────────────────────────────────────────────
-  # 1) Backend イメージのビルド & Push (本番環境)
-  # ─────────────────────────────────────────────────
+  # Backend STG イメージのビルド & プッシュ
   build-push-backend-prod:
     environment: Production
     runs-on: ubuntu-latest
@@ -25,34 +26,36 @@ jobs:
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          aws-region:            ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build PROD backend image
         id: build-image
         run: |
-          REGISTRY=$(echo "${{ env.ECR_REGISTRY }}" | sed 's:/*$::')
+          REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
           IMAGE_URI="${REGISTRY}/prod-backend:latest"
           echo "Building image: $IMAGE_URI"
           docker build \
             --file backend/Dockerfile.prod \
             --tag  $IMAGE_URI \
             backend
+          # デバッグ出力を追加
+          echo "Setting output: latest_image_uri=$IMAGE_URI"
           echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
       - name: Push PROD backend to ECR
         run: |
-          REGISTRY=$(echo "${{ env.ECR_REGISTRY }}" | sed 's:/*$::')
+          REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
           docker push ${REGISTRY}/prod-backend:latest
+          
+      - name: Verify output value
+        run: |
+          echo "Verifying output value: ${{ steps.build-image.outputs.latest_image_uri }}"
 
-      - name: Debug Backend Image URI
-        run: echo "Received Backend Image URI: ${{ needs.build-push-backend-prod.outputs.latest_image_uri }}"
-
-  # ─────────────────────────────────────────────────
-  # 2) Frontend イメージのビルド & Push (本番環境)
-  # ─────────────────────────────────────────────────
+  # Frontend PROD イメージのビルド & プッシュ
   build-push-frontend-prod:
     environment: Production
     runs-on: ubuntu-latest
@@ -67,37 +70,38 @@ jobs:
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          aws-region:            ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build PROD frontend image
         id: build-image
         run: |
-          REGISTRY=$(echo "${{ env.ECR_REGISTRY }}" | sed 's:/*$::')
+          REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
           IMAGE_URI="${REGISTRY}/prod-frontend:latest"
           echo "Building image: $IMAGE_URI"
           docker build \
             --file study-support-app/Dockerfile.prod \
             --tag  $IMAGE_URI \
             study-support-app
+          # デバッグ出力を追加
+          echo "Setting output: latest_image_uri=$IMAGE_URI"
           echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
       - name: Push PROD frontend to ECR
         run: |
-          REGISTRY=$(echo "${{ env.ECR_REGISTRY }}" | sed 's:/*$::')
+          REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
           docker push ${REGISTRY}/prod-frontend:latest
+          
+      - name: Verify output value
+        run: |
+          echo "Verifying output value: ${{ steps.build-image.outputs.latest_image_uri }}"
 
-      - name: Debug Frontend Image URI
-        run: echo "Received Frontend Image URI: ${{ needs.build-push-frontend-prod.outputs.latest_image_uri }}"
-
-  # ─────────────────────────────────────────────────
-  # 3) Backend を ECS にデプロイ (本番環境)
-  # ─────────────────────────────────────────────────
   deploy-backend-prod:
-    environment: Production
     needs: build-push-backend-prod
+    environment: Production
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -107,28 +111,43 @@ jobs:
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
-      - name: Render ECS task definition
-        id: render-task-def
+          aws-region:            ${{ secrets.AWS_REGION }}
+      - name: Debug-Backend
+        run: |
+          echo "============== DEBUG INFO =============="
+          echo "Backend URI: ${{ needs.build-push-backend-prod.outputs.latest_image_uri }}"
+          echo "========================================"
+      - name: Debug alternative approach
+        run: |
+          echo "Using hardcoded image URI as a fallback"
+          REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
+          echo "Registry: $REGISTRY"
+          
+      - name: Render ECS task definition (Fallback)
+        id: render-task-def-fallback
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: AWS/backend-task-def-prod.json
           container-name: backend
-          image: ${{ needs.build-push-backend-prod.outputs.latest_image_uri }}
+          image: "${{ secrets.AWS_ECR_REGISTRY }}/prod-backend:latest"
+          
+      - name: Debug fallback output
+        run: |
+          echo "============== FALLBACK OUTPUT =============="
+          echo "Fallback Task definition: ${{ steps.render-task-def-fallback.outputs.task-definition }}"
+          echo "==============================================="
+          
       - name: Deploy Backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           cluster: prod-api
           service: prod-api-service
-          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          task-definition: ${{ steps.render-task-def-fallback.outputs.task-definition }}
           wait-for-service-stability: true
 
-  # ─────────────────────────────────────────────────
-  # 4) Frontend を ECS にデプロイ (本番環境)
-  # ─────────────────────────────────────────────────
   deploy-frontend-prod:
-    environment: Production
     needs: build-push-frontend-prod
+    environment: Production
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -138,18 +157,36 @@ jobs:
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
-      - name: Render ECS task definition
-        id: render-frontend-task-def
+          aws-region:            ${{ secrets.AWS_REGION }}
+      - name: Debug-Frontend
+        run: |
+          echo "============== DEBUG INFO =============="
+          echo "Frontend URI: ${{ needs.build-push-frontend-prod.outputs.latest_image_uri }}"
+          echo "========================================"
+      - name: Debug Frontend alternative approach
+        run: |
+          echo "Using hardcoded image URI as a fallback"
+          REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
+          echo "Registry: $REGISTRY"
+          
+      - name: Render ECS task definition (Fallback)
+        id: render-frontend-task-def-fallback
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: AWS/prod-front.json
+          task-definition: AWS/prod-frontend-task-def.json
           container-name: frontend
-          image: ${{ needs.build-push-frontend-prod.outputs.latest_image_uri }}
+          image: "${{ secrets.AWS_ECR_REGISTRY }}/prod-frontend:latest"
+          
+      - name: Debug frontend fallback output
+        run: |
+          echo "============== FALLBACK OUTPUT =============="
+          echo "Fallback Task definition: ${{ steps.render-frontend-task-def-fallback.outputs.task-definition }}"
+          echo "==============================================="
+          
       - name: Deploy Frontend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           cluster: prod-front
           service: prod-front-service
-          task-definition: ${{ steps.render-frontend-task-def.outputs.task-definition }}
+          task-definition: ${{ steps.render-frontend-task-def-fallback.outputs.task-definition }}
           wait-for-service-stability: true 
