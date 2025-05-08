@@ -9,7 +9,7 @@ const API_BASE_URL = getApiBaseUrl();
 // GET /api/v1/permissions
 export const getPermissions = async (params?: { skip?: number; limit?: number }): Promise<PermissionRead[]> => {
   const queryParams = new URLSearchParams(params as Record<string, string>).toString();
-  const url = `${API_BASE_URL}/api/v1/permissions${queryParams ? '?' + queryParams : ''}`;
+  const url = `${API_BASE_URL}/api/v1/permissions/${queryParams ? '?' + queryParams : ''}`;
   console.log(`Fetching permissions from: ${url}`);
   // Permissions are often public, but use fetchWithAuth if authentication is required
   const response = await fetchWithAuth(url);
@@ -35,7 +35,7 @@ Example for creating a permission (if needed):
 import { PermissionCreate } from '@/types/permission'; // Assuming you define this type
 
 export const createPermission = async (data: PermissionCreate): Promise<PermissionRead> => {
-  const url = `${API_BASE_URL}/api/v1/permissions`;
+  const url = `${API_BASE_URL}/api/v1/permissions/`;
   const response = await fetchWithAuth(url, {
     method: 'POST',
     headers: {

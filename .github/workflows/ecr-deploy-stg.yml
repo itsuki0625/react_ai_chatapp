@@ -1,9 +1,9 @@
 name: Build & Push STG Docker Images to ECR
 
 on:
-  # push:
-  #   branches:
-  #     - stg
+  push:
+    branches:
+      - stg
   workflow_dispatch:
     inputs:
       branch:
