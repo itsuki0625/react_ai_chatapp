@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     INSTRUCTION: str = load_instruction()
 
     # JWT設定
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15  # 15分
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 15分から24時間(1440分)に変更
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30    # 30日
     
     # メール設定

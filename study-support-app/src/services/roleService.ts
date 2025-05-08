@@ -10,7 +10,8 @@ const API_BASE_URL = getApiBaseUrl();
 // GET /api/v1/roles
 export const getRoles = async (params?: { skip?: number; limit?: number }): Promise<RoleRead[]> => {
   const queryParams = new URLSearchParams(params as Record<string, string>).toString();
-  const url = `${API_BASE_URL}/api/v1/roles${queryParams ? '?' + queryParams : ''}`;
+  const base_url = `${API_BASE_URL}/api/v1/roles/`;
+  const url = queryParams ? `${base_url}?${queryParams}` : base_url;
   console.log(`Fetching roles from: ${url}`); // Log the URL
   const response = await fetchWithAuth(url);
   if (!response.ok) {
