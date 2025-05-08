@@ -12,8 +12,8 @@ env:
 
 jobs:
   # Backend STG イメージのビルド & プッシュ
-  build-push-backend-stg:
-    environment: Preview
+  build-push-backend-prod:
+    environment: Production
     runs-on: ubuntu-latest
     outputs:
       latest_image_uri: ${{ steps.build-image.outputs.latest_image_uri }}
@@ -32,32 +32,32 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build STG backend image
+      - name: Build PROD backend image
         id: build-image
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
-          IMAGE_URI="${REGISTRY}/stg-backend:latest"
+          IMAGE_URI="${REGISTRY}/prod-backend:latest"
           echo "Building image: $IMAGE_URI"
           docker build \
-            --file backend/Dockerfile.stg \
+            --file backend/Dockerfile.prod \
             --tag  $IMAGE_URI \
             backend
           # デバッグ出力を追加
           echo "Setting output: latest_image_uri=$IMAGE_URI"
           echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
-      - name: Push STG backend to ECR
+      - name: Push PROD backend to ECR
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
-          docker push ${REGISTRY}/stg-backend:latest
+          docker push ${REGISTRY}/prod-backend:latest
           
       - name: Verify output value
         run: |
           echo "Verifying output value: ${{ steps.build-image.outputs.latest_image_uri }}"
 
-  # Frontend STG イメージのビルド & プッシュ
-  build-push-frontend-stg:
-    environment: Preview
+  # Frontend PROD イメージのビルド & プッシュ
+  build-push-frontend-prod:
+    environment: Production
     runs-on: ubuntu-latest
     outputs:
       latest_image_uri: ${{ steps.build-image.outputs.latest_image_uri }}
@@ -76,32 +76,32 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build STG frontend image
+      - name: Build PROD frontend image
         id: build-image
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
-          IMAGE_URI="${REGISTRY}/stg-frontend:latest"
+          IMAGE_URI="${REGISTRY}/prod-frontend:latest"
           echo "Building image: $IMAGE_URI"
           docker build \
-            --file study-support-app/Dockerfile.stg \
+            --file study-support-app/Dockerfile.prod \
             --tag  $IMAGE_URI \
             study-support-app
           # デバッグ出力を追加
           echo "Setting output: latest_image_uri=$IMAGE_URI"
           echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
-      - name: Push STG frontend to ECR
+      - name: Push PROD frontend to ECR
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
-          docker push ${REGISTRY}/stg-frontend:latest
+          docker push ${REGISTRY}/prod-frontend:latest
           
       - name: Verify output value
         run: |
           echo "Verifying output value: ${{ steps.build-image.outputs.latest_image_uri }}"
 
-  deploy-backend-stg:
-    needs: build-push-backend-stg
-    environment: Preview
+  deploy-backend-prod:
+    needs: build-push-backend-prod
+    environment: Production
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -115,7 +115,7 @@ jobs:
       - name: Debug-Backend
         run: |
           echo "============== DEBUG INFO =============="
-          echo "Backend URI: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
+          echo "Backend URI: ${{ needs.build-push-backend-prod.outputs.latest_image_uri }}"
           echo "========================================"
       - name: Debug alternative approach
         run: |
@@ -127,9 +127,9 @@ jobs:
         id: render-task-def-fallback
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: AWS/backend-task-def-stg.json
+          task-definition: AWS/backend-task-def-prod.json
           container-name: backend
-          image: "${{ secrets.AWS_ECR_REGISTRY }}/stg-backend:latest"
+          image: "${{ secrets.AWS_ECR_REGISTRY }}/prod-backend:latest"
           
       - name: Debug fallback output
         run: |
@@ -140,14 +140,14 @@ jobs:
       - name: Deploy Backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
-          cluster: stg-api
-          service: stg-api-service
+          cluster: prod-api
+          service: prod-api-service
           task-definition: ${{ steps.render-task-def-fallback.outputs.task-definition }}
           wait-for-service-stability: true
 
-  deploy-frontend-stg:
-    needs: build-push-frontend-stg
-    environment: Preview
+  deploy-frontend-prod:
+    needs: build-push-frontend-prod
+    environment: Production
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -161,7 +161,7 @@ jobs:
       - name: Debug-Frontend
         run: |
           echo "============== DEBUG INFO =============="
-          echo "Frontend URI: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}"
+          echo "Frontend URI: ${{ needs.build-push-frontend-prod.outputs.latest_image_uri }}"
           echo "========================================"
       - name: Debug Frontend alternative approach
         run: |
@@ -173,9 +173,9 @@ jobs:
         id: render-frontend-task-def-fallback
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: AWS/stg-front.json
+          task-definition: AWS/prod-frontend-task-def.json
           container-name: frontend
-          image: "${{ secrets.AWS_ECR_REGISTRY }}/stg-frontend:latest"
+          image: "${{ secrets.AWS_ECR_REGISTRY }}/prod-frontend:latest"
           
       - name: Debug frontend fallback output
         run: |
@@ -186,7 +186,7 @@ jobs:
       - name: Deploy Frontend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
-          cluster: stg-front
-          service: stg-front-service
+          cluster: prod-front
+          service: prod-front-service
           task-definition: ${{ steps.render-frontend-task-def-fallback.outputs.task-definition }}
           wait-for-service-stability: true 
