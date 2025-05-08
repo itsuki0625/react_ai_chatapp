@@ -105,25 +105,31 @@ async def get_user_subscription(
     subscription = await crud_subscription.get_active_user_subscription(db, user_id=current_user.id)
     if not subscription:
         return None
-        # raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="アクティブなサブスクリプションが見つかりません。")
     
-    # Subscription モデルから SubscriptionResponse スキーマへの変換
-    # plan_name が必要。Subscription モデルに plan リレーションがある前提
     plan_name = "プラン情報なし"
-    if subscription.plan: # Subscriptionモデルに plan リレーションがある場合
+    price_id_to_return = None 
+
+    if subscription.plan: 
         plan_name = subscription.plan.name
-    elif subscription.price_id: # price_idからStripe APIでプラン名を取得する（負荷高いので注意）
-        try:
-            price_data = StripeService.get_price(subscription.price_id)
-            if price_data and price_data.get('product'):
-                product_id = price_data['product']
-                if isinstance(product_id, str):
-                    product_info = StripeService.get_product(product_id)
-                    plan_name = product_info.get('name', plan_name)
-                elif isinstance(product_id, dict): # Productオブジェクトが展開されている場合
-                    plan_name = product_id.get('name', plan_name)
-        except Exception as e:
-            logger.warning(f"Stripeからプラン名取得中にエラー (PriceID: {subscription.price_id}): {e}")
+        price_id_to_return = subscription.plan.price_id
+    # The following elif block for Stripe API fallback relied on subscription.price_id,
+    # which does not exist on the Subscription model and would cause an AttributeError.
+    # If subscription.plan is None (e.g., due to data integrity or old records),
+    # plan_name will remain "プラン情報なし" and price_id_to_return will be None.
+    # This is safer than attempting to access a non-existent attribute.
+    # Consider logging a warning if subscription.plan is None but a subscription exists.
+    # elif subscription.price_id: # This was the problematic part
+    #     try:
+    #         price_data = StripeService.get_price(subscription.price_id)
+    #         if price_data and price_data.get('product'):
+    #             product_id = price_data['product']
+    #             if isinstance(product_id, str):
+    #                 product_info = StripeService.get_product(product_id)
+    #                 plan_name = product_info.get('name', plan_name)
+    #             elif isinstance(product_id, dict): # Productオブジェクトが展開されている場合
+    #                 plan_name = product_id.get('name', plan_name)
+    #     except Exception as e:
+    #         logger.warning(f"Stripeからプラン名取得中にエラー (PriceID: {subscription.price_id}): {e}")
 
     return SubscriptionResponse(
         id=str(subscription.id),
@@ -131,8 +137,8 @@ async def get_user_subscription(
         stripe_customer_id=subscription.stripe_customer_id,
         stripe_subscription_id=subscription.stripe_subscription_id,
         status=subscription.status,
-        plan_name=plan_name, # Plan名を設定
-        price_id=subscription.price_id, # subscriptionテーブルにprice_idカラムがあると仮定
+        plan_name=plan_name, 
+        price_id=price_id_to_return, # Correctly use the sourced price_id or None
         current_period_start=subscription.current_period_start.isoformat() if subscription.current_period_start else None,
         current_period_end=subscription.current_period_end.isoformat() if subscription.current_period_end else None,
         cancel_at=subscription.cancel_at.isoformat() if subscription.cancel_at else None,
