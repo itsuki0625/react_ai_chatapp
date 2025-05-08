@@ -108,10 +108,17 @@ async def get_user_subscription(
     
     plan_name = "プラン情報なし"
     price_id_to_return = None 
+    plan_id_to_return = None # plan_id を格納する変数を初期化
 
     if subscription.plan: 
         plan_name = subscription.plan.name
         price_id_to_return = subscription.plan.price_id
+        plan_id_to_return = subscription.plan.id # plan から plan.id を取得
+    elif hasattr(subscription, 'plan_id') and subscription.plan_id: # subscription.plan がなくても subscription.plan_id は直接持っている可能性がある
+        plan_id_to_return = subscription.plan_id
+        # この場合、plan_name や price_id_to_return は Plan オブジェクトがないと取得が難しい
+        # 必要であれば、plan_id_to_return を使ってDBからPlan情報を別途取得するロジックも検討できる
+        logger.warning(f"Subscription ID {subscription.id} には plan オブジェクトがロードされていませんでしたが、plan_id ({subscription.plan_id}) は存在しました。plan_name と price_id は不完全な可能性があります。")
     # The following elif block for Stripe API fallback relied on subscription.price_id,
     # which does not exist on the Subscription model and would cause an AttributeError.
     # If subscription.plan is None (e.g., due to data integrity or old records),
@@ -134,6 +141,7 @@ async def get_user_subscription(
     return SubscriptionResponse(
         id=str(subscription.id),
         user_id=str(subscription.user_id),
+        plan_id=plan_id_to_return, # plan_id を追加
         stripe_customer_id=subscription.stripe_customer_id,
         stripe_subscription_id=subscription.stripe_subscription_id,
         status=subscription.status,
