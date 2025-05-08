@@ -47,9 +47,6 @@ jobs:
           REGISTRY=$(echo "${{ env.ECR_REGISTRY }}" | sed 's:/*$::')
           docker push ${REGISTRY}/prod-backend:latest
 
-      - name: Debug Backend Image URI
-        run: echo "Received Backend Image URI: ${{ needs.build-push-backend-prod.outputs.latest_image_uri }}"
-
   # ─────────────────────────────────────────────────
   # 2) Frontend イメージのビルド & Push (本番環境)
   # ─────────────────────────────────────────────────
@@ -88,9 +85,6 @@ jobs:
         run: |
           REGISTRY=$(echo "${{ env.ECR_REGISTRY }}" | sed 's:/*$::')
           docker push ${REGISTRY}/prod-frontend:latest
-
-      - name: Debug Frontend Image URI
-        run: echo "Received Frontend Image URI: ${{ needs.build-push-frontend-prod.outputs.latest_image_uri }}"
 
   # ─────────────────────────────────────────────────
   # 3) Backend を ECS にデプロイ (本番環境)
