@@ -20,7 +20,9 @@
       },
       "secrets": [
         { "name": "NEXT_PUBLIC_API_BASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-4TiwxF:NEXT_PUBLIC_API_BASE_URL::" },
-        { "name": "NEXT_PUBLIC_BROWSER_API_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-4TiwxF:NEXT_PUBLIC_BROWSER_API_URL::" }
+        { "name": "NEXT_PUBLIC_BROWSER_API_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-4TiwxF:NEXT_PUBLIC_BROWSER_API_URL::" },
+        { "name": "NEXT_PUBLIC_ASSET_BASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-4TiwxF:NEXT_PUBLIC_ASSET_BASE_URL::" },
+        { "name": "INTERNAL_API_BASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-4TiwxF:INTERNAL_API_BASE_URL::" }
       ],
       "portMappings": [
         {
