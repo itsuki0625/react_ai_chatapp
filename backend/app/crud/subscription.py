@@ -63,6 +63,7 @@ async def get_user_subscriptions(db: AsyncSession, user_id: UUID) -> List[Subscr
 async def get_active_user_subscription(db: AsyncSession, user_id: UUID) -> Optional[Subscription]:
     result = await db.execute(
         select(Subscription)
+        .options(selectinload(Subscription.plan))
         .filter(
             Subscription.user_id == user_id,
             Subscription.is_active == True,
