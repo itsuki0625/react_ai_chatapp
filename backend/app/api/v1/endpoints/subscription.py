@@ -522,17 +522,19 @@ async def stripe_webhook(
                 await crud_subscription.create_subscription(db, crud_subscription.SubscriptionCreate(**new_sub_data))
 
             # --- ★ 購入商品に紐づくロールをユーザーに割り当て --- (ここから修正)
-            if session.get('line_items'):
-                for item in session.get('line_items', {}).get('data', []):
-                    price_obj = item.get('price')
-                    if price_obj and price_obj.get('product'):
-                        stripe_product_id = price_obj.get('product')
-                        try:
-                            product_data = StripeService.get_product(stripe_product_id)
+            if stripe_subscription_id and 'stripe_sub_data' in locals() and stripe_sub_data:
+                try:
+                    items = stripe_sub_data.get('items', {}).get('data', [])
+                    if items:
+                        price_info = items[0].get('price') # 通常、サブスクリプションの最初のアイテムが対象
+                        if price_info and price_info.get('product'):
+                            stripe_product_id_from_sub = price_info.get('product')
+                            logger.info(f"Subscription item's Stripe Product ID: {stripe_product_id_from_sub} を元にロール割り当て試行 (User: {user_id})")
+                            product_data = StripeService.get_product(stripe_product_id_from_sub)
                             if product_data and product_data.get('metadata'):
                                 assigned_role_id_str = product_data.get('metadata', {}).get('assigned_role')
                                 if assigned_role_id_str:
-                                    logger.info(f"商品 {stripe_product_id} に紐づくロールID(str): {assigned_role_id_str} をユーザー {user_id} に割り当て試行")
+                                    logger.info(f"商品 {stripe_product_id_from_sub} に紐づくロールID(str): {assigned_role_id_str} をユーザー {user_id} に割り当て試行")
                                     try:
                                         assigned_role_id = UUID(assigned_role_id_str)
                                         target_role_obj = await crud_role.get_role(db, role_id=assigned_role_id)
@@ -546,16 +548,25 @@ async def stripe_webhook(
                                             else:
                                                 logger.warning(f"ロール割り当て対象のユーザー {user_id} がDBで見つかりません。")
                                         else:
-                                            logger.error(f"指定されたロールID {assigned_role_id} に該当するロールがDBで見つかりません。")
+                                            logger.error(f"指定されたロールID {assigned_role_id} (\"{assigned_role_id_str}\") に該当するロールがDBで見つかりません。")
                                     except ValueError:
                                         logger.error(f"メタデータの assigned_role '{assigned_role_id_str}' は有効なUUIDではありません。")
                                     except Exception as e_role_assign:
                                         logger.error(f"ロール割り当て処理中に予期せぬエラー: {e_role_assign}", exc_info=True)
                                 else:
-                                    logger.info(f"商品 {stripe_product_id} のメタデータに assigned_role が設定されていません。")
-                        except Exception as e_get_product:
-                            logger.error(f"Stripe商品 {stripe_product_id} の情報取得またはロール割り当て処理中にエラー: {e_get_product}", exc_info=True)
-                        break # 通常サブスクリプションは商品一つなので、最初のitemで処理を終える
+                                    logger.info(f"Stripe Product {stripe_product_id_from_sub} のメタデータに assigned_role が設定されていません。")
+                            else:
+                                logger.warning(f"Stripe Product {stripe_product_id_from_sub} のメタデータ取得に失敗、またはメタデータが存在しません。")
+                        else:
+                            logger.warning(f"サブスクリプションアイテムからStripe Product IDを取得できませんでした。Subscription ID: {stripe_subscription_id}")
+                    else:
+                        logger.warning(f"サブスクリプション {stripe_subscription_id} にアイテムが見つかりません。ロール割り当て不可。")
+                except Exception as e_outer_role_assign:
+                    logger.error(f"ロール割り当てブロック全体で予期せぬエラー: {e_outer_role_assign}", exc_info=True)
+            elif not stripe_subscription_id:
+                logger.warning(f"checkout.session.completed イベントに subscription ID が含まれていません。ロール割り当て不可。 Session ID: {session.id}")
+            elif not ('stripe_sub_data' in locals() and stripe_sub_data):
+                 logger.warning(f"stripe_sub_dataが利用できませんでした。ロール割り当て不可。 Subscription ID: {stripe_subscription_id}, Session ID: {session.id}")
             # --- ★ ロール割り当て処理ここまで ---
 
             if db_campaign_code:

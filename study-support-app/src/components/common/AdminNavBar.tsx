@@ -13,7 +13,7 @@ export const AdminNavBar: React.FC = () => {
       try {
         // 先に NextAuth の signOut を呼び出す
         // コールバックURLを指定して、成功したらそのページに遷移
-        await signOut({ callbackUrl: '/login' });
+        await signOut({ callbackUrl: '/login?status=logged_out' });
 
         // ★注意: signOut が完了するとページ遷移が発生するため、
         //   通常、この下のコード（fetch）は実行されない可能性が高い。
@@ -44,7 +44,7 @@ export const AdminNavBar: React.FC = () => {
         alert('ログアウト処理中にエラーが発生しました。');
         // エラー時も念のため signOut を試みる（すでに実行試行済みだが）
         try {
-           await signOut({ callbackUrl: '/login' });
+           await signOut({ callbackUrl: '/login?status=logged_out' });
         } catch(e) {
            console.error('Error during final signOut attempt:', e);
         }

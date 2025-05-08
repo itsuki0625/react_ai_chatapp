@@ -15,7 +15,7 @@ export default function LogoutButton() {
     try {
       // 先に NextAuth の signOut を呼び出す
       // コールバックURLを指定して、成功したらそのページに遷移
-      await signOut({ callbackUrl: '/login' });
+      await signOut({ callbackUrl: '/login?status=logged_out' });
 
       // ★注意: signOut が完了するとページ遷移が発生するため、
       //   通常、この下のコード（API呼び出し）は実行されない可能性が高い。
@@ -36,7 +36,7 @@ export default function LogoutButton() {
 
       // エラーが発生した場合でもNextAuthのログアウトを試みる（すでに実行試行済みだが）
       try {
-        await signOut({ callbackUrl: '/login' });
+        await signOut({ callbackUrl: '/login?status=logged_out' });
       } catch (e) {
         console.error('NextAuthのログアウトにも失敗しました:', e);
       }
