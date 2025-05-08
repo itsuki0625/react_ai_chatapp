@@ -122,6 +122,7 @@ export const subscriptionService = {
             amount: apiPlan.amount,
             currency: apiPlan.currency,
             interval: apiPlan.interval,
+            interval_count: 1,
             is_active: apiPlan.is_active,
             created_at: apiPlan.created_at,
             updated_at: apiPlan.updated_at,
