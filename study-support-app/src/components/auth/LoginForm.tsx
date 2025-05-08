@@ -1,7 +1,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import React from 'react';
-import { signIn, useSession } from 'next-auth/react';
+import { signIn, signOut, useSession } from 'next-auth/react';
 
 export const LoginForm: React.FC = () => {
   const router = useRouter();
@@ -12,6 +12,7 @@ export const LoginForm: React.FC = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string>('');
+  const [sessionExpiredMessage, setSessionExpiredMessage] = useState<string | null>(null);
 
   // セッション状態を監視
   useEffect(() => {
@@ -32,6 +33,27 @@ export const LoginForm: React.FC = () => {
     }
   }, [session, status, router, searchParams]);
   
+  // URLパラメータのエラーをチェックし、session_expiredならログアウト処理
+  useEffect(() => {
+    const errorParam = searchParams?.get('error');
+    if (errorParam === 'session_expired') {
+      setSessionExpiredMessage('セッションの有効期限が切れました。お手数ですが、再度ログインしてください。');
+      // signOut を呼び出す前に、まず session の状態を確認
+      if (status === 'authenticated') { // 認証されている場合のみ signOut を実行
+        signOut({ redirect: false }).then(() => {
+          // signOut が完了した後に、明示的にログインページへ遷移させる
+          // これにより、middleware による意図しないリダイレクトを防ぐことを期待
+          // また、status=logged_out パラメータを付与して、LoginForm 側で再リダイレクトを防ぐ
+          router.push('/login?status=logged_out', { scroll: false });
+          console.log('Session expired, signed out and redirected to login.');
+        }).catch(err => {
+          console.error('Error during signOut for session_expired:', err);
+        });
+      }
+      setError(''); // 他のエラーメッセージをクリア
+    }
+  }, [searchParams, status, router]); // status と router を依存配列に追加
+
   // ユーザーロールに基づいてダッシュボードURLを取得
   const getDashboardByRole = (role: string): string => {
     if (!role) return '/dashboard';
@@ -50,6 +72,7 @@ export const LoginForm: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
+    setSessionExpiredMessage(null);
     setDebugInfo('');
 
     try {
@@ -137,6 +160,12 @@ export const LoginForm: React.FC = () => {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* セッション切れメッセージの表示 */}
+      {sessionExpiredMessage && (
+        <div className="p-3 rounded bg-yellow-50 text-yellow-700 text-sm">
+          {sessionExpiredMessage}
+        </div>
+      )}
       {error && (
         <div className="p-3 rounded bg-red-50 text-red-500 text-sm">
           {error}
