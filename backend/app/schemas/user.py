@@ -1,12 +1,13 @@
 import logging
-from pydantic import BaseModel, EmailStr, validator, Field, computed_field
+from pydantic import BaseModel, EmailStr, validator, Field, computed_field, ConfigDict
 from typing import Optional, List, Dict, Any, Set
 from uuid import UUID
 from datetime import datetime
 from enum import Enum
 from .base import TimestampMixin
-from app.models.user import User as UserModel, UserRole as UserRoleModel, Role, Permission
+from app.models.user import User as UserModel, UserRole as UserRoleModel, Role, Permission, UserLoginInfo
 from .subscription import SubscriptionResponse # SubscriptionResponse をインポート
+from app.core.config import settings
 
 # Logger をモジュールレベルで定義
 logger = logging.getLogger(__name__)
@@ -16,6 +17,44 @@ class UserStatus(str, Enum):
     INACTIVE = "inactive"
     PENDING = "pending"
     UNPAID = "unpaid"
+
+# --- Role & Permission Schemas (先に定義) ---
+class PermissionBase(BaseModel):
+    # モデルに合わせて name に変更 (code ではなく)
+    name: str
+    description: Optional[str] = None
+
+class PermissionResponse(PermissionBase):
+    id: UUID
+
+    model_config = ConfigDict(from_attributes=True)
+
+class RoleBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class RoleCreate(RoleBase):
+    permissions: List[str] # 権限名のリストで受け取る
+
+class RoleUpdate(RoleBase):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    permissions: Optional[List[str]] = None
+
+class RoleResponse(RoleBase, TimestampMixin):
+    id: UUID
+    # ★ 修正: permissions の型を List[PermissionResponse] に変更し、ネストされた権限情報を返す
+    # permissions: List[Dict] # 変更前
+    permissions: List[PermissionResponse] = [] # 権限オブジェクトのリスト
+
+    model_config = ConfigDict(from_attributes=True)
+
+# ★ 新規追加: UserRole モデルに対応する Pydantic スキーマ
+class UserRoleResponse(TimestampMixin): # 必要に応じて TimestampMixin を継承
+    role: RoleResponse # ネストされた RoleResponse を使用
+    is_primary: bool
+
+    model_config = ConfigDict(from_attributes=True)
 
 # --- User Schemas ---
 class UserBase(BaseModel):
@@ -60,7 +99,7 @@ class UserUpdate(BaseModel):
     prefecture: Optional[str] = None # prefecture を追加
     class_number: Optional[str] = None
     student_number: Optional[str] = None
-    profile_image_url: Optional[str] = None
+    profile_image_url: Optional[str] = None # S3 キーを受け取る想定
     role: Optional[str] = None # 文字列として受け入れるように変更
     status: Optional[UserStatus] = None # ステータス変更用
 
@@ -91,12 +130,13 @@ class UserResponse(TimestampMixin):
     # --- Include source fields needed for computed fields (no exclude=True) ---
     full_name: str
     is_verified: bool
-    user_roles: List[Any] = []
+    user_roles: List[UserRoleResponse] = []
     status: UserStatus # status を直接含める
     login_info: Optional[Any] = None # 型は UserLoginInfo だが、循環参照を避けるため Any も可
     grade: Optional[str] = None # grade を追加 (モデルに合わせて Optional[str])
     prefecture: Optional[str] = None # prefecture を追加 (モデルに合わせて Optional[str])
-    profile_image_url: Optional[str] = None # 追加
+    # ★ profile_image_url を computed_field で上書きするため、元のフィールドは別名にする
+    profile_image_url_key: Optional[str] = Field(alias='profile_image_url', default=None)
     # --- End source fields ---
 
     # --- computed fields (these will be in the final JSON) ---
@@ -108,30 +148,21 @@ class UserResponse(TimestampMixin):
 
     @computed_field
     @property
-    def role(self) -> str: # 戻り値の型を str に変更
-        user_roles_rel = getattr(self, 'user_roles', [])
-        logger.info(f"SCHEMA: Computing field 'role'. Accessing self.user_roles: {user_roles_rel}")
-        if user_roles_rel and isinstance(user_roles_rel, list):
-            # is_primary=True のロールを探す
-            primary_user_role_obj = next((ur for ur in user_roles_rel if getattr(ur, 'is_primary', False)), None)
-            
-            # プライマリが見つからない場合は最初のロールを試す (フォールバック)
-            if not primary_user_role_obj and len(user_roles_rel) > 0:
-                 primary_user_role_obj = user_roles_rel[0]
-                 logger.warning(f"SCHEMA: Primary role not found for user. Falling back to first role: {primary_user_role_obj}")
-            
-            if primary_user_role_obj:
-                if hasattr(primary_user_role_obj, 'role') and hasattr(primary_user_role_obj.role, 'name'):
-                    role_name = getattr(primary_user_role_obj.role, 'name', '不明')
-                    logger.info(f"SCHEMA: Computed role name: '{role_name}'")
-                    return role_name
-                else:
-                    logger.warning(f"SCHEMA: UserRole object lacks expected 'role' attribute or role.name: {primary_user_role_obj}")
-            else:
-                 logger.warning(f"SCHEMA: user_roles list is empty or contains no valid role objects.")
-        else:
-             logger.warning(f"SCHEMA: user_roles attribute is missing or not a list: {user_roles_rel}")
-        return '不明' # デフォルト値 / エラー時の値
+    def role(self) -> str:
+        """プライマリロール名を返す"""
+        logger.info(f"SCHEMA: Computing field 'role'. Accessing self.user_roles: {self.user_roles}")
+        primary_role_resp = next((ur_resp for ur_resp in self.user_roles if ur_resp.is_primary), None)
+
+        if primary_role_resp and primary_role_resp.role:
+            return primary_role_resp.role.name
+        elif self.user_roles: # プライマリがない場合、最初のロールを返す (フォールバック)
+            first_role_resp = self.user_roles[0]
+            if first_role_resp.role:
+                 logger.warning(f"SCHEMA: Primary role not found for user. Falling back to first role: {first_role_resp.role.name}")
+                 return first_role_resp.role.name
+
+        logger.warning(f"SCHEMA: Could not determine primary role name for user {self.id}")
+        return '不明'
 
     @computed_field
     @property
@@ -155,33 +186,41 @@ class UserResponse(TimestampMixin):
     def permissions(self) -> Set[str]:
         """ユーザーが持つロールに紐づく全ての権限名のセットを返す"""
         user_perms: Set[str] = set()
-        user_roles_rel = getattr(self, 'user_roles', [])
-        logger.debug(f"SCHEMA: Computing permissions for user. Roles: {user_roles_rel}")
-        if user_roles_rel and isinstance(user_roles_rel, list):
-            for user_role_assoc in user_roles_rel:
-                # UserRoleModel の role 属性にアクセス
-                if hasattr(user_role_assoc, 'role') and isinstance(user_role_assoc.role, Role):
-                    role_obj: Role = user_role_assoc.role
-                    # Role の permissions 属性 (Association Proxy) にアクセス
-                    if hasattr(role_obj, 'permissions') and isinstance(role_obj.permissions, list):
-                        for perm in role_obj.permissions:
-                             # Permission オブジェクトの name 属性を確認
-                            if isinstance(perm, Permission) and hasattr(perm, 'name'):
-                                user_perms.add(perm.name)
-                            else:
-                                logger.warning(f"SCHEMA: Unexpected permission object type or missing name: {perm} in role {role_obj.name}")
-                    else:
-                        logger.warning(f"SCHEMA: Role object {role_obj.name} lacks 'permissions' list or is not a list.")
-                else:
-                     logger.warning(f"SCHEMA: UserRole association lacks 'role' object or it's not a Role instance: {user_role_assoc}")
-        logger.info(f"SCHEMA: Computed permissions: {user_perms}")
+        logger.debug(f"SCHEMA: Computing permissions for user {self.id}. Roles: {self.user_roles}")
+        for user_role_resp in self.user_roles:
+            if user_role_resp.role and user_role_resp.role.permissions:
+                for perm_resp in user_role_resp.role.permissions:
+                    user_perms.add(perm_resp.name)
+            else:
+                 logger.warning(f"SCHEMA: UserRoleResponse lacks 'role' or role lacks 'permissions': {user_role_resp}")
+        logger.info(f"SCHEMA: Computed permissions for user {self.id}: {user_perms}")
         return user_perms
+
+    # ★ profile_image_url を計算する computed_field を追加
+    @computed_field(return_type=Optional[str])
+    @property
+    def profile_image_url(self) -> Optional[str]:
+        """S3キーから完全なURLを生成して返す"""
+        key = getattr(self, 'profile_image_url_key', None)
+        if key:
+            # config からバケット名とリージョンを取得
+            bucket_name = settings.AWS_S3_ICON_BUCKET_NAME
+            region = settings.AWS_REGION
+            if bucket_name and region:
+                # Virtual Hosted Style URL を生成
+                # 必要に応じて Path Style に変更 (https://s3.{region}.amazonaws.com/{bucket_name}/{key})
+                return f"https://{bucket_name}.s3.{region}.amazonaws.com/{key}"
+            else:
+                logger.error("S3 bucket name or region is not configured for generating profile image URL.")
+        return None
 
     # --- End computed fields ---
 
-    model_config = {
-        "from_attributes": True,
-    }
+    model_config = ConfigDict(
+        from_attributes=True,
+        # ★ computed_field が元のフィールドを上書きできるように設定
+        populate_by_name=True, 
+    )
 
 # ユーザー一覧取得レスポンス
 class UserListResponse(BaseModel):
@@ -190,44 +229,13 @@ class UserListResponse(BaseModel):
     page: int
     size: int
 
-# --- Role & Permission Schemas (既存のものを維持 or 必要なら調整) ---
-class RoleBase(BaseModel):
-    name: str
-    description: Optional[str] = None
-
-class RoleCreate(RoleBase):
-    permissions: List[str] # 権限コードのリスト
-
-class RoleUpdate(RoleBase):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    permissions: Optional[List[str]] = None
-
-class RoleResponse(RoleBase, TimestampMixin):
-    id: UUID
-    permissions: List[Dict] # 権限情報のリスト
-
-    class Config:
-        from_attributes = True
-
-class PermissionBase(BaseModel):
-    code: str
-    description: str
-
-class PermissionResponse(PermissionBase):
-    id: UUID
-
-    class Config:
-        from_attributes = True
-
 # --- User Settings & Role Assignment (既存のものを維持) ---
 class UserSettings(BaseModel):
     notification_preferences: Dict
     ui_preferences: Dict
     last_updated: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class UserRoleAssignment(BaseModel):
     user_id: UUID
@@ -246,6 +254,4 @@ class UserSettingsResponse(BaseModel):
     theme: str = "light"
     subscription: Optional[SubscriptionResponse] = None # ★ サブスクリプション情報を追加
 
-    model_config = {
-        "from_attributes": True,
-    } 
+    model_config = ConfigDict(from_attributes=True) 

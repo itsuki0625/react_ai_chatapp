@@ -5,6 +5,11 @@ on:
     branches:
       - stg
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy'
+        required: true
+        default: 'stg'
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -37,17 +42,23 @@ jobs:
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
           IMAGE_URI="${REGISTRY}/stg-backend:latest"
+          echo "Building image: $IMAGE_URI"
           docker build \
             --file backend/Dockerfile.stg \
             --tag  $IMAGE_URI \
             backend
+          # デバッグ出力を追加
+          echo "Setting output: latest_image_uri=$IMAGE_URI"
           echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
-          echo "::set-output name=latest_image_uri::$IMAGE_URI"
 
       - name: Push STG backend to ECR
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
           docker push ${REGISTRY}/stg-backend:latest
+          
+      - name: Verify output value
+        run: |
+          echo "Verifying output value: ${{ steps.build-image.outputs.latest_image_uri }}"
 
   # Frontend STG イメージのビルド & プッシュ
   build-push-frontend-stg:
@@ -75,17 +86,23 @@ jobs:
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
           IMAGE_URI="${REGISTRY}/stg-frontend:latest"
+          echo "Building image: $IMAGE_URI"
           docker build \
             --file study-support-app/Dockerfile.stg \
             --tag  $IMAGE_URI \
             study-support-app
+          # デバッグ出力を追加
+          echo "Setting output: latest_image_uri=$IMAGE_URI"
           echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
-          echo "::set-output name=latest_image_uri::$IMAGE_URI"
 
       - name: Push STG frontend to ECR
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
           docker push ${REGISTRY}/stg-frontend:latest
+          
+      - name: Verify output value
+        run: |
+          echo "Verifying output value: ${{ steps.build-image.outputs.latest_image_uri }}"
 
   deploy-backend-stg:
     needs: build-push-backend-stg
@@ -100,20 +117,38 @@ jobs:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
-      - name: "Debug: Confirm backend image URI"
-        run: echo "Backend IMAGE URI: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
+      - name: Debug-Backend
+        run: |
+          echo "============== DEBUG INFO =============="
+          echo "Backend URI: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
+          echo "========================================"
+      - name: Debug alternative approach
+        run: |
+          echo "Using hardcoded image URI as a fallback"
+          REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
+          echo "Registry: $REGISTRY"
+          
+      - name: Render ECS task definition (Fallback)
+        id: render-task-def-fallback
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: AWS/backend-task-def-stg.json
+          container-name: backend
+          image: "${{ secrets.AWS_ECR_REGISTRY }}/stg-backend:latest"
+          
+      - name: Debug fallback output
+        run: |
+          echo "============== FALLBACK OUTPUT =============="
+          echo "Fallback Task definition: ${{ steps.render-task-def-fallback.outputs.task-definition }}"
+          echo "==============================================="
+          
       - name: Deploy Backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           cluster: stg-api
           service: stg-api-service
-          task-definition: backend-stg
-          container-name: backend
-          image: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}
+          task-definition: ${{ steps.render-task-def-fallback.outputs.task-definition }}
           wait-for-service-stability: true
-      - name: "Debug: Built image URI"
-        run: |
-          echo "latest_image_uri: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
 
   deploy-frontend-stg:
     needs: build-push-frontend-stg
@@ -128,17 +163,35 @@ jobs:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
-      - name: "Debug: Confirm frontend image URI"
-        run: echo "Frontend IMAGE URI: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}"
+      - name: Debug-Frontend
+        run: |
+          echo "============== DEBUG INFO =============="
+          echo "Frontend URI: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}"
+          echo "========================================"
+      - name: Debug Frontend alternative approach
+        run: |
+          echo "Using hardcoded image URI as a fallback"
+          REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
+          echo "Registry: $REGISTRY"
+          
+      - name: Render ECS task definition (Fallback)
+        id: render-frontend-task-def-fallback
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: AWS/stg-front.json
+          container-name: frontend
+          image: "${{ secrets.AWS_ECR_REGISTRY }}/stg-frontend:latest"
+          
+      - name: Debug frontend fallback output
+        run: |
+          echo "============== FALLBACK OUTPUT =============="
+          echo "Fallback Task definition: ${{ steps.render-frontend-task-def-fallback.outputs.task-definition }}"
+          echo "==============================================="
+          
       - name: Deploy Frontend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           cluster: stg-front
           service: stg-front-service
-          task-definition: stg-front
-          container-name: frontend
-          image: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}
-          wait-for-service-stability: true
-      - name: "Debug: Built image URI (Frontend)"
-        run: |
-          echo "latest_image_uri: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}" 
+          task-definition: ${{ steps.render-frontend-task-def-fallback.outputs.task-definition }}
+          wait-for-service-stability: true 

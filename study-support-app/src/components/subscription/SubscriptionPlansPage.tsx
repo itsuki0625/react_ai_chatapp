@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { StyledH1, StyledH2 } from '@/components/common/CustomHeadings';
-import { SubscriptionPlan, CampaignCodeVerificationResult, Subscription, VerifyCampaignCodeResponse } from '@/types/subscription';
+import { SubscriptionPlan, Subscription, VerifyCampaignCodeResponse } from '@/types/subscription';
 import { subscriptionService } from '@/services/subscriptionService';
 import { CampaignCodeForm } from '@/components/subscription/CampaignCodeForm';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
@@ -10,60 +10,89 @@ import { formatAmount } from '@/utils/formatting';
 import { Button } from '@/components/common/Button';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+
+const getIntervalText = (interval?: string, intervalCount?: number): string => {
+  if (!interval) return '';
+  const count = intervalCount && intervalCount > 1 ? intervalCount : '';
+  switch (interval) {
+    case 'day':
+      return `/${count}日`;
+    case 'week':
+      return `/${count}週`;
+    case 'month':
+      return `/${count}月`;
+    case 'year':
+      return `/${count}年`;
+    default:
+      return `/${count}${interval}`;
+  }
+};
 
 export const SubscriptionPlansPage: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
   const queryClient = useQueryClient();
-  const { data: plans = [], isLoading: isLoadingPlans } = useQuery<SubscriptionPlan[]>({ queryKey: ['subscriptionPlans'], queryFn: subscriptionService.getSubscriptionPlans });
-  const { data: currentSubscription, isLoading: isLoadingSubscription } = useQuery<Subscription | null>({ queryKey: ['userSubscription'], queryFn: subscriptionService.getUserSubscription });
+  const { data: plans = [], isLoading: isLoadingPlans } = useQuery<SubscriptionPlan[]>({
+    queryKey: ['subscriptionPlans'],
+    queryFn: async () => {
+      const fetchedPlans = await subscriptionService.getSubscriptionPlans();
+      console.log('Fetched plans in SubscriptionPlansPage:', JSON.stringify(fetchedPlans, null, 2));
+      return fetchedPlans;
+    }
+  });
+  const { data: currentSubscription, isLoading: isLoadingSubscription, refetch: refetchUserSubscription } = useQuery<Subscription | null>({ queryKey: ['userSubscription'], queryFn: subscriptionService.getUserSubscription });
 
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [isPageLoading, setIsPageLoading] = useState(true);
   const [campaignCode, setCampaignCode] = useState<string>('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [campaignCodeVerificationResult, setCampaignCodeVerificationResult] = useState<CampaignCodeVerificationResult | null>(null);
+  const [campaignCodeVerificationResult, setCampaignCodeVerificationResult] = useState<VerifyCampaignCodeResponse | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   const { toast } = useToast();
 
   const handleSelectPlan = useCallback((plan: SubscriptionPlan) => {
+    console.log('[handleSelectPlan] Selecting:', plan.name);
     setSelectedPlan(plan);
     setCampaignCodeVerificationResult(null);
     setCampaignCode('');
     setError(null);
-  }, []);
+  }, [setSelectedPlan, setCampaignCodeVerificationResult, setCampaignCode, setError]);
 
   useEffect(() => {
-    const planIdFromUrl = searchParams?.get('plan');
-    const codeFromUrl = searchParams?.get('code');
+    console.log('[Effect: Initial Plan Selection] Running. isLoadingPlans:', isLoadingPlans, 'plans.length:', plans.length, 'selectedPlan:', selectedPlan?.name);
+    if (!isLoadingPlans && plans.length > 0 && !selectedPlan) {
+      const planIdFromUrl = searchParams?.get('plan');
+      console.log('[Effect: Initial Plan Selection] planIdFromUrl:', planIdFromUrl);
+      const planToSelect = planIdFromUrl
+        ? plans.find(p => p.id === planIdFromUrl || p.price_id === planIdFromUrl)
+        : plans[0];
 
-    if (!isLoadingPlans && plans.length > 0) {
-        const planToSelect = planIdFromUrl
-            ? plans.find(p => p.id === planIdFromUrl || p.price_id === planIdFromUrl)
-            : plans[0];
-
-        if (planToSelect) {
-            if (!selectedPlan || selectedPlan.price_id !== planToSelect.price_id) {
-                handleSelectPlan(planToSelect);
-            }
-        }
+      if (planToSelect) {
+        console.log('[Effect: Initial Plan Selection] Found planToSelect:', planToSelect.name);
+        handleSelectPlan(planToSelect);
+      } else {
+        console.log('[Effect: Initial Plan Selection] No plan found to select initially.');
+      }
     }
+  }, [plans, isLoadingPlans, searchParams, handleSelectPlan, selectedPlan]);
 
-    if (codeFromUrl && !campaignCode && !campaignCodeVerificationResult) {
-        setCampaignCode(codeFromUrl);
-    }
-
+  useEffect(() => {
+    console.log('[Effect: Loading/Code] Running. isLoadingPlans:', isLoadingPlans, 'isLoadingSubscription:', isLoadingSubscription);
     setIsPageLoading(isLoadingPlans || isLoadingSubscription);
-
-  }, [plans, isLoadingPlans, isLoadingSubscription, searchParams, selectedPlan, campaignCode, campaignCodeVerificationResult, handleSelectPlan]);
+    const codeFromUrl = searchParams?.get('code');
+    if (codeFromUrl && !campaignCode && !campaignCodeVerificationResult) {
+      console.log('[Effect: Loading/Code] Setting campaign code from URL:', codeFromUrl);
+      setCampaignCode(codeFromUrl);
+    }
+  }, [isLoadingPlans, isLoadingSubscription, searchParams, campaignCode, campaignCodeVerificationResult]);
 
   useEffect(() => {
     console.log('SubscriptionPlansPage - Authentication status changed:', session);
-    if (session) {
-        // fetchData();
-    }
   }, [session]);
 
   const handleVerifyCampaignCode = useCallback(async (code: string): Promise<VerifyCampaignCodeResponse> => {
@@ -72,24 +101,13 @@ export const SubscriptionPlansPage: React.FC = () => {
       throw new Error("Plan not selected");
     }
     try {
-      const result = await subscriptionService.verifyCampaignCode(code, selectedPlan.price_id);
-      const verificationResult: CampaignCodeVerificationResult = {
-        is_valid: result.valid,
-        valid: result.valid,
-        campaign_code_id: null,
-        message: result.message ?? '',
-        discount_type: result.discount_type ?? null,
-        discount_value: result.discount_value ?? null,
-        original_amount: result.original_amount ?? null,
-        discounted_amount: result.discounted_amount ?? null,
-      };
+      const result = await subscriptionService.verifyCampaignCode(code, selectedPlan.price_id, true);
+      setCampaignCodeVerificationResult(result);
 
-      setCampaignCodeVerificationResult(verificationResult);
-
-      if (verificationResult.is_valid) {
-          toast({ title: "成功", description: verificationResult.message || `コード「${code}」が適用されました。` });
+      if (result.valid) {
+          toast({ title: "成功", description: result.message || `コード「${code}」が適用されました。` });
       } else {
-          toast({ variant: 'destructive', title: "無効なコード", description: verificationResult.message || 'コードが無効です。' });
+          toast({ variant: 'destructive', title: "無効なコード", description: result.message || 'コードが無効です。' });
       }
       return result;
     } catch (error) {
@@ -122,27 +140,29 @@ export const SubscriptionPlansPage: React.FC = () => {
         return;
       }
 
-      const successUrl = `${window.location.origin}/payment/success?session_id={CHECKOUT_SESSION_ID}`;
+      const successUrl = `${window.location.origin}/subscription/success?session_id={CHECKOUT_SESSION_ID}`;
       const cancelUrl = window.location.href;
+
+      const stripeCouponId = campaignCodeVerificationResult?.valid
+        ? (campaignCodeVerificationResult.stripe_coupon_id ?? undefined)
+        : undefined;
 
       try {
         const response = await subscriptionService.createCheckoutSession(
           priceId,
           successUrl,
           cancelUrl,
-          campaignCodeVerificationResult?.is_valid && campaignCode
-            ? { campaign_code: campaignCode }
-            : undefined
+          undefined,
+          stripeCouponId
         );
 
         let checkoutUrl: string | null = null;
-        if (response && typeof response === 'object') {
-            const potentialUrl = (response as { url?: unknown }).url;
-            if (typeof potentialUrl === 'string') {
-                checkoutUrl = potentialUrl;
-            }
-        } else if (typeof response === 'string') {
+        if (response && typeof response === 'string') {
              checkoutUrl = response;
+        } else if (response && typeof response === 'object' && 'url' in response) {
+            checkoutUrl = response.url;
+        } else {
+             console.error('Invalid checkout URL response:', response);
         }
 
         if (checkoutUrl) {
@@ -185,6 +205,40 @@ export const SubscriptionPlansPage: React.FC = () => {
     }
   };
 
+  const handleCancelSubscription = async () => {
+    if (!currentSubscription || !currentSubscription.stripe_subscription_id) {
+      toast({ variant: "destructive", title: "エラー", description: "解約対象のサブスクリプションが見つかりません。" });
+      return;
+    }
+    setIsCancelling(true);
+    try {
+      await subscriptionService.manageSubscription({
+        action: "cancel",
+        subscription_id: currentSubscription.stripe_subscription_id
+      });
+      toast({ title: "成功", description: "サブスクリプションの解約手続きを受け付けました。詳細はメールをご確認ください。" });
+      refetchUserSubscription();
+    } catch (error) {
+      console.error("サブスクリプション解約エラー:", error);
+      const errorMessage = error instanceof Error ? error.message : "サブスクリプションの解約に失敗しました。";
+      toast({ variant: "destructive", title: "解約エラー", description: errorMessage });
+    } finally {
+      setIsCancelling(false);
+      setShowCancelConfirm(false);
+    }
+  };
+
+  console.log('[SubscriptionPlansPage] Rendering state:', {
+    plans,
+    selectedPlan,
+    isLoadingPlans,
+    isLoadingSubscription,
+    currentSubscription,
+    error,
+    isPageLoading,
+    checkoutLoading
+  });
+
   if (isPageLoading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
@@ -222,6 +276,7 @@ export const SubscriptionPlansPage: React.FC = () => {
           </p>
           <p className="mb-2">
             <span className="font-semibold">ステータス:</span> {currentSubscription.status === 'active' ? '有効' : currentSubscription.status}
+            {currentSubscription.cancel_at && <span className="text-yellow-600 ml-2">(解約処理中)</span>}
           </p>
           {currentSubscription.current_period_end && (
             <p className="mb-2">
@@ -230,15 +285,51 @@ export const SubscriptionPlansPage: React.FC = () => {
           )}
           {currentSubscription.cancel_at && (
              <p className="mb-2 text-yellow-600">
-               <span className="font-semibold">キャンセル予定日:</span> {new Date(currentSubscription.cancel_at).toLocaleDateString('ja-JP')}
+               <span className="font-semibold">解約予定日:</span> {new Date(currentSubscription.cancel_at).toLocaleDateString('ja-JP')}
              </p>
            )}
           <p className="mt-4 text-gray-600">
             サブスクリプションの管理や解約は「マイページ」から行うことができます。
           </p>
+          
+          {!currentSubscription.cancel_at && currentSubscription.status === 'active' && (
+            <AlertDialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
+              <AlertDialogTrigger asChild>
+                <Button 
+                  variant="destructive"
+                  className="mt-4 w-full" 
+                  disabled={isCancelling}
+                >
+                  {isCancelling ? <LoadingSpinner /> : "サブスクリプションを解約する"}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>本当に解約しますか？</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    現在の請求期間が終了すると、サブスクリプションは自動的に解約されます。
+                    この操作は元に戻せませんが、期間終了までは引き続きサービスをご利用いただけます。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={isCancelling}>キャンセル</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleCancelSubscription} disabled={isCancelling} className="bg-red-600 hover:bg-red-700">
+                    {isCancelling ? "処理中..." : "解約する"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          {currentSubscription.cancel_at && (
+            <p className="mt-4 p-3 bg-yellow-50 border border-yellow-300 text-yellow-700 rounded-md">
+              このサブスクリプションは解約手続き済みです。 {new Date(currentSubscription.cancel_at).toLocaleDateString('ja-JP')} をもって終了します。
+            </p>
+          )}
+
           <Button
             onClick={() => router.push('/settings/profile')}
-            className="mt-4"
+            className="mt-6 w-full"
+            variant="outline"
           >
             マイページへ
           </Button>
@@ -274,7 +365,11 @@ export const SubscriptionPlansPage: React.FC = () => {
              >
                <h3 className="text-xl font-semibold mb-2">{plan.name}</h3>
                <p className="text-2xl font-bold mb-3">
-                 {formatAmount(plan.amount)} <span className="text-sm font-normal">/ 月</span>
+                 {(() => {
+                   console.log(`Formatting amount: plan.name = ${plan.name}, plan.amount = ${plan.amount}, type = ${typeof plan.amount}`);
+                   return formatAmount(plan.amount);
+                 })()}
+                 <span className="text-sm font-normal">{getIntervalText(plan.interval, plan.interval_count)}</span>
                </p>
                <p className="text-gray-600 mb-4">{plan.description}</p>
 
@@ -328,10 +423,16 @@ export const SubscriptionPlansPage: React.FC = () => {
             <p className="text-xl font-semibold">{selectedPlan.name}</p>
             <p className="mt-1">
               <span className="font-semibold">料金:</span>{' '}
-              {campaignCodeVerificationResult?.is_valid && typeof campaignCodeVerificationResult.discounted_amount === 'number' ? (
+              {campaignCodeVerificationResult?.valid && typeof campaignCodeVerificationResult.discounted_amount === 'number' ? (
                 <span>
-                  <span className="line-through text-gray-500">{formatAmount(selectedPlan.amount)}</span>{' '}
-                  <span className="text-green-600 font-semibold">{formatAmount(campaignCodeVerificationResult.discounted_amount)}</span>
+                  <span className="line-through text-gray-500">{(() => {
+                    console.log(`Formatting amount (discounted - original): selectedPlan.name = ${selectedPlan.name}, selectedPlan.amount = ${selectedPlan.amount}, type = ${typeof selectedPlan.amount}`);
+                    return formatAmount(selectedPlan.amount);
+                  })()}</span>{' '}
+                  <span className="text-green-600 font-semibold">{(() => {
+                    console.log(`Formatting amount (discounted - final): discounted_amount = ${campaignCodeVerificationResult.discounted_amount}, type = ${typeof campaignCodeVerificationResult.discounted_amount}`);
+                    return formatAmount(campaignCodeVerificationResult.discounted_amount!);
+                  })()}</span>
                   <span className="text-sm text-green-600 ml-1">
                     ({campaignCodeVerificationResult.discount_type === 'percentage'
                       ? `${campaignCodeVerificationResult.discount_value}%オフ`
@@ -339,9 +440,12 @@ export const SubscriptionPlansPage: React.FC = () => {
                   </span>
                 </span>
               ) : (
-                formatAmount(selectedPlan.amount)
+                (() => {
+                  console.log(`Formatting amount (no discount): selectedPlan.name = ${selectedPlan.name}, selectedPlan.amount = ${selectedPlan.amount}, type = ${typeof selectedPlan.amount}`);
+                  return formatAmount(selectedPlan.amount);
+                })()
               )}
-              <span className="text-sm text-gray-600 ml-1">/ 月</span>
+              <span className="text-sm text-gray-600 ml-1">{getIntervalText(selectedPlan.interval, selectedPlan.interval_count)}</span>
             </p>
           </div>
 

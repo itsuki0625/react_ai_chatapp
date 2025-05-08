@@ -1,0 +1,37 @@
+{
+  "family": "stg-front",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::354918390375:role/stg-ecs-task-exec-role",
+  "taskRoleArn": "arn:aws:iam::354918390375:role/stg-ecs-task-role",
+  "containerDefinitions": [
+    {
+      "name": "frontend",
+      "image": "354918390375.dkr.ecr.ap-northeast-1.amazonaws.com/stg-frontend:latest",
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/frontend-stg",
+          "awslogs-region": "ap-northeast-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "secrets": [
+        { "name": "NEXT_PUBLIC_API_BASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/api/env-UC1hvU:NEXT_PUBLIC_API_BASE_URL::" },
+        { "name": "NEXT_PUBLIC_BROWSER_API_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/api/env-UC1hvU:NEXT_PUBLIC_BROWSER_API_URL::" },
+        { "name": "NEXT_PUBLIC_ASSET_BASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/api/env-UC1hvU:NEXT_PUBLIC_ASSET_BASE_URL::" },
+        { "name": "INTERNAL_API_BASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:stg/api/env-UC1hvU:INTERNAL_API_BASE_URL::" }
+      ],
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "hostPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true
+    }
+  ]
+} 

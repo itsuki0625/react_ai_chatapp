@@ -31,6 +31,7 @@ NO_AUTH_PATHS = [
     "/api/v1/auth/verify-email",
     "/api/v1/auth/resend-verification",
     "/api/v1/subscriptions/stripe-plans",
+    "/api/v1/subscriptions/webhook",
     "/api/auth/session",
 ]
 

@@ -28,7 +28,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatType, sessionId: propSessio
   const { data: session, status } = useSession(); // useSession を使用
   const router = useRouter(); // ★ router インスタンスを取得
 
-  const token = session?.accessToken; // セッションからトークンを取得
+  const token = session?.user?.accessToken; // セッションからトークンを取得
   // const user = session?.user; // セッションからユーザー情報を取得 (未使用)
 
   useEffect(() => {

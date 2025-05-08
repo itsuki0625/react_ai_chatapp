@@ -33,8 +33,10 @@ class StudyGoalResponse(StudyGoalBase):
     created_at: datetime = Field(..., description="作成日時")
     updated_at: Optional[datetime] = Field(None, description="更新日時")
 
-    class Config:
-        orm_mode = True
+    # ★ Pydantic V2 の model_config を使用
+    model_config = {
+        "from_attributes": True,
+    }
 
 class StudyPlanBase(BaseModel):
     """学習計画の基本情報"""
@@ -70,8 +72,10 @@ class StudyPlanResponse(StudyPlanBase):
     updated_at: Optional[datetime] = Field(None, description="更新日時")
     completion_rate: Optional[float] = Field(0, description="完了率")
 
-    class Config:
-        orm_mode = True
+    # ★ Pydantic V2 の model_config を使用
+    model_config = {
+        "from_attributes": True,
+    }
 
 class StudyProgressUpdate(BaseModel):
     """学習進捗更新リクエスト"""
@@ -94,8 +98,10 @@ class StudyPlanTemplateResponse(StudyPlanTemplateBase):
     goals: List[dict] = Field(..., description="テンプレート目標リスト")
     created_at: datetime = Field(..., description="作成日時")
 
-    class Config:
-        orm_mode = True
+    # ★ Pydantic V2 の model_config を使用
+    model_config = {
+        "from_attributes": True,
+    }
 
 class StudyPlanItemBase(BaseModel):
     """学習計画項目の基本情報"""
@@ -129,5 +135,7 @@ class StudyPlanItemResponse(StudyPlanItemBase):
     created_at: datetime = Field(..., description="作成日時")
     updated_at: Optional[datetime] = Field(None, description="更新日時")
 
-    class Config:
-        orm_mode = True 
+    # ★ Pydantic V2 の model_config を使用
+    model_config = {
+        "from_attributes": True,
+    } 

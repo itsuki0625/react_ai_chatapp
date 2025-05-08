@@ -32,9 +32,13 @@ declare module "next-auth" {
       grade?: string;
       prefecture?: string;
       profile_image_url?: string | null;
+      // ★ session コールバックで追加されるプロパティ
+      accessToken?: string;
+      refreshToken?: string;
+      accessTokenExpires?: number;
       // DefaultSession['user'] の他のプロパティ（name, email, image）も必要なら含める
     } & Pick<DefaultSession["user"], 'name' | 'email' | 'image'>; // 必要な標準プロパティのみ選択的に結合
-    accessToken?: string; // sessionコールバックで追加される
+    // accessToken?: string; // ★ 削除: user オブジェクト内に移動
     error?: "RefreshAccessTokenError"; // トークンリフレッシュエラー用
     errorDetail?: string; // エラー詳細を追加
     expires: string; // ISO 8601 date string

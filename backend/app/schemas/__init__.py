@@ -54,12 +54,18 @@ from .checklist import (
 )
 from .subscription import (
     SubscriptionBase, SubscriptionCreate, SubscriptionResponse,
-    SubscriptionPlanBase, SubscriptionPlanCreate, SubscriptionPlanResponse,
+    SubscriptionPlanCreate,
+    SubscriptionPlanResponse,
+    SubscriptionPlanDbBase,
+    SubscriptionPlanUpdate,
     PaymentHistoryBase, PaymentHistoryCreate, PaymentHistoryResponse,
-    CampaignCodeBase, CampaignCodeCreate, CampaignCodeResponse, CampaignCodeUpdate,
+    StripeCouponBase, StripeCouponCreate, StripeCouponUpdate, StripeCouponResponse,
+    CampaignCodeBase, CampaignCodeCreate, CampaignCodeUpdate, CampaignCodeResponse,
     VerifyCampaignCodeRequest, VerifyCampaignCodeResponse,
-    CreateCheckoutSessionRequest, CheckoutSessionResponse,
-    ManageSubscriptionRequest, WebhookEventValidation
+    CreateCheckoutRequest,
+    CheckoutSessionResponse,
+    ManageSubscriptionRequest,
+    WebhookEventValidation,
 )
 from .learning_path import (
     LearningPathBase, LearningPathCreate, LearningPathUpdate, LearningPathResponse,
@@ -124,11 +130,16 @@ __all__ = [
     "ChecklistTemplateBase", "ChecklistTemplateCreate", "ChecklistTemplateResponse",
     # Subscription
     "SubscriptionBase", "SubscriptionCreate", "SubscriptionResponse",
-    "SubscriptionPlanBase", "SubscriptionPlanCreate", "SubscriptionPlanResponse",
+    "SubscriptionPlanCreate",
+    "SubscriptionPlanResponse",
+    "SubscriptionPlanDbBase",
+    "SubscriptionPlanUpdate",
     "PaymentHistoryBase", "PaymentHistoryCreate", "PaymentHistoryResponse",
-    "CampaignCodeBase", "CampaignCodeCreate", "CampaignCodeResponse", "CampaignCodeUpdate",
+    "StripeCouponBase", "StripeCouponCreate", "StripeCouponUpdate", "StripeCouponResponse",
+    "CampaignCodeBase", "CampaignCodeCreate", "CampaignCodeUpdate", "CampaignCodeResponse",
     "VerifyCampaignCodeRequest", "VerifyCampaignCodeResponse",
-    "CreateCheckoutSessionRequest", "CheckoutSessionResponse",
+    "CreateCheckoutRequest",
+    "CheckoutSessionResponse",
     "ManageSubscriptionRequest", "WebhookEventValidation",
     # Learning Path
     "LearningPathBase", "LearningPathCreate", "LearningPathUpdate", "LearningPathResponse",

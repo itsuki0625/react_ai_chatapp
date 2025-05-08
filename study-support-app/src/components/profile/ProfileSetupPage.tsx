@@ -57,7 +57,7 @@ const ProfileSetupPage = () => {
       // ★★★ 実際のSession型に合わせて accessToken の取得方法を確認・修正 ★★★
       // next-authのデフォルトではJWTトークンは直接sessionオブジェクトに含まれないことが多い
       // callbacksでsessionに含めるか、getServerSession/getTokenなど別の方法で取得する必要がある場合あり
-      const accessToken = session?.accessToken; // 型定義が正しいため直接アクセス
+      const accessToken = session?.user?.accessToken; // 型定義が正しいため直接アクセス
       if (!accessToken) {
           toast.error('認証情報が見つかりません。再度ログインしてください。');
           router.push('/login');

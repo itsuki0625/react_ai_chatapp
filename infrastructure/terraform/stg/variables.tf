@@ -34,8 +34,9 @@ variable "db_instance_class" {
 }
 
 variable "db_allocated_storage" {
-  type    = number
-  default = 20
+  description = "The allocated storage in gibibytes for the database instance"
+  type        = number
+  default     = 20
 }
 
 variable "db_username" {
@@ -56,4 +57,11 @@ variable "db_name" {
 variable "api_base_url" {
   type        = string
   description = "http://stg-api.smartao.jp"
+}
+
+# ★ アイコン用S3バケット名
+variable "icon_images_bucket_name" {
+  description = "The name of the S3 bucket for user icons"
+  type        = string
+  default     = "stg-icon-images" # ★ デフォルト値を環境に合わせて設定
 } 

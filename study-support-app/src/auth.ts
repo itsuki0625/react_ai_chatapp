@@ -288,7 +288,6 @@ export const authConfig: NextAuthConfig = {
       if (token.error) {
         console.error("Session Callback: Token contains error, propagating to session", { error: token.error, errorDetail: token.errorDetail });
         session.error = token.error;
-        // @ts-ignore // 拡張エラー情報をセッションに追加
         session.errorDetail = token.errorDetail;
         // ★ エラー時は必須プロパティにデフォルト値を設定したオブジェクトにする
         session.user = {
@@ -316,31 +315,49 @@ export const authConfig: NextAuthConfig = {
         session.user.email = token.email ?? null; 
         session.user.image = token.picture ?? null; 
 
-        // --- ロール正規化処理 ---
+        // --- ★★★ ここで profile_image_url を設定 ★★★ ---
+        const userProfileImageUrl = token.profile_image_url as string | null | undefined;
+        // --- role の正規化 ---
         const normalizeRole = (roleInput: string | string[] | undefined): string => {
-          if (Array.isArray(roleInput) && roleInput.length > 0) {
-            return roleInput[0];
-          } else if (typeof roleInput === 'string') {
-            return roleInput;
-          }
-          return '生徒'; // デフォルトロール
+            if (Array.isArray(roleInput) && roleInput.length > 0) {
+                return roleInput[0]; // 配列の場合、最初の要素を返す (プライマリロールと想定)
+            }
+            if (typeof roleInput === 'string') {
+                return roleInput;
+            }
+            return '不明'; // デフォルトまたはエラー時の値
         };
-        const userRole = normalizeRole(token.role); // 正規化されたロールを取得
-        session.user.role = userRole;
-        // --- ここまで ---
-
-        // --- isAdmin, isTeacher, isStudent の計算を追加 --- 
-        session.user.isAdmin = userRole === '管理者';
-        session.user.isTeacher = userRole === '教師';
-        session.user.isStudent = userRole !== '管理者' && userRole !== '教師';
+        const userRole = normalizeRole(token.role);
         // --- ここまで追加 ---
 
-        session.user.status = token.status ?? 'pending'; 
-        session.user.permissions = token.permissions as string[] | undefined;
-        session.user.grade = token.grade as string | undefined; 
-        session.user.prefecture = token.prefecture as string | undefined; 
-        session.user.profile_image_url = token.profile_image_url as string | undefined;
-        session.accessToken = token.accessToken as string | undefined; 
+        // --- ★ isAdmin, isTeacher, isStudent を計算 ---
+        const isAdmin = userRole === '管理者';
+        const isTeacher = userRole === '教員';
+        // 管理者でも教員でもない場合は生徒とみなす（'不明' の場合も含む）
+        const isStudent = !isAdmin && !isTeacher;
+        // --- ★ ここまで追加 ---
+
+        session.user = {
+            ...session.user, // 既存のセッション情報 (name, email, image) を保持
+            id: String(token.id || token.sub), // id を token から取得
+            // ★ role は正規化した単一の文字列を割り当て
+            role: userRole,
+            // --- ★ 計算したフラグを設定 ---
+            isAdmin: isAdmin,
+            isTeacher: isTeacher,
+            isStudent: isStudent,
+            // --- ★ ここまで追加 ---
+            status: (token.status as string | undefined) ?? 'pending', // ★ 修正: undefined の場合に 'pending' を設定
+            permissions: token.permissions as string[] | undefined,
+            grade: token.grade as string | undefined,
+            prefecture: token.prefecture as string | undefined,
+            // ★★★ 修正: token から取得したオブジェクトキー（またはnull）をそのまま設定 ★★★
+            profile_image_url: userProfileImageUrl,
+            accessToken: token.accessToken as string | undefined, // 必要に応じて型アサーション
+            refreshToken: token.refreshToken as string | undefined,
+            accessTokenExpires: token.accessTokenExpires as number | undefined
+        };
+        console.debug("Session Callback: Session populated from token", { userId: session.user.id, role: session.user.role, profileImageUrl: session.user.profile_image_url }); // ★ ログ修正
       } else {
         console.warn("Session Callback: Token or session.user is missing, cannot populate session user data.");
         // ★ エラー時と同様にデフォルト値を持つ user オブジェクトを設定

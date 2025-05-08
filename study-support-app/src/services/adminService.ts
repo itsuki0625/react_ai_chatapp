@@ -1,10 +1,18 @@
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
-import { CampaignCode } from '@/types/subscription';
+import { CampaignCode, CampaignCodeCreatePayload } from '@/types/subscription';
 import { getApiBaseUrl } from './api';
-import { AdminUser } from '@/types/user';
+import { AdminUser, Role } from '@/types/user';
+import { 
+  StripeProductWithPricesResponse, 
+  StripePriceResponse, 
+  StripeProductCreate,
+  StripeDbProductData,
+  StripeProductResponse
+} from '@/types/stripe';
 
 // APIのベースURLを取得
 const API_URL = getApiBaseUrl();
+const ADMIN_API_PREFIX = '/api/v1/admin'; // admin プレフィックスを定数化
 
 // Stripe商品の型定義
 export interface StripeProduct {
@@ -89,7 +97,7 @@ export const getUsers = async (params?: {
       if (val !== undefined && val !== null) query.append(key, String(val));
     });
   }
-  const url = `${API_URL}/api/v1/admin/users?${query.toString()}`;
+  const url = `${API_URL}${ADMIN_API_PREFIX}/users?${query.toString()}`;
   try {
     const response = await fetchWithAuth(url);
     if (!response.ok) {
@@ -107,7 +115,7 @@ export const getUsers = async (params?: {
  * 新しいユーザーを作成します
  */
 export const createUser = async (userData: UserCreatePayload): Promise<UserDetailsResponse> => {
-  const url = `${API_URL}/api/v1/admin/users`;
+  const url = `${API_URL}${ADMIN_API_PREFIX}/users`;
   try {
     const response = await fetchWithAuth(url, {
       method: 'POST',
@@ -131,7 +139,7 @@ export const createUser = async (userData: UserCreatePayload): Promise<UserDetai
  * 特定のユーザーの詳細を取得します
  */
 export const getUserDetails = async (userId: string): Promise<UserDetailsResponse> => {
-  const url = `${API_URL}/api/v1/admin/users/${userId}`;
+  const url = `${API_URL}${ADMIN_API_PREFIX}/users/${userId}`;
   try {
     const response = await fetchWithAuth(url);
     if (!response.ok) {
@@ -162,7 +170,7 @@ type BackendErrorDetail = ValidationErrorDetail[] | string | Record<string, unkn
  */
 export const updateUser = async (userId: string, userData: UserUpdatePayload): Promise<UserDetailsResponse> => {
   console.log(`Updating user ${userId} with data:`, userData);
-  const url = `${API_URL}/api/v1/admin/users/${userId}`;
+  const url = `${API_URL}${ADMIN_API_PREFIX}/users/${userId}`;
   try {
     const response = await fetchWithAuth(url, {
       method: 'PUT',
@@ -207,7 +215,7 @@ export const updateUser = async (userId: string, userData: UserUpdatePayload): P
  * @returns Promise<void>
  */
 export const deleteUser = async (userId: string): Promise<void> => {
-  const url = `${API_URL}/api/v1/admin/users/${userId}`;
+  const url = `${API_URL}${ADMIN_API_PREFIX}/users/${userId}`;
   try {
     const response = await fetchWithAuth(url, {
       method: 'DELETE',
@@ -222,6 +230,26 @@ export const deleteUser = async (userId: string): Promise<void> => {
   }
 };
 
+// ★ ロール一覧取得関数を追加
+/**
+ * システムに登録されている全てのロールの一覧を取得します。
+ */
+export const getRoles = async (): Promise<Role[]> => {
+  const url = `${API_URL}${ADMIN_API_PREFIX}/roles`;
+  try {
+    const response = await fetchWithAuth(url);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+      console.error('Failed to fetch roles:', errorData.detail);
+      throw new Error(errorData.detail || 'Failed to fetch roles');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('getRoles error:', error);
+    throw error;
+  }
+};
+
 // StripeAPIエラーレスポンスの型
 interface StripeErrorResponse {
   detail?: string;
@@ -232,16 +260,71 @@ interface StripeErrorResponse {
   };
 }
 
+// キャンペーンコード一覧取得
+const getCampaignCodes = async (): Promise<CampaignCode[]> => {
+  const url = `${API_URL}${ADMIN_API_PREFIX}/campaign-codes`;
+  try {
+    const response = await fetchWithAuth(url);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('getCampaignCodes error:', error);
+    throw error;
+  }
+};
+
+// キャンペーンコードを作成 (インポートした型を使用)
+const createCampaignCode = async (payload: CampaignCodeCreatePayload): Promise<CampaignCode> => {
+  const url = `${API_URL}${ADMIN_API_PREFIX}/campaign-codes`;
+  try {
+    const response = await fetchWithAuth(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('createCampaignCode error:', error);
+    throw error;
+  }
+};
+
+// キャンペーンコードを削除
+const deleteCampaignCode = async (campaignCodeId: string): Promise<void> => {
+  const url = `${API_URL}${ADMIN_API_PREFIX}/campaign-codes/${campaignCodeId}`;
+  try {
+    const response = await fetchWithAuth(url, { method: 'DELETE' });
+    if (!response.ok && response.status !== 204) {
+      const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    }
+  } catch (error) {
+    console.error('deleteCampaignCode error:', error);
+    throw error;
+  }
+};
+
 export const adminService = {
-  // Stripe商品一覧取得
-  getProducts: async (): Promise<StripeProduct[]> => {
+  // Stripe商品関連
+  getProducts: async (active?: boolean): Promise<StripeProductWithPricesResponse[]> => {
     try {
-      const response = await fetchWithAuth(`${API_URL}/api/v1/admin/products`);
+      let url = `${API_URL}${ADMIN_API_PREFIX}/products`;
+      if (active !== undefined) {
+        url += `?active=${active}`;
+      }
+      const response = await fetchWithAuth(url);
       
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          return data;
+          return data as StripeProductWithPricesResponse[];
         } else {
           console.error('商品データが配列形式ではありません:', data);
           return [];
@@ -262,13 +345,9 @@ export const adminService = {
     }
   },
 
-  // Stripe商品作成
-  createProduct: async (productData: {
-    name: string;
-    description?: string;
-    active?: boolean;
-  }): Promise<StripeProduct> => {
-    const response = await fetchWithAuth(`${API_URL}/api/v1/admin/products`, {
+  // Stripe商品作成 (DBにも保存するAPIを呼び出す)
+  createProduct: async (productData: StripeProductCreate): Promise<StripeDbProductData> => {
+    const response = await fetchWithAuth(`${API_URL}${ADMIN_API_PREFIX}/products`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -276,35 +355,39 @@ export const adminService = {
       body: JSON.stringify(productData),
     });
     if (response.ok) {
-      return await response.json();
+      return await response.json() as StripeDbProductData;
     } else {
       console.error('商品の作成に失敗しました');
-      throw new Error('商品の作成に失敗しました');
+      const errorData = await response.json().catch(() => ({ message: '商品の作成に失敗しました' }));
+      throw new Error(errorData.message || '商品の作成に失敗しました');
     }
   },
 
-  // Stripe商品削除
-  deleteProduct: async (productId: string): Promise<void> => {
-    const response = await fetchWithAuth(`${API_URL}/api/v1/admin/products/${productId}`, {
+  // Stripe商品削除 (アーカイブ)
+  archiveProduct: async (productId: string): Promise<StripeProductResponse> => {
+    const response = await fetchWithAuth(`${API_URL}${ADMIN_API_PREFIX}/products/${productId}`, {
       method: 'DELETE',
     });
-    if (!response.ok) {
-      console.error('商品の削除に失敗しました');
-      throw new Error('商品の削除に失敗しました');
+    if (response.ok) {
+      return await response.json() as StripeProductResponse;
+    } else {
+      console.error('商品のアーカイブに失敗しました');
+      const errorData = await response.json().catch(() => ({ message: '商品のアーカイブに失敗しました' }));
+      throw new Error(errorData.message || '商品のアーカイブに失敗しました');
     }
   },
 
   // Stripe価格一覧取得
-  getPrices: async (): Promise<StripePrice[]> => {
+  getPrices: async (): Promise<StripePriceResponse[]> => {
     try {
-      const response = await fetchWithAuth(`${API_URL}/api/v1/admin/prices`);
+      const response = await fetchWithAuth(`${API_URL}${ADMIN_API_PREFIX}/prices`);
       
       if (response.ok) {
         const data = await response.json();
-        if (typeof data === 'object' && 'data' in data && Array.isArray(data.data)) {
-          return data.data;
+        if (typeof data === 'object' && data !== null && 'data' in data && Array.isArray(data.data)) {
+          return data.data as StripePriceResponse[];
         } else if (Array.isArray(data)) {
-          return data;
+          return data as StripePriceResponse[];
         } else {
           console.error('価格データが予期せぬ形式です:', data);
           return [];
@@ -327,15 +410,18 @@ export const adminService = {
 
   // Stripe価格作成
   createPrice: async (priceData: {
-    product: string;
+    product_id: string;
     unit_amount: number;
     currency: string;
     recurring?: {
       interval: 'day' | 'week' | 'month' | 'year';
       interval_count: number;
     };
+    active?: boolean;
+    metadata?: Record<string, string>;
+    lookup_key?: string;
   }): Promise<StripePrice> => {
-    const response = await fetchWithAuth(`${API_URL}/api/v1/admin/prices`, {
+    const response = await fetchWithAuth(`${API_URL}${ADMIN_API_PREFIX}/prices`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -351,66 +437,29 @@ export const adminService = {
   },
 
   // Stripe価格削除
-  deletePrice: async (priceId: string): Promise<void> => {
-    const response = await fetchWithAuth(`${API_URL}/api/v1/admin/prices/${priceId}`, {
+  archivePrice: async (priceId: string): Promise<StripePrice> => {
+    const response = await fetchWithAuth(`${API_URL}${ADMIN_API_PREFIX}/prices/${priceId}`, {
       method: 'DELETE',
-    });
-    if (!response.ok) {
-      console.error('価格の削除に失敗しました');
-      throw new Error('価格の削除に失敗しました');
-    }
-  },
-
-  // キャンペーンコード一覧取得
-  getCampaignCodes: async (skip = 0, limit = 20, ownerId?: string): Promise<CampaignCode[]> => {
-    // URLSearchParams は文字列のみサポートするため、数値を文字列に変換して設定します
-    const searchParams = new URLSearchParams();
-    searchParams.append('skip', skip.toString());
-    searchParams.append('limit', limit.toString());
-    if (ownerId) {
-      searchParams.append('owner_id', ownerId);
-    }
-    const response = await fetchWithAuth(
-      `${API_URL}/api/v1/admin/campaign-codes?${searchParams.toString()}`
-    );
-    return response.ok ? await response.json() : [];
-  },
-
-  // キャンペーンコード作成
-  createCampaignCode: async (campaignCode: {
-    code: string;
-    description?: string;
-    owner_id?: string;
-    discount_type: 'percentage' | 'fixed';
-    discount_value: number;
-    max_uses?: number;
-    valid_from?: string;
-    valid_until?: string;
-    is_active?: boolean;
-  }): Promise<CampaignCode> => {
-    const response = await fetchWithAuth(`${API_URL}/api/v1/admin/campaign-codes`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(campaignCode),
     });
     if (response.ok) {
       return await response.json();
     } else {
-      console.error('キャンペーンコードの作成に失敗しました');
-      throw new Error('キャンペーンコードの作成に失敗しました');
+      console.error('価格のアーカイブに失敗しました');
+      throw new Error('価格のアーカイブに失敗しました');
     }
   },
 
-  // キャンペーンコード削除
-  deleteCampaignCode: async (campaignCodeId: string): Promise<void> => {
-    const response = await fetchWithAuth(`${API_URL}/api/v1/admin/campaign-codes/${campaignCodeId}`, {
-      method: 'DELETE',
-    });
-    if (!response.ok) {
-      console.error('キャンペーンコードの削除に失敗しました');
-      throw new Error('キャンペーンコードの削除に失敗しました');
-    }
-  }
-}; 
+  // --- ★ キャンペーンコード関連を adminService に含める ---
+  getCampaignCodes: getCampaignCodes,
+  createCampaignCode: createCampaignCode,
+  deleteCampaignCode: deleteCampaignCode,
+  // --- ★ ここまで追加 ---
+
+  // --- ★ ユーザー関連 --- // (重複しないようにここにまとめる)
+  getUsers: getUsers,
+  createUser: createUser,
+  getUserDetails: getUserDetails,
+  updateUser: updateUser,
+  deleteUser: deleteUser,
+  getRoles: getRoles,
+};

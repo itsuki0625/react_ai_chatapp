@@ -15,9 +15,11 @@ import {
   AlertDialogTitle 
 } from '@/components/ui/alert-dialog';
 import { useToast } from "@/hooks/use-toast";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 
 // API 関数 (./../../lib/api/admin から)
-import { fetchProducts, archiveProduct } from '@/lib/api/admin'; 
+import { adminService } from '@/services/adminService';
 
 // 型定義
 import { 
@@ -48,13 +50,14 @@ export function ProductList() {
   // 価格関連
   const [isEditPriceDialogOpen, setIsEditPriceDialogOpen] = React.useState(false);
   const [editingPrice, setEditingPrice] = React.useState<StripePriceResponse | null>(null);
+  const [showActiveOnly, setShowActiveOnly] = React.useState<boolean>(true);
 
   // --- React Query Hooks --- 
   // 商品リスト取得
   const { data: products = [], isLoading, error } = useQuery<StripeProductWithPricesResponse[]>(
     { 
-      queryKey: ['adminProducts'], 
-      queryFn: fetchProducts 
+      queryKey: ['adminProducts', showActiveOnly],
+      queryFn: () => adminService.getProducts(showActiveOnly ? true : undefined)
     }
   );
 
@@ -64,7 +67,7 @@ export function ProductList() {
     Error,
     string
   >({
-    mutationFn: archiveProduct,
+    mutationFn: adminService.archiveProduct,
     onSuccess: (data) => {
       toast({ title: "成功", description: `商品「${data.name}」をアーカイブしました。` });
       queryClient.invalidateQueries({ queryKey: ['adminProducts'] });
@@ -133,6 +136,14 @@ export function ProductList() {
         <Button onClick={handleOpenCreateDialog}>
           <PlusCircle className="mr-2 h-4 w-4" /> 商品を追加
         </Button>
+        <div className="flex items-center space-x-2">
+          <Switch
+            id="show-active-only"
+            checked={showActiveOnly}
+            onCheckedChange={setShowActiveOnly}
+          />
+          <Label htmlFor="show-active-only">有効な商品のみ表示</Label>
+        </div>
       </div>
 
       <ProductTable 

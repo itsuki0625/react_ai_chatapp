@@ -41,8 +41,7 @@ class S3Service:
                 Key=object_key,
                 Body=contents,
                 ContentType=file.content_type,
-                # ACL はバケットポリシーやIAMで制御することを推奨 (privateがデフォルト)
-                # ACL='private'
+                # ACL='public-read'  # ACL を設定しないようにコメントアウト
             )
             logger.info(f"Successfully uploaded icon for user {user_id} to s3://{self.bucket_name}/{object_key}")
 

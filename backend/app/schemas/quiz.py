@@ -39,8 +39,9 @@ class QuizAnswer(QuizAnswerBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = {
+        "from_attributes": True,
+    }
 
 # クイズ問題スキーマ
 class QuizQuestionBase(BaseModel):
@@ -132,8 +133,9 @@ class QuizQuestion(QuizQuestionBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = {
+        "from_attributes": True,
+    }
 
 # クイズスキーマ
 class QuizBase(BaseModel):
@@ -182,8 +184,9 @@ class Quiz(QuizBase):
     updated_at: datetime
     questions: List[QuizQuestion]
 
-    class Config:
-        orm_mode = True
+    model_config = {
+        "from_attributes": True,
+    }
 
 # ユーザー回答スキーマ
 class UserQuizAnswerBase(BaseModel):
@@ -198,8 +201,9 @@ class UserQuizAnswer(UserQuizAnswerBase):
     attempt_id: UUID4
     created_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = {
+        "from_attributes": True,
+    }
 
 # クイズ回答提出スキーマ
 class QuizAnswerSubmit(BaseModel):
@@ -233,8 +237,9 @@ class UserQuizAttempt(UserQuizAttemptBase):
     updated_at: datetime
     answers: List[UserQuizAnswer] = []
 
-    class Config:
-        orm_mode = True
+    model_config = {
+        "from_attributes": True,
+    }
 
 # クイズリスト取得用レスポンススキーマ
 class QuizListResponse(BaseModel):
@@ -243,5 +248,6 @@ class QuizListResponse(BaseModel):
     page: int
     size: int
     
-    class Config:
-        orm_mode = True 
+    model_config = {
+        "from_attributes": True,
+    } 

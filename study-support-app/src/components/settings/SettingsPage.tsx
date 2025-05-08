@@ -1,13 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Bell, User, Shield, CreditCard } from 'lucide-react';
+import { Bell, User, Shield, CreditCard, ExternalLink } from 'lucide-react';
 import LogoutButton from '@/components/common/LogoutButton';
 import { toast } from 'react-hot-toast';
 import { useSession } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { Badge } from "@/components/ui/badge";
 import { UserSettings } from '@/types/user';
+import { SubscriptionInfo } from '@/types/user';
+import { Subscription } from '@/types/subscription';
 import { useAuthHelpers } from "@/lib/authUtils";
 import { Label } from "@/components/ui/label";
 import { fetchUserSettings } from '@/services/userService';
@@ -15,78 +17,91 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { uploadUserIcon, deleteUserIcon } from '@/services/userService';
 import { useUserStore } from '@/store/userStore';
+import { useQuery } from '@tanstack/react-query';
+import { subscriptionService } from '@/services/subscriptionService';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5050';
+const ASSET_BASE_URL = process.env.NEXT_PUBLIC_ASSET_BASE_URL || '';
 
 const SettingsPage = () => {
   const { data: session, status } = useSession();
   const [isLoading, setIsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const { user, setUser } = useUserStore();
-  const [userSettings, setUserSettings] = useState<Omit<UserSettings, 'subscription'> & { subscription?: UserSettings['subscription'] } | null>(null);
+  const [userSettings, setUserSettings] = useState<Omit<UserSettings, 'subscription'> | null>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isIconLoading, setIsIconLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isPortalLoading, setIsPortalLoading] = useState(false);
 
   const { userRole, isLoading: isAuthLoading } = useAuthHelpers();
 
+  const { data: currentSubscription, isLoading: isSubLoading, error: subError } = useQuery<Subscription | null>({
+    queryKey: ['userSubscription'],
+    queryFn: subscriptionService.getUserSubscription,
+    enabled: status === 'authenticated',
+    staleTime: 5 * 60 * 1000,
+  });
+
   useEffect(() => {
-    const loadInitialData = async () => {
+    const loadUserSettings = async () => {
       if (status === 'authenticated' && session?.user?.id) {
-        setIsLoading(true);
         try {
           const settingsData = await fetchUserSettings();
-          const mappedSettings: UserSettings = {
+          const mappedSettings: Omit<UserSettings, 'subscription'> = {
             full_name: String(settingsData.full_name || session.user.name || ''),
             name: String(settingsData.name || settingsData.full_name || session.user.name || ''),
             email: String(settingsData.email || session.user.email || ''),
+            profile_image_url: settingsData.profile_image_url ?? null,
             emailNotifications: settingsData.emailNotifications ?? true,
             browserNotifications: settingsData.browserNotifications ?? false,
             theme: String(settingsData.theme || 'light'),
-            subscription: settingsData.subscription || null,
           };
           setUserSettings(mappedSettings);
 
-          const profileImageUrlFromSession = (session.user as any).profile_image_url ?? null;
-          
-          if (!user) {
-            console.log("Initializing Zustand user state from session...");
-            setUser(session.user as any);
-            setPreviewUrl(profileImageUrlFromSession);
+          const userProfileImageKey = settingsData.profile_image_url ?? null;
+
+          if (!user || user.id !== session.user.id) {
+            console.log("Initializing/Updating Zustand user state...");
+            const userDataForStore = {
+              ...(session?.user ?? {}),
+              profile_image_url: userProfileImageKey
+            };
+            setUser(userDataForStore as any);
+            setPreviewUrl(userProfileImageKey);
           } else {
-            setPreviewUrl(user.profile_image_url ?? profileImageUrlFromSession);
+            setPreviewUrl(user.profile_image_url ?? null);
           }
 
         } catch (error) {
           console.error('ユーザー設定の取得エラー:', error);
           toast.error('ユーザー設定の取得に失敗しました。');
           setUserSettings({
-            full_name: 'デモユーザー',
-            name: 'デモユーザー',
-            email: 'demo@example.com',
+            full_name: String(session?.user?.name || 'ユーザー'),
+            name: String(session?.user?.name || 'ユーザー'),
+            email: String(session?.user?.email || ''),
+            profile_image_url: null,
             emailNotifications: true,
             browserNotifications: false,
             theme: 'light',
-            subscription: null,
           });
-           setPreviewUrl(null);
+          setPreviewUrl(null);
+          setUser(session?.user as any);
         } finally {
-          setIsLoading(false);
+          setIsLoading(isAuthLoading || (status === 'authenticated' && isSubLoading));
         }
       } else if (status === 'unauthenticated') {
         setUserSettings(null);
         setPreviewUrl(null);
         setUser(null);
-        setIsLoading(false);
       }
     };
-    loadInitialData();
-  }, [status, session?.user?.id, setUser]);
+    loadUserSettings();
+  }, [status, session, setUser, user, isAuthLoading, isSubLoading]);
 
   useEffect(() => {
-    const profileImageUrlFromSession = (session?.user as any)?.profile_image_url ?? null;
     if (selectedFile) {
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -94,7 +109,7 @@ const SettingsPage = () => {
         };
         reader.readAsDataURL(selectedFile);
     } else {
-        setPreviewUrl(user?.profile_image_url ?? profileImageUrlFromSession);
+        setPreviewUrl(user?.profile_image_url ?? null);
     }
   }, [selectedFile, user?.profile_image_url]);
 
@@ -196,11 +211,25 @@ const SettingsPage = () => {
     fileInputRef.current?.click();
   };
 
-  const handleChangePlanClick = () => {
-    alert('プラン変更機能は現在実装中です。');
+  const handleManageSubscription = async () => {
+    setIsPortalLoading(true);
+    try {
+      const returnUrl = window.location.href;
+      const { url } = await subscriptionService.createPortalSession(returnUrl);
+      window.location.href = url;
+    } catch (error) {
+      console.error('ポータルセッション作成エラー:', error);
+      toast.error(error instanceof Error ? error.message : 'サブスクリプション管理画面への遷移に失敗しました。');
+    } finally {
+      setIsPortalLoading(false);
+    }
   };
 
-  if (isLoading || isAuthLoading) {
+  const handleChangePlanClick = () => {
+    toast.success('プラン変更機能は現在実装中です。');
+  };
+
+  if (isLoading) {
     return (
       <div className="p-6 max-w-4xl mx-auto text-center">
         <p>読み込み中...</p>
@@ -210,8 +239,43 @@ const SettingsPage = () => {
 
   const displayName = userSettings?.name ?? user?.name ?? session?.user?.name ?? 'ユーザー';
   const fallbackChar = displayName?.charAt(0)?.toUpperCase() ?? 'U';
-  const currentIconUrl = previewUrl;
+
+  const profileImageUrlKey = previewUrl;
+  const currentIconUrl = profileImageUrlKey && !profileImageUrlKey.startsWith('data:')
+    ? `${ASSET_BASE_URL}/${profileImageUrlKey}`
+    : profileImageUrlKey;
+
   const hasExistingIcon = !!(user?.profile_image_url ?? session?.user?.profile_image_url);
+
+  console.log("--- Icon URL Debug ---");
+  console.log("ASSET_BASE_URL:", ASSET_BASE_URL);
+  console.log("profileImageUrlKey (from previewUrl):", profileImageUrlKey);
+  console.log("Final currentIconUrl passed to AvatarImage:", currentIconUrl);
+
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return '-';
+    try {
+      return new Date(dateString).toLocaleDateString('ja-JP');
+    } catch {
+      return '無効な日付';
+    }
+  };
+
+  const getPlanStatusBadge = (status: string | undefined) => {
+    if (!status) return <Badge variant="secondary">不明</Badge>;
+    switch (status) {
+      case 'active':
+      case 'trialing':
+        return <Badge variant="secondary">有効</Badge>;
+      case 'past_due':
+      case 'unpaid':
+        return <Badge variant="destructive">支払い要</Badge>;
+      case 'canceled':
+        return <Badge variant="outline">キャンセル済み</Badge>;
+      default:
+        return <Badge variant="secondary">{status}</Badge>;
+    }
+  };
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -293,18 +357,52 @@ const SettingsPage = () => {
               <h2 className="text-lg font-medium text-gray-900">契約プラン</h2>
             </div>
             <div className="p-6 space-y-4">
-                {userSettings?.subscription ? (
-                    <div>
-                        <p>現在のプラン: <Badge variant="secondary">{userSettings.subscription.plan_name}</Badge></p>
-                        <p>ステータス: <Badge variant={userSettings.subscription.status === 'active' ? 'default' : 'outline'}>{userSettings.subscription.status}</Badge></p>
-                        <p>有効期限: {new Date(userSettings.subscription.current_period_end).toLocaleDateString()}</p>
-                        <Button type="button" onClick={handleChangePlanClick} className="mt-4">
-                            プランを変更する
-                        </Button>
-                    </div>
-                ) : (
-                    <p>現在アクティブなプランはありません。</p>
-                )}
+              {isSubLoading ? (
+                <p>契約情報を読み込み中...</p>
+              ) : subError ? (
+                <p className="text-red-500">契約情報の取得に失敗しました。</p>
+              ) : currentSubscription ? (
+                <div>
+                  <p className="mb-2">
+                    <span className="font-semibold">現在のプラン:</span> {currentSubscription.plan_name || '不明なプラン'}
+                  </p>
+                  <p className="mb-2">
+                    <span className="font-semibold">ステータス:</span> {getPlanStatusBadge(currentSubscription.status)}
+                  </p>
+                  {currentSubscription.current_period_end && (
+                    <p className="mb-2">
+                      <span className="font-semibold">次回更新日:</span> {formatDate(currentSubscription.current_period_end)}
+                    </p>
+                  )}
+                  {currentSubscription.cancel_at && (
+                     <p className="mb-4 text-yellow-600">
+                       <span className="font-semibold">キャンセル予定日:</span> {formatDate(currentSubscription.cancel_at)}
+                     </p>
+                   )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleManageSubscription}
+                    disabled={isPortalLoading}
+                    className="mt-4"
+                  >
+                    {isPortalLoading ? '読み込み中...' : 'サブスクリプション管理'}
+                    <ExternalLink className="ml-2 h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div>
+                  <p>現在アクティブなプランはありません。</p>
+                  <Button
+                    type="button"
+                    variant="default"
+                    onClick={() => window.location.href = '/subscription/plans'}
+                    className="mt-4"
+                  >
+                    プランを選択する
+                  </Button>
+                </div>
+              )}
             </div>
           </section>
 

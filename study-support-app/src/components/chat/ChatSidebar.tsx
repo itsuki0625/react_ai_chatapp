@@ -33,7 +33,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ chatType, currentSessionId })
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const token = session?.accessToken;
+  const token = session?.user?.accessToken;
 
   useEffect(() => {
     const fetchSessions = async () => {

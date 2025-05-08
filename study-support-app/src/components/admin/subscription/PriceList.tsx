@@ -4,7 +4,12 @@ import React, { useState, useEffect } from 'react';
 import { PlusCircle, Edit, Trash2, AlertCircle, X } from 'lucide-react';
 import { Button } from '@/components/common/Button';
 import { Card, CardContent } from '@/components/common/Card';
-import { adminService, StripeProduct, StripePrice } from '@/services/adminService';
+import { adminService } from '@/services/adminService';
+import {
+  StripePriceResponse,
+  StripeProductResponse,
+  StripeProductWithPricesResponse
+} from '@/types/stripe';
 import axios from 'axios';
 
 // モーダルの共通コンポーネント
@@ -106,13 +111,13 @@ const Select: React.FC<{
 };
 
 export const PriceList: React.FC = () => {
-  const [prices, setPrices] = useState<StripePrice[]>([]);
-  const [products, setProducts] = useState<StripeProduct[]>([]);
+  const [prices, setPrices] = useState<StripePriceResponse[]>([]);
+  const [products, setProducts] = useState<StripeProductWithPricesResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [currentPrice, setCurrentPrice] = useState<StripePrice | null>(null);
+  const [currentPrice, setCurrentPrice] = useState<StripePriceResponse | null>(null);
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
   const [showInactivePrices, setShowInactivePrices] = useState(() => {
     // ローカルストレージから設定を読み込む（デフォルトはtrue）
@@ -150,18 +155,16 @@ export const PriceList: React.FC = () => {
       setIsLoading(true);
       const data = await adminService.getPrices();
       
-      // データが配列であることを確認
       if (Array.isArray(data)) {
         setPrices(data);
       } else {
         console.error('予期せぬAPIレスポンス形式です:', data);
-        // データが配列でない場合は空配列を設定
         setPrices([]);
         setError('価格データの形式が不正です。管理者に連絡してください。');
       }
     } catch (err) {
       console.error('価格の取得中にエラーが発生しました:', err);
-      setPrices([]); // エラー時は空配列を設定
+      setPrices([]);
       setError(err instanceof Error ? err.message : '価格の取得中にエラーが発生しました');
     } finally {
       setIsLoading(false);
@@ -195,13 +198,24 @@ export const PriceList: React.FC = () => {
     setIsAddModalOpen(true);
   };
 
-  const handleEditPrice = (price: StripePrice) => {
+  const handleEditPrice = (price: StripePriceResponse) => {
     setCurrentPrice(price);
+
+    let displayAmount = '0'; // デフォルト値を設定
+    if (price.unit_amount !== null && price.unit_amount !== undefined) {
+      if (price.currency.toLowerCase() === 'jpy') {
+        displayAmount = String(price.unit_amount);
+      } else {
+        // JPY以外の場合、100で割って小数点以下2桁まで表示する可能性を考慮
+        // ただし、StripePriceResponseのunit_amountは整数なので、
+        // /100の結果が整数にならない場合はtoFixedなどで調整が必要か検討
+        displayAmount = String(price.unit_amount / 100);
+      }
+    }
     
-    // 編集フォームの初期値を設定
     setNewPrice({
       product: price.product,
-      unit_amount: String(price.unit_amount / 100), // Stripeの値（セント単位）を円単位に変換
+      unit_amount: displayAmount,
       currency: price.currency,
       type: price.type,
       interval: price.recurring?.interval || 'month',
@@ -219,7 +233,7 @@ export const PriceList: React.FC = () => {
     }
 
     try {
-      await adminService.deletePrice(priceId);
+      await adminService.archivePrice(priceId);
       // 成功したら価格リストを更新
       fetchPrices();
       alert('価格設定が非アクティブ化されました');
@@ -237,6 +251,9 @@ export const PriceList: React.FC = () => {
   // フォームの入力値変更ハンドラ
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    if (name === 'unit_amount') { // 金額フィールドの場合のみログ出力
+      console.log('handleInputChange - unit_amount value:', value); 
+    }
     setNewPrice(prev => ({ ...prev, [name]: value }));
     
     // エラーをクリア
@@ -252,89 +269,92 @@ export const PriceList: React.FC = () => {
   // 価格を作成/更新する
   const handleSubmitPrice = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // フォームのバリデーション
+    console.log('handleSubmitPrice - newPrice.unit_amount at start:', newPrice.unit_amount); // ★ ここに追加
+    setFormErrors({}); // エラーをリセット
+
+    // バリデーション
     const errors: { [key: string]: string } = {};
+    if (!newPrice.product) errors.product = '商品を選択してください。';
     
-    if (!newPrice.product) {
-      errors.product = '商品を選択してください';
+    const parsedAmount = parseFloat(newPrice.unit_amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      errors.unit_amount = '有効な価格を入力してください。';
     }
-    if (!newPrice.unit_amount || Number(newPrice.unit_amount) <= 0) {
-      errors.unit_amount = '0より大きい金額を入力してください';
-    }
+
     if (newPrice.type === 'recurring') {
-      if (!newPrice.interval) {
-        errors.interval = '請求周期を選択してください';
-      }
-      if (!newPrice.interval_count || Number(newPrice.interval_count) <= 0) {
-        errors.interval_count = '請求周期の回数は0より大きい値を入力してください';
+      if (!newPrice.interval) errors.interval = '繰り返し間隔を選択してください。';
+      if (!newPrice.interval_count || parseInt(newPrice.interval_count, 10) <= 0) {
+        errors.interval_count = '有効な繰り返し回数を入力してください。';
       }
     }
-    
+
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       return;
     }
-    
+
+    let finalUnitAmount: number;
+    if (newPrice.currency.toLowerCase() === 'jpy') {
+      finalUnitAmount = Math.round(parsedAmount); // JPYの場合はそのまま（整数に丸める）
+    } else {
+      finalUnitAmount = Math.round(parsedAmount * 100); // JPY以外は100倍してセントに変換
+    }
+
+    const pricePayload = {
+      product_id: newPrice.product,
+      unit_amount: finalUnitAmount, // ★ 修正後の金額を使用
+      currency: newPrice.currency,
+      active: true,
+      nickname: newPrice.nickname || undefined,
+      recurring: newPrice.type === 'recurring' ? {
+        interval: newPrice.interval as 'day' | 'week' | 'month' | 'year',
+        interval_count: parseInt(newPrice.interval_count, 10),
+      } : undefined,
+    };
+
     try {
-      // バックエンドの StripePriceCreate スキーマに合わせたデータを作成
-      const priceDataPayload = {
-        product: newPrice.product,
-        unit_amount: parseInt(newPrice.unit_amount, 10),
-        currency: newPrice.currency, 
-        active: true, 
-        recurring: newPrice.type === 'recurring' ? {
-          interval: newPrice.interval as 'day' | 'week' | 'month' | 'year',
-          interval_count: parseInt(newPrice.interval_count, 10),
-        } : undefined,
-      };
-
-      console.log("Submitting Price Data:", priceDataPayload);
-      
+      setIsLoading(true);
       if (isEditModalOpen && currentPrice) {
-        // --- 編集ロジック --- (今回は新規作成エラーなので、一旦既存のまま)
-        // TODO: Edit logic should use PUT /admin/prices/{priceId} instead
-        // For now, log a warning and proceed with old logic (or block edit)
-        console.warn("Price edit uses create+delete logic, consider updating to PUT endpoint.");
-        await adminService.createPrice(priceDataPayload);
-        await adminService.deletePrice(currentPrice.id);
-        alert('価格設定が更新されました。(旧ロジック)');
-
+        // ★ 価格編集APIの呼び出し (adminService.updatePrice を想定)
+        // Stripeの価格は一度作成すると金額や通貨、課金タイプなどを変更できないものが多いため、
+        // 一般的には「既存の価格をアーカイブして新しい価格を作成する」という流れになります。
+        // ここでは一旦、既存の価格編集はサポート外としてアラートを出す現状のロジックを維持します。
+        alert('価格の編集は現在サポートされていません。一度非アクティブ化し、新しい価格を作成してください。');
+        // もし Stripe Price Update API を使ってメタデータや nickname のみを更新する場合は、
+        // 適切なペイロードで adminService.updatePrice(currentPrice.id, updatePayload) のように呼び出します。
       } else {
-        // --- 新規作成ロジック --- 
-        await adminService.createPrice(priceDataPayload);
-        alert('新しい価格設定が作成されました。');
+        await adminService.createPrice(pricePayload);
+        alert('新しい価格が作成されました。');
       }
-      
-      // モーダルを閉じて価格リストを更新
+      fetchPrices();
       setIsAddModalOpen(false);
       setIsEditModalOpen(false);
-      fetchPrices();
+      setCurrentPrice(null);
       resetForm();
-    } catch (err) { // エラーハンドリングを改善
+    } catch (err: any) {
       console.error('価格の保存中にエラーが発生しました:', err);
-      let errorMessage = '価格の保存中にエラーが発生しました';
-      if (axios.isAxiosError(err) && err.response?.data?.detail) {
-          errorMessage = `エラー: ${err.response.data.detail}`;
-      } else if (err instanceof Error) {
-          errorMessage = err.message;
+      const apiErrorMessage = err.response?.data?.detail || err.message || '価格の保存中にエラーが発生しました';
+      alert(apiErrorMessage);
+      if (err.response?.data?.errors) {
+        setFormErrors(err.response.data.errors);
       }
-      alert(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   // 金額を表示用にフォーマット
-  const formatAmount = (amount: number, currency: string) => {
-    // Stripeから受け取った金額は最小通貨単位 (JPYの場合は円)
-    // JPY以外でセントなどの補助単位がある通貨の場合のみ100で割る
+  const formatAmount = (amount: number | null | undefined, currency: string) => {
+    if (amount === null || amount === undefined) {
+      return '価格未設定';
+    }
     const normalizedAmount = currency.toLowerCase() === 'jpy' 
-      ? amount // JPYの場合はそのまま
-      : amount / 100; // JPY以外は100で割る (例: USD)
+      ? amount 
+      : amount / 100; 
     
-    // JPYの場合、最小小数桁数は0に設定
     const minimumFractionDigits = currency.toLowerCase() === 'jpy' ? 0 : 2;
 
-    const formatter = new Intl.NumberFormat('ja-JP', { // locale は適切に設定
+    const formatter = new Intl.NumberFormat('ja-JP', {
       style: 'currency',
       currency: currency.toUpperCase(),
       minimumFractionDigits: minimumFractionDigits
@@ -482,16 +502,6 @@ export const PriceList: React.FC = () => {
       );
     }
 
-    // prices が配列であることを確認
-    if (!Array.isArray(prices)) {
-      return (
-        <div className="bg-yellow-50 text-yellow-700 p-4 rounded-lg flex items-start">
-          <AlertCircle className="h-5 w-5 mr-2 mt-0.5" />
-          <span>価格データの形式が不正です。管理者に連絡してください。</span>
-        </div>
-      );
-    }
-
     if (prices.length === 0) {
       return (
         <div className="text-center py-8 text-gray-500">
@@ -528,7 +538,7 @@ export const PriceList: React.FC = () => {
                           )}
                         </h3>
                         <p className="text-gray-500 text-sm mt-1">
-                          商品: {price.product_name || getProductName(price.product)}
+                          商品: {getProductName(price.product)}
                         </p>
                         <div className="flex items-center mt-2">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -619,7 +629,7 @@ export const PriceList: React.FC = () => {
                           )}
                         </h3>
                         <p className="text-gray-400 text-sm mt-1">
-                          商品: {price.product_name || getProductName(price.product)}
+                          商品: {getProductName(price.product)}
                         </p>
                         <div className="flex items-center mt-2">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">

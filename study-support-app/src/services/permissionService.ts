@@ -2,8 +2,9 @@ import { PermissionRead } from '@/types/permission';
 
 // Assume fetchWithAuth exists in lib for authenticated requests
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
+import { getApiBaseUrl } from './api';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5050';
+const API_BASE_URL = getApiBaseUrl();
 
 // GET /api/v1/permissions
 export const getPermissions = async (params?: { skip?: number; limit?: number }): Promise<PermissionRead[]> => {

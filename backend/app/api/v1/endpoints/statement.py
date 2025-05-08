@@ -93,6 +93,9 @@ async def update_statement(
     """志望理由書を更新"""
     # デバッグ用にリクエストデータを出力
     # print(f"Updating statement: {statement_id}")
+    # ★ Pydantic V2 の model_dump を使用
+    # print(f"Update data: {statement_update.model_dump()}")
+    # ★ Pydantic V1 の dict は削除
     # print(f"Update data: {statement_update.dict()}")
 
     # 既存の志望理由書を取得

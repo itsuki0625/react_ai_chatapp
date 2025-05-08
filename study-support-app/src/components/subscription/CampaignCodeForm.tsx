@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { VerifyCampaignCodeResponse, CampaignCodeVerificationResult } from '@/types/subscription';
+import { VerifyCampaignCodeResponse } from '@/types/subscription';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
 
 interface CampaignCodeFormProps {
-  onSubmit: (code: string) => Promise<VerifyCampaignCodeResponse | CampaignCodeVerificationResult>;
-  onApply?: (response: VerifyCampaignCodeResponse | CampaignCodeVerificationResult) => void;
+  onSubmit: (code: string) => Promise<VerifyCampaignCodeResponse>;
+  onApply?: (response: VerifyCampaignCodeResponse) => void;
   currency?: string;
   initialCode?: string;
   onCodeChange?: (code: string) => void;
@@ -24,7 +24,7 @@ export const CampaignCodeForm: React.FC<CampaignCodeFormProps> = ({
   const [internalIsLoading, setInternalIsLoading] = useState(false);
   const isLoading = propIsLoading ?? internalIsLoading;
   const [error, setError] = useState<string | null>(null);
-  const [verificationResult, setVerificationResult] = useState<VerifyCampaignCodeResponse | CampaignCodeVerificationResult | null>(null);
+  const [verificationResult, setVerificationResult] = useState<VerifyCampaignCodeResponse | null>(null);
   
   const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newCode = e.target.value;
@@ -58,15 +58,12 @@ export const CampaignCodeForm: React.FC<CampaignCodeFormProps> = ({
       const result = await onSubmit(campaignCode);
       setVerificationResult(result);
       
-      const isValid = 'is_valid' in result ? result.is_valid : result.valid;
-      const message = 'message' in result ? result.message : '不明なメッセージ';
-      
-      if (isValid) {
+      if (result.valid) {
         if (onApply) {
           onApply(result);
         }
       } else {
-        setError(message || '入力されたキャンペーンコードは無効です。');
+        setError(result.message || '入力されたキャンペーンコードは無効です。');
       }
     } catch (error) {
       const errorMessage = error instanceof Error 
@@ -81,16 +78,15 @@ export const CampaignCodeForm: React.FC<CampaignCodeFormProps> = ({
     }
   };
   
-  const isResultValid = (result: VerifyCampaignCodeResponse | CampaignCodeVerificationResult | null): boolean => {
-    if (!result) return false;
-    return 'is_valid' in result ? result.is_valid : result.valid;
+  const isResultValid = (result: VerifyCampaignCodeResponse | null): boolean => {
+    return result?.valid ?? false;
   };
   
-  const getDiscountDisplay = (result: VerifyCampaignCodeResponse | CampaignCodeVerificationResult) => {
-    if (!isResultValid(result)) return null;
+  const getDiscountDisplay = (result: VerifyCampaignCodeResponse) => {
+    if (!result.valid) return null;
     
-    const discountType = 'discount_type' in result ? result.discount_type : null;
-    const discountValue = 'discount_value' in result ? result.discount_value : null;
+    const discountType = result.discount_type;
+    const discountValue = result.discount_value;
     
     if (discountType && discountValue !== null) {
       return discountType === 'percentage'
@@ -100,12 +96,12 @@ export const CampaignCodeForm: React.FC<CampaignCodeFormProps> = ({
     return "割引適用";
   };
   
-  const getOriginalAmountDisplay = (result: VerifyCampaignCodeResponse | CampaignCodeVerificationResult) => {
-    return 'original_amount' in result ? result.original_amount : null;
+  const getOriginalAmountDisplay = (result: VerifyCampaignCodeResponse) => {
+    return result.original_amount;
   };
   
-  const getDiscountedAmountDisplay = (result: VerifyCampaignCodeResponse | CampaignCodeVerificationResult) => {
-    return 'discounted_amount' in result ? result.discounted_amount : null;
+  const getDiscountedAmountDisplay = (result: VerifyCampaignCodeResponse) => {
+    return result.discounted_amount;
   };
   
   return (

@@ -6,6 +6,7 @@ export interface SubscriptionPlan {
   amount: number;
   currency: string;
   interval: string;
+  interval_count: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -57,6 +58,8 @@ export interface CampaignCode {
   valid_until: string | null;
   is_active: boolean;
   is_valid: boolean;
+  coupon_id: string | null;
+  stripe_promotion_code_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -69,10 +72,7 @@ export interface VerifyCampaignCodeResponse {
   original_amount: number | null;
   discounted_amount: number | null;
   campaign_code_id: string | null;
-}
-
-export interface CampaignCodeVerificationResult extends VerifyCampaignCodeResponse {
-  is_valid: boolean;
+  stripe_coupon_id?: string | null;
 }
 
 export interface CheckoutSession {
@@ -86,10 +86,11 @@ export interface CreateCheckoutRequest {
   success_url: string;
   cancel_url: string;
   campaign_code?: string;
+  coupon_id?: string;
 }
 
 export interface ManageSubscriptionRequest {
-  subscription_id: string;
+  subscription_id?: string;
   action: 'cancel' | 'reactivate' | 'update';
   plan_id?: string;
 }
@@ -132,4 +133,15 @@ export interface DiscountTypeResponse extends DiscountTypeBase {
     id: string; // UUID は string で受け取る
     created_at: string; // または Date
     updated_at: string; // または Date
+}
+
+// キャンペーンコード作成時のペイロード型
+export interface CampaignCodeCreatePayload {
+  code: string;
+  description?: string | null;
+  stripe_coupon_id: string; // 必須
+  max_uses?: number | null;
+  valid_from?: string | null; // ISO Date string
+  valid_until?: string | null; // ISO Date string
+  is_active?: boolean;
 } 

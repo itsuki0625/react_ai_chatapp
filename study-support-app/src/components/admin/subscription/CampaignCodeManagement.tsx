@@ -3,12 +3,16 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { PlusCircle, Edit, Trash2, AlertCircle, X } from 'lucide-react';
-import { Button } from '@/components/common/Button';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/common/Card';
-import { CampaignCode, DiscountTypeResponse } from '@/types/subscription';
+import { CampaignCode, CampaignCodeCreatePayload, DiscountTypeResponse } from '@/types/subscription';
+import { StripeCouponResponse } from '@/types/coupon';
 import { adminService } from '@/services/adminService';
-import { fetchDiscountTypes } from '@/lib/api/admin';
-import { useQuery } from '@tanstack/react-query';
+import { couponAdminService } from '@/services/couponService';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useToast } from '@/hooks/use-toast';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 
 // モーダルの共通コンポーネント
 const Modal: React.FC<{
@@ -133,23 +137,27 @@ export const CampaignCodeManagement: React.FC = () => {
   const [campaignCodes, setCampaignCodes] = useState<CampaignCode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [currentCode, setCurrentCode] = useState<CampaignCode | null>(null);
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
-  
-  // 割引タイプ取得用の useQuery
-  const { data: discountTypes = [], isLoading: isLoadingDiscountTypes, error: discountTypesError } = useQuery<DiscountTypeResponse[]>({
-    queryKey: ['adminDiscountTypes'],
-    queryFn: fetchDiscountTypes
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const queryClient = useQueryClient();
+
+  const { data: campaignCodesData, isLoading: isLoadingCampaignCodes, refetch: refetchCampaignCodes } = useQuery<CampaignCode[]>({
+    queryKey: ['adminCampaignCodes'],
+    queryFn: () => adminService.getCampaignCodes().then(data => data || []),
+    initialData: [],
   });
 
-  // 新規キャンペーンコードのフォーム状態
+  const { data: coupons, isLoading: isLoadingCoupons, error: couponsError } = useQuery<StripeCouponResponse[], Error>({
+    queryKey: ['adminStripeCoupons'],
+    queryFn: () => couponAdminService.listAdminDbCoupons(100),
+  });
+
   const [newCode, setNewCode] = useState({
     code: '',
     description: '',
-    discount_type: '',
-    discount_value: '',
+    stripe_coupon_id: '',
     max_uses: '',
     valid_from: '',
     valid_until: '',
@@ -157,28 +165,13 @@ export const CampaignCodeManagement: React.FC = () => {
   });
 
   useEffect(() => {
-    fetchCampaignCodes();
   }, []);
-
-  const fetchCampaignCodes = async () => {
-    try {
-      setIsLoading(true);
-      const data = await adminService.getCampaignCodes();
-      setCampaignCodes(data || []);
-    } catch (err) {
-      console.error('キャンペーンコードの取得中にエラーが発生しました:', err);
-      setError(err instanceof Error ? err.message : 'キャンペーンコードの取得中にエラーが発生しました');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const resetForm = () => {
     setNewCode({
       code: '',
       description: '',
-      discount_type: '',
-      discount_value: '',
+      stripe_coupon_id: '',
       max_uses: '',
       valid_from: '',
       valid_until: '',
@@ -187,176 +180,133 @@ export const CampaignCodeManagement: React.FC = () => {
     setFormErrors({});
   };
 
-  const handleAddCampaignCode = () => {
-    resetForm();
-    setIsAddModalOpen(true);
-  };
-
   const handleEditCampaignCode = (code: CampaignCode) => {
     setCurrentCode(code);
-    
-    // 日付フォーマット変換（yyyy-MM-dd形式に変換）
-    const formatDateForInput = (dateString: string | null) => {
+    const formatDateForInput = (dateString: string | null | undefined) => {
       if (!dateString) return '';
-      const date = new Date(dateString);
-      return date.toISOString().split('T')[0];
+      try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return '';
+        return date.toISOString().split('T')[0];
+      } catch (e) {
+        console.error("Error formatting date:", dateString, e);
+        return '';
+      }
     };
-    
-    // 編集フォームの初期値を設定
     setNewCode({
       code: code.code,
       description: code.description || '',
-      discount_type: code.discount_type,
-      discount_value: String(code.discount_value),
+      stripe_coupon_id: code.coupon_id || '',
       max_uses: code.max_uses ? String(code.max_uses) : '',
       valid_from: formatDateForInput(code.valid_from),
       valid_until: formatDateForInput(code.valid_until),
       is_active: code.is_active
     });
-    
     setFormErrors({});
     setIsEditModalOpen(true);
   };
+
+  const { toast } = useToast();
+
+  const createCampaignCodeMutation = useMutation<
+    CampaignCode,
+    Error,
+    CampaignCodeCreatePayload
+  >({
+    mutationFn: adminService.createCampaignCode,
+    onSuccess: (data) => {
+      toast({ title: "成功", description: `キャンペーンコード「${data.code}」が作成されました。` });
+      queryClient.invalidateQueries({ queryKey: ['adminCampaignCodes'] });
+      setShowCreateForm(false);
+      resetForm();
+    },
+    onError: (error) => {
+      console.error("キャンペーンコード作成エラー:", error);
+      let detail = "キャンペーンコードの作成に失敗しました。";
+      if (axios.isAxiosError(error)) {
+        detail = error.response?.data?.detail || error.message;
+      } else if (error instanceof Error) {
+        detail = error.message;
+      }
+      toast({ variant: "destructive", title: "作成エラー", description: detail });
+    },
+  });
 
   const handleDeleteCampaignCode = async (codeId: string) => {
     if (!confirm('このキャンペーンコードを削除してもよろしいですか？')) {
       return;
     }
-
     try {
       await adminService.deleteCampaignCode(codeId);
-      // 成功したらキャンペーンコードリストを更新
-      fetchCampaignCodes();
+      toast({ title: "成功", description: "キャンペーンコードが削除されました。" });
+      queryClient.invalidateQueries({ queryKey: ['adminCampaignCodes'] });
     } catch (err) {
       console.error('キャンペーンコードの削除中にエラーが発生しました:', err);
-      alert(err instanceof Error ? err.message : 'キャンペーンコードの削除中にエラーが発生しました');
+      const detail = err instanceof Error ? err.message : 'キャンペーンコードの削除中にエラーが発生しました';
+      toast({ variant: "destructive", title: "削除エラー", description: detail });
     }
   };
 
-  // フォームの入力値変更ハンドラ
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target as HTMLInputElement;
     setNewCode(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
     }));
-    
-    // エラーをクリア
     if (formErrors[name]) {
-      setFormErrors(prev => {
-        const errors = { ...prev };
-        delete errors[name];
-        return errors;
-      });
+      setFormErrors(prev => { const errors = { ...prev }; delete errors[name]; return errors; });
     }
   };
 
-  // キャンペーンコードを作成/更新する
-  const handleSubmitCampaignCode = async (/* e: React.FormEvent */) => {
-    // e.preventDefault();
+  const handleSubmitNewCampaignCode = async () => {
+    setFormErrors({});
+    // eslint-disable-next-line prefer-const
+    let errors: { [key: string]: string } = {};
 
-    // フォームのバリデーション
-    const errors: { [key: string]: string } = {};
-    
-    if (!newCode.code.trim()) {
-      errors.code = 'コードを入力してください';
+    if (!newCode.code) errors.code = "コードは必須です";
+    if (!newCode.stripe_coupon_id) errors.stripe_coupon_id = "StripeクーポンIDは必須です";
+    if (newCode.max_uses && (isNaN(Number(newCode.max_uses)) || Number(newCode.max_uses) < 0)) {
+        errors.max_uses = "最大使用回数は0以上の数値で入力してください";
     }
-    
-    if (!newCode.discount_type) {
-      errors.discount_type = '割引タイプを選択してください';
+    if (newCode.valid_from && isNaN(new Date(newCode.valid_from).getTime())) {
+        errors.valid_from = "有効開始日が不正な日付形式です";
     }
-    
-    if (!newCode.discount_value) {
-      errors.discount_value = '割引値を入力してください';
-    } else {
-      const discountValue = Number(newCode.discount_value);
-      if (isNaN(discountValue) || discountValue <= 0) {
-        errors.discount_value = '有効な割引値を入力してください';
-      } else if (newCode.discount_type === 'percentage' && discountValue > 100) {
-        errors.discount_value = 'パーセンテージは100%以下にしてください';
-      }
+    if (newCode.valid_until && isNaN(new Date(newCode.valid_until).getTime())) {
+        errors.valid_until = "有効終了日が不正な日付形式です";
     }
-    
-    // 日付の検証
-    if (newCode.valid_from && newCode.valid_until) {
-      const fromDate = new Date(newCode.valid_from);
-      const untilDate = new Date(newCode.valid_until);
-      if (fromDate > untilDate) {
-        errors.valid_until = '終了日は開始日より後にしてください';
-      }
+    if (newCode.valid_from && newCode.valid_until && new Date(newCode.valid_from) > new Date(newCode.valid_until)) {
+        errors.valid_until = "有効終了日は有効開始日より後の日付である必要があります";
     }
-    
+
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       return;
     }
-    
+
+    const payload: CampaignCodeCreatePayload = {
+      code: newCode.code,
+      description: newCode.description || null,
+      stripe_coupon_id: newCode.stripe_coupon_id,
+      max_uses: newCode.max_uses ? parseInt(newCode.max_uses, 10) : null,
+      valid_from: newCode.valid_from ? new Date(newCode.valid_from).toISOString() : null,
+      valid_until: newCode.valid_until ? new Date(newCode.valid_until).toISOString() : null,
+      is_active: newCode.is_active,
+    };
+
+    console.log("Creating campaign code with payload:", payload);
+
     try {
-      // 日付をISO 8601形式 (UTCの日の始まり) に変換するヘルパー関数
-      const toISOStartOfDayUTC = (dateString: string | undefined): string | undefined => {
-        if (!dateString) return undefined;
-        try {
-          const date = new Date(dateString + 'T00:00:00Z'); // UTCとして解釈
-          return date.toISOString();
-        } catch (error) {
-          console.error("Invalid date format:", dateString, error);
-          return undefined; // 無効な場合は undefined を返す
-        }
-      };
-
-      const campaignCodeData = {
-        code: newCode.code.trim(),
-        description: newCode.description.trim() || undefined,
-        discount_type: newCode.discount_type as 'percentage' | 'fixed',
-        discount_value: Number(newCode.discount_value),
-        max_uses: newCode.max_uses ? Number(newCode.max_uses) : undefined,
-        valid_from: toISOStartOfDayUTC(newCode.valid_from),
-        valid_until: toISOStartOfDayUTC(newCode.valid_until),
-        is_active: newCode.is_active
-      };
-      
-      console.log("Submitting Campaign Code Data:", campaignCodeData); // 送信データを確認
-
-      if (isEditModalOpen && currentCode) {
-        // 現在のAPIでは更新エンドポイントがないため、
-        // バックエンドでPUTエンドポイントを実装する必要があります
-        // 一時的に新しいコードを作成するようにしています
-        // TODO: Implement update logic using PUT /admin/campaign-codes/{codeId}
-        console.warn("Campaign code edit currently uses create logic. Implement PUT endpoint.");
-        await adminService.createCampaignCode(campaignCodeData); 
-        alert("キャンペーンコードが（新規作成として）保存されました。更新処理は未実装です。");
-      } else {
-        await adminService.createCampaignCode(campaignCodeData);
-        alert("キャンペーンコードが作成されました。"); // 成功時のメッセージ変更
-      }
-      
-      // モーダルを閉じてキャンペーンコードリストを更新
-      setIsAddModalOpen(false);
-      setIsEditModalOpen(false);
-      fetchCampaignCodes();
-      resetForm();
-    } catch (err) {
-      console.error('キャンペーンコードの保存中にエラーが発生しました:', err);
-      // エラーハンドリング改善 (Axios エラーチェック)
-      let errorMessage = 'キャンペーンコードの保存中にエラーが発生しました';
-      if (axios.isAxiosError(err) && err.response?.data?.detail) {
-          // バックエンドからの詳細エラーメッセージを表示
-          errorMessage = `エラー: ${err.response.data.detail}`;
-          if (typeof err.response.data.detail === 'string') {
-              errorMessage = `エラー: ${err.response.data.detail}`;
-          } else if (Array.isArray(err.response.data.detail)) {
-              // バリデーションエラーの詳細を整形
-              errorMessage = "エラー: 入力内容を確認してください。\n" + 
-                  err.response.data.detail.map((d: { loc: string[], msg: string }) => `${d.loc.join('.')} - ${d.msg}`).join("\n");
-          } 
-      } else if (err instanceof Error) {
-          errorMessage = err.message;
-      }
-      alert(errorMessage);
+      await createCampaignCodeMutation.mutateAsync(payload);
+    } catch (error) {
+      console.error("Caught mutation error in handleSubmit:", error);
     }
   };
 
-  // 割引情報のフォーマット
+  const handleUpdateCampaignCode = async () => {
+    toast({ title: "未実装", description: "キャンペーンコードの更新機能は未実装です。" });
+    setIsEditModalOpen(false);
+  };
+
   const formatDiscount = (code: CampaignCode) => {
     if (code.discount_type === 'percentage') {
       return `${code.discount_value}%割引`;
@@ -365,253 +315,139 @@ export const CampaignCodeManagement: React.FC = () => {
     }
   };
 
-  // 日付のフォーマット
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '設定なし';
     return new Date(dateString).toLocaleDateString('ja-JP');
   };
 
-  const renderCampaignCodeForm = () => {
-    // 割引タイプロード中の表示
-    if (isLoadingDiscountTypes) {
-        return <div>割引タイプを読み込み中...</div>;
-    }
-    // 割引タイプ取得エラー表示
-    if (discountTypesError) {
-        return <div className="text-red-500">割引タイプの読み込みに失敗しました: {discountTypesError.message}</div>;
-    }
-
-    return (
-      <form onSubmit={handleSubmitCampaignCode}>
-        <FormField label="キャンペーンコード" error={formErrors.code}>
-          <Input
-            value={newCode.code}
-            onChange={handleInputChange}
-            name="code"
-            placeholder="例: WELCOME2023"
-            required
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            * ユーザーが入力するコードです（大文字小文字を区別します）
-          </p>
-        </FormField>
-        
-        <FormField label="説明">
-          <Input
-            value={newCode.description}
-            onChange={handleInputChange}
-            name="description"
-            placeholder="例: 新規ユーザー向けキャンペーン"
-          />
-        </FormField>
-        
-        <FormField label="割引タイプ" error={formErrors.discount_type}>
-          <Select
-            value={newCode.discount_type}
-            onChange={handleInputChange}
-            name="discount_type"
-            required
-            options={discountTypes.map(dt => ({
-                value: dt.name,
-                label: `${dt.name}${dt.description ? ` (${dt.description})` : ''}`
-            }))}
-          />
-        </FormField>
-        
-        <FormField label="割引値" error={formErrors.discount_value}>
-          <div className="flex items-center">
-            <Input
-              type="number"
-              value={newCode.discount_value}
+  const renderCreateCampaignCodeForm = () => (
+    <Card className="mb-6 border border-blue-200 bg-blue-50">
+      <CardContent className="pt-6">
+        <h3 className="text-lg font-semibold mb-4 text-blue-800">新規キャンペーンコード作成</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormField label="コード *" error={formErrors.code}>
+            <Input name="code" value={newCode.code} onChange={handleInputChange} placeholder="例: WELCOME2024" required />
+          </FormField>
+          <FormField label="紐付けるStripe Coupon *" error={formErrors.stripe_coupon_id}>
+            <Select
+              name="stripe_coupon_id"
+              value={newCode.stripe_coupon_id}
               onChange={handleInputChange}
-              name="discount_value"
-              placeholder={newCode.discount_type === 'percentage' ? '例: 10' : '例: 1000'}
+              options={coupons?.map(c => ({ 
+                value: c.stripe_coupon_id,
+                label: `${c.name || c.stripe_coupon_id} (ID: ${c.stripe_coupon_id})`
+              })) || []}
               required
-              min={0}
-              step={newCode.discount_type === 'percentage' ? '1' : '100'}
             />
-            <span className="ml-2">
-              {newCode.discount_type === 'percentage' ? '%' : '円'}
-            </span>
-          </div>
-        </FormField>
-        
-        <FormField label="最大使用回数">
-          <Input
-            type="number"
-            value={newCode.max_uses}
-            onChange={handleInputChange}
-            name="max_uses"
-            placeholder="例: 100 (空白の場合は無制限)"
-            min={1}
-          />
-        </FormField>
-        
-        <div className="grid grid-cols-2 gap-4">
-          <FormField label="有効期間開始日">
-            <Input
-              type="date"
-              value={newCode.valid_from}
-              onChange={handleInputChange}
-              name="valid_from"
-            />
+            {isLoadingCoupons && <p className="text-sm text-gray-500 mt-1">クーポン読み込み中...</p>}
+            {couponsError && <p className="text-sm text-red-600 mt-1">クーポン読み込みエラー: {couponsError.message}</p>}
           </FormField>
-          
-          <FormField label="有効期間終了日" error={formErrors.valid_until}>
-            <Input
-              type="date"
-              value={newCode.valid_until}
-              onChange={handleInputChange}
-              name="valid_until"
-            />
+          <FormField label="説明" error={formErrors.description}>
+            <Input name="description" value={newCode.description} onChange={handleInputChange} placeholder="例: 初回ユーザー向け割引" />
+          </FormField>
+          <FormField label="最大利用回数" error={formErrors.max_uses}>
+            <Input type="number" name="max_uses" value={newCode.max_uses} onChange={handleInputChange} placeholder="未入力の場合は無制限" min={1} />
+          </FormField>
+          <FormField label="有効期限（開始）" error={formErrors.valid_from}>
+            <Input type="date" name="valid_from" value={newCode.valid_from} onChange={handleInputChange} />
+          </FormField>
+          <FormField label="有効期限（終了）" error={formErrors.valid_until}>
+            <Input type="date" name="valid_until" value={newCode.valid_until} onChange={handleInputChange} />
           </FormField>
         </div>
-        
-        <FormField label="ステータス">
-          <Checkbox
-            checked={newCode.is_active}
-            onChange={handleInputChange}
-            name="is_active"
-            label="このキャンペーンコードを有効にする"
-          />
-        </FormField>
-        
+        <div className="mt-4">
+          <Checkbox name="is_active" checked={newCode.is_active} onChange={handleInputChange} label="有効" />
+        </div>
         <div className="flex justify-end space-x-3 mt-6">
-          <Button
-            variant="outline"
-            onClick={() => {
-              setIsAddModalOpen(false);
-              setIsEditModalOpen(false);
-            }}
-          >
-            キャンセル
-          </Button>
-          <Button type="submit" variant="primary">
-            {isEditModalOpen ? '更新する' : '作成する'}
+          <Button variant="outline" onClick={() => { setShowCreateForm(false); resetForm(); }}>キャンセル</Button>
+          <Button onClick={handleSubmitNewCampaignCode} disabled={createCampaignCodeMutation.isPending}>
+            {createCampaignCodeMutation.isPending ? "作成中..." : "作成"}
           </Button>
         </div>
-      </form>
-    );
-  };
+      </CardContent>
+    </Card>
+  );
 
   const renderCampaignCodeList = () => {
-    if (isLoading) {
-      return <div className="text-center py-8">キャンペーンコードを読み込み中...</div>;
-    }
-
-    if (error) {
-      return (
-        <div className="bg-red-50 text-red-700 p-4 rounded-lg flex items-start">
-          <AlertCircle className="h-5 w-5 mr-2 mt-0.5" />
-          <span>{error}</span>
-        </div>
-      );
-    }
-
-    if (campaignCodes.length === 0) {
-      return (
-        <div className="text-center py-8 text-gray-500">
-          キャンペーンコードが登録されていません
-        </div>
-      );
-    }
+    if (isLoadingCampaignCodes) return <p>キャンペーンコードを読み込み中...</p>;
+    if (error) return <p className="text-red-600">エラー: {error}</p>;
+    if (!campaignCodesData || campaignCodesData.length === 0) return <p>利用可能なキャンペーンコードはありません。</p>;
 
     return (
-      <div className="grid gap-4">
-        {campaignCodes.map((code) => (
-          <Card key={code.id} className="overflow-hidden">
-            <CardContent className="p-0">
-              <div className="p-4 flex justify-between items-center">
-                <div className="flex-grow">
-                  <div className="flex items-center">
-                    <h3 className="font-medium text-lg">{code.code}</h3>
-                    <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      code.is_valid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {code.is_valid ? '有効' : '無効'}
-                    </span>
-                  </div>
-                  
-                  <p className="text-gray-500 text-sm mt-1">
-                    {code.description || 'キャンペーンコードの説明なし'}
-                  </p>
-                  
-                  <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                    <div className="flex items-center">
-                      <span className="text-gray-600 mr-1">割引:</span>
-                      <span className="font-medium">{formatDiscount(code)}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <span className="text-gray-600 mr-1">使用回数:</span>
-                      <span className="font-medium">
-                        {code.used_count} / {code.max_uses || '無制限'}
-                      </span>
-                    </div>
-                    <div className="flex items-center">
-                      <span className="text-gray-600 mr-1">開始日:</span>
-                      <span>{formatDate(code.valid_from)}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <span className="text-gray-600 mr-1">終了日:</span>
-                      <span>{formatDate(code.valid_until)}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleEditCampaignCode(code)}
-                  >
-                    <Edit className="h-4 w-4 mr-1" />
-                    編集
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">コード</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">説明</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">紐付けCoupon</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">最大利用/利用済</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">有効期間</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状態</th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {campaignCodesData.map((code) => (
+              <tr key={code.id}>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">{code.code}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{code.description || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono text-xs">{code.coupon_id}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {code.max_uses ? `${code.used_count} / ${code.max_uses}` : `${code.used_count} / 無制限`}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {code.valid_from ? formatDate(code.valid_from) : '-'} ~ {code.valid_until ? formatDate(code.valid_until) : '-'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${code.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                    {code.is_active ? '有効' : '無効'}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <Button variant="ghost" size="sm" onClick={() => handleEditCampaignCode(code)} className="mr-2">
+                    <Edit className="h-4 w-4" />
                   </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleDeleteCampaignCode(code.id)}
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    削除
+                  <Button variant="ghost" size="sm" onClick={() => handleDeleteCampaignCode(code.id)} className="text-red-600 hover:text-red-700">
+                    <Trash2 className="h-4 w-4" />
                   </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     );
   };
 
-  return (
-    <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold">キャンペーンコード管理</h2>
-        <Button variant="primary" onClick={handleAddCampaignCode}>
-          <PlusCircle className="h-4 w-4 mr-2" />
-          コードを追加
-        </Button>
+  const renderEditCampaignCodeModal = () => (
+    <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="キャンペーンコード編集">
+      <p>キャンペーンコード: {currentCode?.code}</p>
+      <p className="text-sm text-muted-foreground mt-4">更新機能は現在実装中です。</p>
+      <div className="flex justify-end space-x-3 mt-6">
+        <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>キャンセル</Button>
+        <Button onClick={handleUpdateCampaignCode}>更新</Button>
       </div>
+    </Modal>
+  );
 
-      {renderCampaignCodeList()}
+  return (
+    <Card>
+      <CardContent className="pt-6">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">キャンペーンコード管理</h2>
+          <Button onClick={() => setShowCreateForm(!showCreateForm)} variant="default">
+            <PlusCircle className="mr-2 h-4 w-4" /> {showCreateForm ? 'フォームを閉じる' : '新規作成'}
+          </Button>
+        </div>
 
-      {/* キャンペーンコード追加モーダル */}
-      <Modal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        title="新しいキャンペーンコードを追加"
-      >
-        {renderCampaignCodeForm()}
-      </Modal>
+        {showCreateForm && renderCreateCampaignCodeForm()}
 
-      {/* キャンペーンコード編集モーダル */}
-      <Modal
-        isOpen={isEditModalOpen}
-        onClose={() => setIsEditModalOpen(false)}
-        title="キャンペーンコードを編集"
-      >
-        {renderCampaignCodeForm()}
-      </Modal>
-    </div>
+        {renderCampaignCodeList()}
+
+        {renderEditCampaignCodeModal()}
+
+      </CardContent>
+    </Card>
   );
 };

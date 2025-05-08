@@ -56,6 +56,7 @@ export interface UserSettings {
   email: string;
   full_name: string; // Add full_name based on API response
   name: string; // Keep for internal state/display mapping
+  profile_image_url?: string | null; // ★ 追加 (Nullable string型)
   emailNotifications: boolean;
   browserNotifications: boolean;
   theme: string; // e.g., 'light' | 'dark'
@@ -67,4 +68,15 @@ export interface SubscriptionInfo {
   plan_name: string;
   status: string;
   current_period_end: string; // ISO 8601 DateTime string
+}
+
+// ★ Roleインターフェースを追加
+export interface Role {
+  id: string; // UUID は文字列として扱います
+  name: string;
+  description?: string | null;
+  is_active: boolean;
+  // permissions: any[]; // 必要であれば
+  created_at: string;
+  updated_at: string;
 } 
