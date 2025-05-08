@@ -1,4 +1,4 @@
-name: Build & Push STG Docker Images to ECR
+name: Build & Push PROD Docker Images to ECR
 
 on:
   push:
@@ -173,7 +173,7 @@ jobs:
         id: render-frontend-task-def-fallback
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: AWS/prod-frontend-task-def.json
+          task-definition: AWS/prod-front.json
           container-name: frontend
           image: "${{ secrets.AWS_ECR_REGISTRY }}/prod-frontend:latest"
           
