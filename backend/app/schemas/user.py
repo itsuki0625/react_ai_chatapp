@@ -56,6 +56,17 @@ class UserRoleResponse(TimestampMixin): # 必要に応じて TimestampMixin を�
 
     model_config = ConfigDict(from_attributes=True)
 
+# ★ 新規追加: UserLoginInfo モデルに対応する Pydantic スキーマ
+class UserLoginInfoResponse(BaseModel):
+    id: UUID
+    last_login_at: Optional[datetime] = None
+    failed_login_attempts: int
+    last_failed_login_at: Optional[datetime] = None
+    locked_until: Optional[datetime] = None
+    account_lock_reason: Optional[Any] = None # Enumの場合は適切なEnum型を指定
+
+    model_config = ConfigDict(from_attributes=True)
+
 # --- User Schemas ---
 class UserBase(BaseModel):
     email: EmailStr
@@ -132,7 +143,7 @@ class UserResponse(TimestampMixin):
     is_verified: bool
     user_roles: List[UserRoleResponse] = []
     status: UserStatus # status を直接含める
-    login_info: Optional[Any] = None # 型は UserLoginInfo だが、循環参照を避けるため Any も可
+    login_info: Optional[UserLoginInfoResponse] = None # Any から UserLoginInfoResponse に変更
     grade: Optional[str] = None # grade を追加 (モデルに合わせて Optional[str])
     prefecture: Optional[str] = None # prefecture を追加 (モデルに合わせて Optional[str])
     # ★ profile_image_url を computed_field で上書きするため、元のフィールドは別名にする
