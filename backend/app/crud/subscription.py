@@ -30,7 +30,23 @@ logger = logging.getLogger(__name__)
 
 # --- サブスクリプションのCRUD操作 ---
 async def create_subscription(db: AsyncSession, subscription: SubscriptionCreate) -> Subscription:
-    db_subscription = Subscription(**subscription.dict())
+    db_plan = None
+    if subscription.price_id:
+        db_plan = await get_plan_by_price_id(db, stripe_price_id=subscription.price_id)
+        if not db_plan:
+            raise HTTPException(status_code=404, detail=f"Plan not found for price_id: {subscription.price_id}")
+        # plan_id を price_id から引いた plan の ID で設定
+        subscription.plan_id = db_plan.id
+    elif not subscription.plan_id: # price_id も plan_id もない場合
+        raise HTTPException(status_code=400, detail="Either price_id or plan_id must be provided to create subscription.")
+    
+    # SQLAlchemyモデルに渡すデータを作成
+    # SubscriptionCreateからprice_idを除き、他のフィールドはそのまま利用
+    subscription_model_data = subscription.model_dump(exclude={"price_id"})
+
+    # Subscription SQLAlchemyモデルのインスタンスを作成
+    db_subscription = Subscription(**subscription_model_data)
+    
     db.add(db_subscription)
     await db.commit()
     await db.refresh(db_subscription)
