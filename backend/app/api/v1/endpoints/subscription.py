@@ -106,38 +106,53 @@ async def get_user_subscription(
     if not subscription:
         return None
     
-    plan_name = "プラン情報なし"
+    plan_name_for_logging = "プラン情報なし" # Logging/debugging purpose, not for response schema
     price_id_to_return = None 
-    plan_id_to_return = None # plan_id を格納する変数を初期化
+    plan_id_to_return = None
 
     if subscription.plan: 
-        plan_name = subscription.plan.name
+        plan_name_for_logging = subscription.plan.name
         price_id_to_return = subscription.plan.price_id
-        plan_id_to_return = subscription.plan.id # plan から plan.id を取得
-    elif hasattr(subscription, 'plan_id') and subscription.plan_id: # subscription.plan がなくても subscription.plan_id は直接持っている可能性がある
+        plan_id_to_return = subscription.plan.id
+    elif hasattr(subscription, 'plan_id') and subscription.plan_id:
         plan_id_to_return = subscription.plan_id
-        # この場合、plan_name や price_id_to_return は Plan オブジェクトがないと取得が難しい
-        # 必要であれば、plan_id_to_return を使ってDBからPlan情報を別途取得するロジックも検討できる
-        logger.warning(f"Subscription ID {subscription.id} には plan オブジェクトがロードされていませんでしたが、plan_id ({subscription.plan_id}) は存在しました。plan_name と price_id は不完全な可能性があります。")
+        logger.warning(f"Subscription ID {subscription.id} には plan オブジェクトがロードされていませんでしたが、plan_id ({subscription.plan_id}) は存在しました。plan_name '{plan_name_for_logging}' と price_id は不完全な可能性があります。")
+    
+    if plan_id_to_return is None:
+        logger.error(f"Subscription ID {subscription.id} から有効な plan_id を特定できませんでした。Subscription.plan_id: {getattr(subscription, 'plan_id', 'N/A')}, Subscription.plan: {'Exists' if subscription.plan else 'None'}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail="サブスクリプションに関連するプラン情報が見つかりませんでした。データ不整合の可能性があります。"
+        )
 
+    response_data = {
+        "id": subscription.id,
+        "user_id": subscription.user_id,
+        "plan_id": plan_id_to_return, # 必須フィールド
+        "stripe_customer_id": subscription.stripe_customer_id,
+        "stripe_subscription_id": subscription.stripe_subscription_id,
+        "status": subscription.status,
+        # "plan_name": plan_name_for_logging, # plan_name は SubscriptionResponse スキーマにないので削除
+        "price_id": price_id_to_return,
+        "current_period_start": subscription.current_period_start,
+        "current_period_end": subscription.current_period_end,
+        "cancel_at": subscription.cancel_at,
+        "canceled_at": subscription.canceled_at,
+        "is_active": subscription.is_active,
+        "created_at": subscription.created_at,
+        "updated_at": subscription.updated_at
+    }
+    
+    logger.debug(f"Data prepared for SubscriptionResponse.model_validate: {response_data}")
 
-    return SubscriptionResponse(
-        id=str(subscription.id),
-        user_id=str(subscription.user_id),
-        plan_id=plan_id_to_return, # plan_id を追加
-        stripe_customer_id=subscription.stripe_customer_id,
-        stripe_subscription_id=subscription.stripe_subscription_id,
-        status=subscription.status,
-        plan_name=plan_name, 
-        price_id=price_id_to_return, # Correctly use the sourced price_id or None
-        current_period_start=subscription.current_period_start.isoformat() if subscription.current_period_start else None,
-        current_period_end=subscription.current_period_end.isoformat() if subscription.current_period_end else None,
-        cancel_at=subscription.cancel_at.isoformat() if subscription.cancel_at else None,
-        canceled_at=subscription.canceled_at.isoformat() if subscription.canceled_at else None,
-        is_active=subscription.is_active,
-        created_at=subscription.created_at.isoformat(),
-        updated_at=subscription.updated_at.isoformat(),
-    )
+    try:
+        # datetimeフィールドはisoformat()せずに直接渡す（Pydanticが処理する）
+        # UUIDフィールドもstr()せずに直接渡す
+        return SubscriptionResponse.model_validate(response_data)
+    except Exception as e_pydantic:
+        logger.error(f"Pydantic validation failed for SubscriptionResponse. Data: {response_data}. Error: {e_pydantic}", exc_info=True)
+        # Pydanticのバリデーションエラーの詳細をクライアントに返すことも検討できるが、基本は500エラー
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="サブスクリプションレスポンスの作成に失敗しました。")
 
 @router.get("/payment-history", response_model=List[PaymentHistoryResponse])
 async def get_payment_history(
