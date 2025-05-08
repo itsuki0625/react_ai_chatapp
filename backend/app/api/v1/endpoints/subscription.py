@@ -119,24 +119,7 @@ async def get_user_subscription(
         # この場合、plan_name や price_id_to_return は Plan オブジェクトがないと取得が難しい
         # 必要であれば、plan_id_to_return を使ってDBからPlan情報を別途取得するロジックも検討できる
         logger.warning(f"Subscription ID {subscription.id} には plan オブジェクトがロードされていませんでしたが、plan_id ({subscription.plan_id}) は存在しました。plan_name と price_id は不完全な可能性があります。")
-    # The following elif block for Stripe API fallback relied on subscription.price_id,
-    # which does not exist on the Subscription model and would cause an AttributeError.
-    # If subscription.plan is None (e.g., due to data integrity or old records),
-    # plan_name will remain "プラン情報なし" and price_id_to_return will be None.
-    # This is safer than attempting to access a non-existent attribute.
-    # Consider logging a warning if subscription.plan is None but a subscription exists.
-    # elif subscription.price_id: # This was the problematic part
-    #     try:
-    #         price_data = StripeService.get_price(subscription.price_id)
-    #         if price_data and price_data.get('product'):
-    #             product_id = price_data['product']
-    #             if isinstance(product_id, str):
-    #                 product_info = StripeService.get_product(product_id)
-    #                 plan_name = product_info.get('name', plan_name)
-    #             elif isinstance(product_id, dict): # Productオブジェクトが展開されている場合
-    #                 plan_name = product_id.get('name', plan_name)
-    #     except Exception as e:
-    #         logger.warning(f"Stripeからプラン名取得中にエラー (PriceID: {subscription.price_id}): {e}")
+
 
     return SubscriptionResponse(
         id=str(subscription.id),
