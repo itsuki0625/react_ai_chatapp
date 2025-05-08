@@ -23,16 +23,16 @@
         { "name": "AWS_ACCOUNT_ID", "value": "354918390375" }
       ],
       "secrets": [
-        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-8eb92c38:DATABASE_URL::" },
-        { "name": "ENVIRONMENT", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-8eb92c38:ENVIRONMENT::" },
-        { "name": "OPENAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-8eb92c38:OPENAI_API_KEY::" },
-        { "name": "SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-8eb92c38:SECRET_KEY::" },
-        { "name": "STRIPE_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-8eb92c38:STRIPE_SECRET_KEY::" },
-        { "name": "STRIPE_PUBLISHABLE_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-8eb92c38:STRIPE_PUBLISHABLE_KEY::" },
-        { "name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-8eb92c38:STRIPE_WEBHOOK_SECRET::" },
-        { "name": "NEXTAUTH_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-8eb92c38:NEXTAUTH_URL::" },
-        { "name": "AUTH_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-8eb92c38:AUTH_SECRET::" },
-        { "name": "AWS_S3_ICON_BUCKET_NAME", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-8eb92c38:AWS_S3_ICON_BUCKET_NAME::" }
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-4TiwxF:DATABASE_URL::" },
+        { "name": "ENVIRONMENT", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-4TiwxF:ENVIRONMENT::" },
+        { "name": "OPENAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-4TiwxF:OPENAI_API_KEY::" },
+        { "name": "SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-4TiwxF:SECRET_KEY::" },
+        { "name": "STRIPE_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-4TiwxF:STRIPE_SECRET_KEY::" },
+        { "name": "STRIPE_PUBLISHABLE_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-4TiwxF:STRIPE_PUBLISHABLE_KEY::" },
+        { "name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-4TiwxF:STRIPE_WEBHOOK_SECRET::" },
+        { "name": "NEXTAUTH_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-4TiwxF:NEXTAUTH_URL::" },
+        { "name": "AUTH_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-4TiwxF:AUTH_SECRET::" },
+        { "name": "AWS_S3_ICON_BUCKET_NAME", "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:354918390375:secret:prod/api/env-4TiwxF:AWS_S3_ICON_BUCKET_NAME::" }
       ],
       "portMappings": [
         {

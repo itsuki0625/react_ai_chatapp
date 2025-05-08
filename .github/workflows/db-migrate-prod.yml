@@ -28,11 +28,11 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      - name: Register migration task definition
+      - name: Update ECS Task Definition for DB Migration
         run: |
-          echo "Registering migration task definition..."
-          aws ecs register-task-definition \
-            --cli-input-json file://AWS/backend-task-def-prod-migration.json
+          echo "Registering/Updating ECS task definition: backend-prod-migration"
+          aws ecs register-task-definition --cli-input-json file://AWS/backend-task-def-prod-migration.json
+          echo "ECS task definition registration complete."
 
       - name: Run DB migrations on ECS
         run: |
