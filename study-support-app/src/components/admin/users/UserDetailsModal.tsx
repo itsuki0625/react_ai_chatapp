@@ -21,22 +21,48 @@ import {
 import { toast } from 'react-hot-toast';
 
 // Validation Schema - Ensure it matches form fields
+const passwordSchema = z.string()
+  .min(8, { message: "パスワードは8文字以上である必要があります。" })
+  .regex(/[a-z]/, { message: "パスワードには小文字を含める必要があります。" })
+  .regex(/[A-Z]/, { message: "パスワードには大文字を含める必要があります。" })
+  .regex(/[0-9]/, { message: "パスワードには数字を含める必要があります。" });
+
 const userFormSchema = z.object({
   name: z.string().min(1, { message: "名前は必須です。" }),
   email: z.string().email({ message: "有効なメールアドレスを入力してください。" }),
   role: z.string().min(1, { message: "ロールを選択してください。" }), // API expects string role name
   status: z.enum(['active', 'inactive', 'pending', 'unpaid']), // Ensure 'unpaid' is included
+  // passwordは新規作成時のみ必須とするバリデーションを refine で行う
   password: z.string().optional(),
   confirmPassword: z.string().optional(),
 }).refine(data => {
-  // Password confirmation check
-  if (data.password && data.password !== data.confirmPassword) {
-    return false;
+  // パスワードが入力されていれば、強度と一致をチェック
+  if (data.password) {
+    // 強度チェック - 新規作成時またはパスワード変更時
+    try {
+      passwordSchema.parse(data.password); // 強度要件をチェック
+    } catch (e: any) {
+      // バリデーションエラーがあれば refine でエラーとする
+      // Zodのエラーメッセージを使うため、ここでは false を返すだけで良い
+      return false;
+    }
+    // 一致チェック
+    if (data.password !== data.confirmPassword) {
+      return false;
+    }
   }
   return true;
 }, {
-  message: "パスワードが一致しません。",
-  path: ["confirmPassword"],
+  // refine のエラーメッセージは、どのフィールドに紐づけるかで挙動が変わる
+  // ここでは password フィールドに紐づける例（強度 or 一致エラーのどちらかを示す汎用メッセージ）
+  // より詳細なメッセージが必要な場合は、refine を分けるか、フィールドレベルのバリデーションを調整
+  message: "パスワードの要件を満たしていないか、確認用パスワードと一致しません。",
+  path: ["password"], // または ["confirmPassword"]
+}).refine(data => {
+    // 新規作成時 (user propがnullの場合) はパスワードが必須
+    // この refine は mode を参照できないため、onSubmit で別途チェックするのが現実的
+    // ※ useForm の context を使うなどの方法もあるが複雑になる
+    return true;
 });
 
 type UserFormValues = z.infer<typeof userFormSchema>;
