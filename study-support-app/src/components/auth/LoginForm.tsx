@@ -139,13 +139,27 @@ export const LoginForm: React.FC = () => {
       console.log('ログイン成功、セッション確立中...');
       setDebugInfo(prev => prev + '\nログイン成功、セッション確立中...');
       
-      // セッションが確立されるまで待機
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // ここでsessionをチェック - 自動リダイレクトされなかった場合の処理
-      if (status !== 'authenticated') {
-        // セッションが更新されていない場合は手動でリロード
-        router.refresh();
+      // ログイン成功後、result.url があればそのURLにリダイレクト
+      if (result?.url) {
+        // 必要であれば、ここで result.url から status=logged_out や error などの
+        // 不要なクエリパラメータを削除する処理を追加できます。
+        // 例:
+        // const finalRedirectUrl = new URL(result.url, window.location.origin);
+        // finalRedirectUrl.searchParams.delete('status');
+        // finalRedirectUrl.searchParams.delete('error');
+        // router.push(finalRedirectUrl.pathname + finalRedirectUrl.search);
+        
+        // 現状のログでは result.url にクエリパラメータが含まれていないため、そのまま使用
+        router.push(result.url);
+      } else {
+        // result.url がないという予期せぬ状況の場合、フォールバックとしてダッシュボードへ
+        // (あるいはエラー表示など、適切な処理)
+        // このフォールバックも、status=logged_out を考慮する必要がある
+        const fallbackRedirectUrl = getDashboardByRole(session?.user?.role || '');
+        const url = new URL(fallbackRedirectUrl, window.location.origin);
+        url.searchParams.delete('status'); // 安全のためにここでも削除
+        router.push(url.pathname + url.search);
+        console.warn("ログイン結果にリダイレクトURLが含まれていませんでした。フォールバック先に遷移します。");
       }
       
     } catch (err) {

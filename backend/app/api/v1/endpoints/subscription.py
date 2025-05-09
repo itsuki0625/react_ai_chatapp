@@ -105,42 +105,54 @@ async def get_user_subscription(
     subscription = await crud_subscription.get_active_user_subscription(db, user_id=current_user.id)
     if not subscription:
         return None
-        # raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="アクティブなサブスクリプションが見つかりません。")
     
-    # Subscription モデルから SubscriptionResponse スキーマへの変換
-    # plan_name が必要。Subscription モデルに plan リレーションがある前提
-    plan_name = "プラン情報なし"
-    if subscription.plan: # Subscriptionモデルに plan リレーションがある場合
-        plan_name = subscription.plan.name
-    elif subscription.price_id: # price_idからStripe APIでプラン名を取得する（負荷高いので注意）
-        try:
-            price_data = StripeService.get_price(subscription.price_id)
-            if price_data and price_data.get('product'):
-                product_id = price_data['product']
-                if isinstance(product_id, str):
-                    product_info = StripeService.get_product(product_id)
-                    plan_name = product_info.get('name', plan_name)
-                elif isinstance(product_id, dict): # Productオブジェクトが展開されている場合
-                    plan_name = product_id.get('name', plan_name)
-        except Exception as e:
-            logger.warning(f"Stripeからプラン名取得中にエラー (PriceID: {subscription.price_id}): {e}")
+    plan_name_for_logging = "プラン情報なし" # Logging/debugging purpose, not for response schema
+    price_id_to_return = None 
+    plan_id_to_return = None
 
-    return SubscriptionResponse(
-        id=str(subscription.id),
-        user_id=str(subscription.user_id),
-        stripe_customer_id=subscription.stripe_customer_id,
-        stripe_subscription_id=subscription.stripe_subscription_id,
-        status=subscription.status,
-        plan_name=plan_name, # Plan名を設定
-        price_id=subscription.price_id, # subscriptionテーブルにprice_idカラムがあると仮定
-        current_period_start=subscription.current_period_start.isoformat() if subscription.current_period_start else None,
-        current_period_end=subscription.current_period_end.isoformat() if subscription.current_period_end else None,
-        cancel_at=subscription.cancel_at.isoformat() if subscription.cancel_at else None,
-        canceled_at=subscription.canceled_at.isoformat() if subscription.canceled_at else None,
-        is_active=subscription.is_active,
-        created_at=subscription.created_at.isoformat(),
-        updated_at=subscription.updated_at.isoformat(),
-    )
+    if subscription.plan: 
+        plan_name_for_logging = subscription.plan.name
+        price_id_to_return = subscription.plan.price_id
+        plan_id_to_return = subscription.plan.id
+    elif hasattr(subscription, 'plan_id') and subscription.plan_id:
+        plan_id_to_return = subscription.plan_id
+        logger.warning(f"Subscription ID {subscription.id} には plan オブジェクトがロードされていませんでしたが、plan_id ({subscription.plan_id}) は存在しました。plan_name '{plan_name_for_logging}' と price_id は不完全な可能性があります。")
+    
+    if plan_id_to_return is None:
+        logger.error(f"Subscription ID {subscription.id} から有効な plan_id を特定できませんでした。Subscription.plan_id: {getattr(subscription, 'plan_id', 'N/A')}, Subscription.plan: {'Exists' if subscription.plan else 'None'}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail="サブスクリプションに関連するプラン情報が見つかりませんでした。データ不整合の可能性があります。"
+        )
+
+    response_data = {
+        "id": subscription.id,
+        "user_id": subscription.user_id,
+        "plan_id": plan_id_to_return, # 必須フィールド
+        "plan_name": plan_name_for_logging, # スキーマに追加したので含める
+        "stripe_customer_id": subscription.stripe_customer_id,
+        "stripe_subscription_id": subscription.stripe_subscription_id,
+        "status": subscription.status,
+        "price_id": price_id_to_return,
+        "current_period_start": subscription.current_period_start,
+        "current_period_end": subscription.current_period_end,
+        "cancel_at": subscription.cancel_at,
+        "canceled_at": subscription.canceled_at,
+        "is_active": subscription.is_active,
+        "created_at": subscription.created_at,
+        "updated_at": subscription.updated_at
+    }
+    
+    logger.debug(f"Data prepared for SubscriptionResponse.model_validate: {response_data}")
+
+    try:
+        # datetimeフィールドはisoformat()せずに直接渡す（Pydanticが処理する）
+        # UUIDフィールドもstr()せずに直接渡す
+        return SubscriptionResponse.model_validate(response_data)
+    except Exception as e_pydantic:
+        logger.error(f"Pydantic validation failed for SubscriptionResponse. Data: {response_data}. Error: {e_pydantic}", exc_info=True)
+        # Pydanticのバリデーションエラーの詳細をクライアントに返すことも検討できるが、基本は500エラー
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="サブスクリプションレスポンスの作成に失敗しました。")
 
 @router.get("/payment-history", response_model=List[PaymentHistoryResponse])
 async def get_payment_history(
@@ -309,48 +321,77 @@ async def manage_subscription(
     サブスクリプションを管理します (キャンセル、再開、プラン変更など)。
     """
     action = request_data.action
-    subscription_id = request_data.subscription_id
-    new_plan_id = request_data.plan_id # Stripe Price ID
+    subscription_id = request_data.subscription_id # これはStripe Subscription IDを期待
+    new_plan_price_id = request_data.plan_id # Stripe Price ID
 
-    if not subscription_id and action != 'update': # update以外はsubscription_id必須
-         # プラン変更(update)の場合、既存サブスクリプションIDがないケースも考慮するかもしれないが、
-         # 通常は既存サブスクリプションに対して操作を行う
-         # ここでは、ユーザーの現在アクティブなサブスクリプションIDを取得するロジックを入れることも検討
+    if not subscription_id and action != 'update':
         active_sub = await crud_subscription.get_active_user_subscription(db, current_user.id)
         if not active_sub or not active_sub.stripe_subscription_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="操作対象のサブスクリプションが見つかりません。")
         subscription_id = active_sub.stripe_subscription_id
     
-    if not subscription_id: # それでも subscription_id がない場合はエラー
+    if not subscription_id: 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="StripeサブスクリプションIDが必要です。")
 
     try:
         if action == "cancel":
-            # Stripe でキャンセル (期間終了時にキャンセル)
-            stripe_sub = StripeService.cancel_subscription(subscription_id, cancel_at_period_end=True)
-            # DBも更新
-            await crud_subscription.update_subscription_status_from_stripe(db, subscription_id, stripe_sub)
-            return {"message": "サブスクリプションは期間終了時に解約されます。", "subscription": stripe_sub}
+            stripe_sub_obj = StripeService.cancel_subscription(subscription_id, cancel_at_period_end=True)
+            db_sub = await crud_subscription.get_subscription_by_stripe_id(db, subscription_id)
+            if db_sub:
+                update_data = {
+                    "status": stripe_sub_obj.status,
+                    "cancel_at": datetime.fromtimestamp(stripe_sub_obj.cancel_at) if stripe_sub_obj.cancel_at else None,
+                    "canceled_at": datetime.fromtimestamp(stripe_sub_obj.canceled_at) if stripe_sub_obj.canceled_at else None,
+                    "is_active": stripe_sub_obj.status in ['active', 'trialing']
+                }
+                await crud_subscription.update_subscription(db, db_sub.id, update_data)
+            return {"message": "サブスクリプションは期間終了時に解約されます。", "subscription": stripe_sub_obj}
         
         elif action == "reactivate":
-            stripe_sub = StripeService.reactivate_subscription(subscription_id)
-            await crud_subscription.update_subscription_status_from_stripe(db, subscription_id, stripe_sub)
-            return {"message": "サブスクリプションが再開されました。", "subscription": stripe_sub}
+            stripe_sub_obj = StripeService.reactivate_subscription(subscription_id)
+            db_sub = await crud_subscription.get_subscription_by_stripe_id(db, subscription_id)
+            if db_sub:
+                update_data = {
+                    "status": stripe_sub_obj.status,
+                    "current_period_start": datetime.fromtimestamp(stripe_sub_obj.current_period_start) if stripe_sub_obj.current_period_start else None,
+                    "current_period_end": datetime.fromtimestamp(stripe_sub_obj.current_period_end) if stripe_sub_obj.current_period_end else None,
+                    "cancel_at": None, 
+                    "canceled_at": None,
+                    "is_active": stripe_sub_obj.status in ['active', 'trialing']
+                }
+                await crud_subscription.update_subscription(db, db_sub.id, update_data)
+            return {"message": "サブスクリプションが再開されました。", "subscription": stripe_sub_obj}
         
         elif action == "update":
-            if not new_plan_id:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新しいプランIDが必要です。")
-            stripe_sub = StripeService.update_subscription(subscription_id, new_plan_id)
-            # DBも更新 (プラン名、価格IDなども更新)
-            await crud_subscription.update_subscription_plan_from_stripe(db, subscription_id, stripe_sub, new_plan_id)
-            return {"message": "サブスクリプションプランが変更されました。", "subscription": stripe_sub}
+            if not new_plan_price_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新しいプランのPrice IDが必要です。")
+            
+            stripe_sub_obj = StripeService.update_subscription(subscription_id, new_plan_price_id)
+            
+            db_sub = await crud_subscription.get_subscription_by_stripe_id(db, subscription_id)
+            db_plan = await crud_subscription.get_plan_by_price_id(db, new_plan_price_id)
+
+            if not db_plan:
+                logger.error(f"プラン変更エラー: 指定されたStripe Price ID '{new_plan_price_id}' に対応するDBプランが見つかりません。")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="指定された新しいプランが見つかりません。")
+
+            if db_sub:
+                update_data = {
+                    "status": stripe_sub_obj.status,
+                    "plan_id": db_plan.id, 
+                    "current_period_start": datetime.fromtimestamp(stripe_sub_obj.current_period_start) if stripe_sub_obj.current_period_start else None,
+                    "current_period_end": datetime.fromtimestamp(stripe_sub_obj.current_period_end) if stripe_sub_obj.current_period_end else None,
+                    "is_active": stripe_sub_obj.status in ['active', 'trialing']
+                }
+                await crud_subscription.update_subscription(db, db_sub.id, update_data)
+            return {"message": "サブスクリプションプランが変更されました。", "subscription": stripe_sub_obj}
         
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="無効なアクションです。")
 
     except stripe.error.StripeError as e:
         logger.error(f"Stripe APIエラー (Action: {action}, SubID: {subscription_id}): {e}")
-        raise HTTPException(status_code=e.http_status or status.HTTP_500_INTERNAL_SERVER_ERROR, detail=e.user_message or "Stripe APIエラー")
+        raise HTTPException(status_code=e.http_status or status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e.user_message) if e.user_message else "Stripe APIエラー") # Ensure user_message is str
     except Exception as e:
         logger.error(f"サブスクリプション管理エラー (Action: {action}, SubID: {subscription_id}): {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="サブスクリプションの管理に失敗しました。")
@@ -481,17 +522,19 @@ async def stripe_webhook(
                 await crud_subscription.create_subscription(db, crud_subscription.SubscriptionCreate(**new_sub_data))
 
             # --- ★ 購入商品に紐づくロールをユーザーに割り当て --- (ここから修正)
-            if session.get('line_items'):
-                for item in session.get('line_items', {}).get('data', []):
-                    price_obj = item.get('price')
-                    if price_obj and price_obj.get('product'):
-                        stripe_product_id = price_obj.get('product')
-                        try:
-                            product_data = StripeService.get_product(stripe_product_id)
+            if stripe_subscription_id and 'stripe_sub_data' in locals() and stripe_sub_data:
+                try:
+                    items = stripe_sub_data.get('items', {}).get('data', [])
+                    if items:
+                        price_info = items[0].get('price') # 通常、サブスクリプションの最初のアイテムが対象
+                        if price_info and price_info.get('product'):
+                            stripe_product_id_from_sub = price_info.get('product')
+                            logger.info(f"Subscription item's Stripe Product ID: {stripe_product_id_from_sub} を元にロール割り当て試行 (User: {user_id})")
+                            product_data = StripeService.get_product(stripe_product_id_from_sub)
                             if product_data and product_data.get('metadata'):
                                 assigned_role_id_str = product_data.get('metadata', {}).get('assigned_role')
                                 if assigned_role_id_str:
-                                    logger.info(f"商品 {stripe_product_id} に紐づくロールID(str): {assigned_role_id_str} をユーザー {user_id} に割り当て試行")
+                                    logger.info(f"商品 {stripe_product_id_from_sub} に紐づくロールID(str): {assigned_role_id_str} をユーザー {user_id} に割り当て試行")
                                     try:
                                         assigned_role_id = UUID(assigned_role_id_str)
                                         target_role_obj = await crud_role.get_role(db, role_id=assigned_role_id)
@@ -505,16 +548,25 @@ async def stripe_webhook(
                                             else:
                                                 logger.warning(f"ロール割り当て対象のユーザー {user_id} がDBで見つかりません。")
                                         else:
-                                            logger.error(f"指定されたロールID {assigned_role_id} に該当するロールがDBで見つかりません。")
+                                            logger.error(f"指定されたロールID {assigned_role_id} (\"{assigned_role_id_str}\") に該当するロールがDBで見つかりません。")
                                     except ValueError:
                                         logger.error(f"メタデータの assigned_role '{assigned_role_id_str}' は有効なUUIDではありません。")
                                     except Exception as e_role_assign:
                                         logger.error(f"ロール割り当て処理中に予期せぬエラー: {e_role_assign}", exc_info=True)
                                 else:
-                                    logger.info(f"商品 {stripe_product_id} のメタデータに assigned_role が設定されていません。")
-                        except Exception as e_get_product:
-                            logger.error(f"Stripe商品 {stripe_product_id} の情報取得またはロール割り当て処理中にエラー: {e_get_product}", exc_info=True)
-                        break # 通常サブスクリプションは商品一つなので、最初のitemで処理を終える
+                                    logger.info(f"Stripe Product {stripe_product_id_from_sub} のメタデータに assigned_role が設定されていません。")
+                            else:
+                                logger.warning(f"Stripe Product {stripe_product_id_from_sub} のメタデータ取得に失敗、またはメタデータが存在しません。")
+                        else:
+                            logger.warning(f"サブスクリプションアイテムからStripe Product IDを取得できませんでした。Subscription ID: {stripe_subscription_id}")
+                    else:
+                        logger.warning(f"サブスクリプション {stripe_subscription_id} にアイテムが見つかりません。ロール割り当て不可。")
+                except Exception as e_outer_role_assign:
+                    logger.error(f"ロール割り当てブロック全体で予期せぬエラー: {e_outer_role_assign}", exc_info=True)
+            elif not stripe_subscription_id:
+                logger.warning(f"checkout.session.completed イベントに subscription ID が含まれていません。ロール割り当て不可。 Session ID: {session.id}")
+            elif not ('stripe_sub_data' in locals() and stripe_sub_data):
+                 logger.warning(f"stripe_sub_dataが利用できませんでした。ロール割り当て不可。 Subscription ID: {stripe_subscription_id}, Session ID: {session.id}")
             # --- ★ ロール割り当て処理ここまで ---
 
             if db_campaign_code:
@@ -578,25 +630,36 @@ async def stripe_webhook(
 
 
         elif event_type == 'customer.subscription.updated':
-            subscription = data
-            logger.info(f"Customer Subscription Updated: {subscription.id}, Status: {subscription.status}")
-            # DBのサブスクリプション情報を更新
-            db_subscription = await crud_subscription.get_subscription_by_stripe_id(db, subscription.id)
+            stripe_sub_event_data = data # イベントデータ内の subscription オブジェクト
+            logger.info(f"Customer Subscription Updated: {stripe_sub_event_data.get('id')}, Status: {stripe_sub_event_data.get('status')}")
+            db_subscription = await crud_subscription.get_subscription_by_stripe_id(db, stripe_sub_event_data.get('id'))
             if db_subscription:
+                new_stripe_price_id = None
+                if stripe_sub_event_data.get('items') and stripe_sub_event_data['items'].get('data'):
+                    current_item = stripe_sub_event_data['items']['data'][0]
+                    if current_item.get('price'):
+                        new_stripe_price_id = current_item['price'].get('id')
+                
+                new_db_plan_id = db_subscription.plan_id 
+                if new_stripe_price_id:
+                    db_plan = await crud_subscription.get_plan_by_price_id(db, new_stripe_price_id)
+                    if db_plan:
+                        new_db_plan_id = db_plan.id
+                    else:
+                        logger.warning(f"Webhook customer.subscription.updated: 新しいPrice ID {new_stripe_price_id} に対応するDBプランが見つかりません。plan_idは更新されません。")
+
                 update_data = {
-                    "status": subscription.status,
-                    "current_period_start": datetime.fromtimestamp(cps) if (cps := subscription.current_period_start) is not None else None,
-                    "current_period_end": datetime.fromtimestamp(cpe) if (cpe := subscription.current_period_end) is not None else None,
-                    "cancel_at": datetime.fromtimestamp(ca) if (ca := subscription.cancel_at) is not None else None,
-                    "canceled_at": datetime.fromtimestamp(cat) if (cat := subscription.canceled_at) is not None else None,
-                    "is_active": subscription.status in ['active', 'trialing'],
-                    # プラン変更があった場合、plan_name, price_id も更新が必要
-                    # "plan_name": ...,
-                    # "price_id": ...,
+                    "status": stripe_sub_event_data.get('status'),
+                    "plan_id": new_db_plan_id,
+                    "current_period_start": datetime.fromtimestamp(cps) if (cps := stripe_sub_event_data.get('current_period_start')) is not None else None,
+                    "current_period_end": datetime.fromtimestamp(cpe) if (cpe := stripe_sub_event_data.get('current_period_end')) is not None else None,
+                    "cancel_at": datetime.fromtimestamp(ca) if (ca := stripe_sub_event_data.get('cancel_at')) is not None else None,
+                    "canceled_at": datetime.fromtimestamp(cat) if (cat := stripe_sub_event_data.get('canceled_at')) is not None else None,
+                    "is_active": stripe_sub_event_data.get('status') in ['active', 'trialing'],
                 }
                 await crud_subscription.update_subscription(db, db_subscription.id, update_data)
             else:
-                 logger.warning(f"Webhook customer.subscription.updated: Stripe Sub ID {subscription.id} に対応するDBレコードが見つかりません。")
+                 logger.warning(f"Webhook customer.subscription.updated: Stripe Sub ID {stripe_sub_event_data.get('id')} に対応するDBレコードが見つかりません。")
 
         elif event_type == 'customer.subscription.deleted':
             subscription = data

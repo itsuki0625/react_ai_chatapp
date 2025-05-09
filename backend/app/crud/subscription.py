@@ -31,25 +31,52 @@ logger = logging.getLogger(__name__)
 # --- サブスクリプションのCRUD操作 ---
 async def create_subscription(db: AsyncSession, subscription: SubscriptionCreate) -> Subscription:
     db_plan = None
-    if subscription.price_id:
-        db_plan = await get_plan_by_price_id(db, stripe_price_id=subscription.price_id)
+    # price_id が渡されているか確認 (SubscriptionCreateにprice_idはOptionalなので)
+    # ただし、webhookからの new_sub_data には price_id を設定しているはず
+    effective_price_id = subscription.price_id 
+    if not effective_price_id and subscription.plan_id:
+         # plan_idからplanを取得してprice_idを逆引きすることも可能だが、
+         # webhookのロジックでprice_idは設定されているはずなので、ここではエラーや警告を出すことを検討
+         logger.warning(f"SubscriptionCreate に price_id がありません。plan_id: {subscription.plan_id} から特定を試みます（非推奨）")
+         # temp_plan = await get_plan_by_id(db, subscription.plan_id) # get_plan_by_id が必要
+         # if temp_plan: effective_price_id = temp_plan.price_id
+         # else: raise HTTPException(...)
+
+    if effective_price_id:
+        db_plan = await get_plan_by_price_id(db, stripe_price_id=effective_price_id)
         if not db_plan:
-            raise HTTPException(status_code=404, detail=f"Plan not found for price_id: {subscription.price_id}")
-        # plan_id を price_id から引いた plan の ID で設定
-        subscription.plan_id = db_plan.id
-    elif not subscription.plan_id: # price_id も plan_id もない場合
-        raise HTTPException(status_code=400, detail="Either price_id or plan_id must be provided to create subscription.")
+            logger.error(f"DBに Price ID '{effective_price_id}' に対応するプランが見つかりません。")
+            raise HTTPException(status_code=404, detail=f"Plan not found for price_id: {effective_price_id}")
+        # スキーマのplan_idとDBから引いたプランのIDが一致するか確認（念のため）
+        if subscription.plan_id != db_plan.id:
+            logger.warning(f"SubscriptionCreate の plan_id ({subscription.plan_id}) と Price ID ({effective_price_id}) から引いた Plan ID ({db_plan.id}) が一致しません。DB Plan ID を優先します。")
+            subscription.plan_id = db_plan.id # DBから引いたもので上書き
+
+    elif not subscription.plan_id: # price_id も plan_id もない場合 (通常Webhookからはありえないはず)
+        logger.error("SubscriptionCreate に price_id も plan_id も提供されていません。")
+        raise HTTPException(status_code=400, detail="Either price_id or plan_id must be provided.")
     
     # SQLAlchemyモデルに渡すデータを作成
-    # SubscriptionCreateからprice_idを除き、他のフィールドはそのまま利用
-    subscription_model_data = subscription.model_dump(exclude={"price_id"})
+    # SubscriptionCreateからprice_idとplan_nameを除外 (plan_nameはモデルにない、price_idもスキーマにはあるがモデルには直接ない)
+    subscription_model_data = subscription.model_dump(exclude={"price_id", "plan_name"}) 
 
     # Subscription SQLAlchemyモデルのインスタンスを作成
-    db_subscription = Subscription(**subscription_model_data)
-    
+    try:
+        db_subscription = Subscription(**subscription_model_data)
+    except TypeError as e:
+        logger.error(f"Subscriptionモデルの初期化に失敗しました。渡されたデータ: {subscription_model_data}, エラー: {e}", exc_info=True)
+        # エラーメッセージから問題のフィールドを特定し、より詳細なエラーを返すことも検討
+        raise HTTPException(status_code=500, detail=f"データベースモデルの作成に失敗しました: {e}")
+
     db.add(db_subscription)
-    await db.commit()
-    await db.refresh(db_subscription)
+    try:
+        await db.commit()
+        await db.refresh(db_subscription)
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Subscription DB保存中にエラー: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="データベースへの保存中にエラーが発生しました。")
+        
     return db_subscription
 
 async def get_subscription(db: AsyncSession, subscription_id: UUID) -> Optional[Subscription]:
@@ -63,6 +90,7 @@ async def get_user_subscriptions(db: AsyncSession, user_id: UUID) -> List[Subscr
 async def get_active_user_subscription(db: AsyncSession, user_id: UUID) -> Optional[Subscription]:
     result = await db.execute(
         select(Subscription)
+        .options(selectinload(Subscription.plan))
         .filter(
             Subscription.user_id == user_id,
             Subscription.is_active == True,
