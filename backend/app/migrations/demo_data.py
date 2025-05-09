@@ -84,8 +84,12 @@ def create_user_related_data(db: Session):
     roles = {r.name: r for r in db.query(Role).all()}
 
     # ========= 権限データ =========
-    # ★修正: 権限定義をこのファイル内に移動
-    # PERMISSIONS_TO_ADD に相当するデータをここで定義
+    # 権限の定義は architecture/permission_list.md を参照してください。
+    # このファイルでは、permission_list.md に記載されている権限名を元に、
+    # データベースにPermissionオブジェクトを作成・取得します。
+    
+    # architecture/permission_list.md に記載されている権限と説明のペア
+    # 下記は architecture/permission_list.md と同期している必要があります。
     all_permissions_data = {
         # Community
         'community_read': 'コミュニティ投稿を閲覧する',
@@ -135,21 +139,18 @@ def create_user_related_data(db: Session):
         # Application Management
         'application_read': '出願情報を閲覧する',
         'application_write': '出願情報を作成・更新・削除する',
-        # ★注意: ここに teacher_perms や free_perms で使われている権限が全て含まれているか確認が必要
-        # 例: 'user_read', 'content_read', 'subscription_read_own' などが含まれていない可能性
-        # 必要に応じて、これらの権限も上記 all_permissions_data に追加する
-         'user_read': 'ユーザー情報を閲覧する', # 例: 追加が必要な場合
-         'content_read': 'コンテンツを閲覧する', # 例: 追加が必要な場合
-         'content_write': 'コンテンツを作成・編集する', # 例: 追加が必要な場合
-         'subscription_read_own': '自身のサブスクリプション情報を閲覧する', # 例: 追加が必要な場合
-         'payment_history_read_own': '自身の支払い履歴を閲覧する', # 例: 追加が必要な場合
-         'invoice_read_own': '自身の請求書情報を閲覧する', # 例: 追加が必要な場合
-         'learning_path_read': '学習パスを閲覧する', # 例: 追加が必要な場合
-         'quiz_attempt': 'クイズに挑戦する', # 例: 追加が必要な場合
-         'forum_read': 'フォーラムを閲覧する', # 例: 追加が必要な場合
-         'forum_post': 'フォーラムに投稿する', # 例: 追加が必要な場合
-         'subscription_manage_own': '自身のサブスクリプションを管理する', # 例: 追加が必要な場合
-
+        # User/Content/Subscription etc.
+         'user_read': 'ユーザー情報を閲覧する',
+         'content_read': 'コンテンツを閲覧する',
+         'content_write': 'コンテンツを作成・編集する',
+         'subscription_read_own': '自身のサブスクリプション情報を閲覧する',
+         'payment_history_read_own': '自身の支払い履歴を閲覧する',
+         'invoice_read_own': '自身の請求書情報を閲覧する',
+         'learning_path_read': '学習パスを閲覧する',
+         'quiz_attempt': 'クイズに挑戦する',
+         'forum_read': 'フォーラムを閲覧する',
+         'forum_post': 'フォーラムに投稿する',
+         'subscription_manage_own': '自身のサブスクリプションを管理する',
     }
 
     # 権限をデータベースに追加
