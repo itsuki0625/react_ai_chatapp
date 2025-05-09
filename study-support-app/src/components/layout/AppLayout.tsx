@@ -41,10 +41,10 @@ const studentNavigation: NavItem[] = [
       { name: '自己分析AI', href: '/chat/self-analysis', icon: MessageSquare },
       { name: '総合型選抜AI', href: '/chat/admission', icon: GraduationCap },
       { name: '学習支援AI', href: '/chat/study-support', icon: BookOpen },
+      { name: 'FAQチャット', href: '/chat/faq', icon: CircleHelp },
     ] 
   },
   { name: 'コミュニケーション', href: '/communication', icon: Users },
-  { name: 'FAQチャット', href: '/faq', icon: CircleHelp },
   { name: '志望校管理', href: '/application', icon: User },
   { name: '志望理由書', href: '/statement', icon: FileText },
   { name: 'コンテンツ', href: '/contents', icon: SquarePlay },
