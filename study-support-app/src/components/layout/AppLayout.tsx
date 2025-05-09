@@ -5,9 +5,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
-import { 
-  Menu, 
-  X, 
+import {
+  Menu,
+  X,
   Home,
   MessageSquare,
   FileText,
@@ -32,9 +32,9 @@ interface NavItem {
 
 const studentNavigation: NavItem[] = [
   { name: 'ダッシュボード', href: '/dashboard', icon: Home },
-  { 
-    name: 'AIチャット', 
-    href: '/chat', 
+  {
+    name: 'AIチャット',
+    href: '/chat',
     icon: BrainCircuit,
     expanded: false,
     children: [
@@ -49,7 +49,7 @@ const studentNavigation: NavItem[] = [
   { name: '志望理由書', href: '/statement', icon: FileText },
   { name: 'コンテンツ', href: '/contents', icon: SquarePlay },
   { name: '設定', href: '/settings', icon: Settings },
-  { name: 'プラン', href: '/subscription/plans', icon: DollarSign },
+  { name: 'プラン', href: '/subscription', icon: DollarSign },
 ];
 
 const adminNavigation: NavItem[] = [
@@ -85,8 +85,8 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
   }, [currentNavItems]);
 
   const toggleExpand = (index: number) => {
-    setNavItemsState(prevItems => 
-      prevItems.map((item, i) => 
+    setNavItemsState(prevItems =>
+      prevItems.map((item, i) =>
         i === index ? { ...item, expanded: !item.expanded } : item
       )
     );
@@ -98,7 +98,7 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="lg:hidden fixed top-4 left-4 z-40">
+      <div className="lg:hidden fixed top-4 right-4 z-40">
         <button
           className="p-2 rounded-md bg-white shadow-sm"
           onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -115,9 +115,9 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
         <div className="p-6">
           <div className="flex items-center justify-between">
             <Link href="/dashboard">
-                <Image 
-                  src="/SmartAO-logo.png" 
-                  alt="SmartAO Logo" 
+                <Image
+                  src="/logo.svg"
+                  alt="SmartAO Logo"
                   width={120}
                   height={32}
                   priority
@@ -134,10 +134,10 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
 
         <nav className="px-4 space-y-1">
           {navItemsState.map((item, index) => {
-            const isActive = pathname === item.href || 
+            const isActive = pathname === item.href ||
                            (item.children && item.children.some(child => pathname?.startsWith(child.href)));
             const Icon = item.icon;
-            
+
             return (
               <div key={item.name}>
                 {item.children ? (
@@ -165,15 +165,15 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>
                     </button>
-                    
-                    <div 
+
+                    <div
                       className={`overflow-hidden transition-all duration-300 ease-in-out ${item.expanded ? 'max-h-96' : 'max-h-0'}`}
                     >
                       <div className="pl-8 mt-1 space-y-1 py-1">
                         {item.children.map(child => {
                           const isChildActive = pathname === child.href;
                           const ChildIcon = child.icon;
-                          
+
                           return (
                             <Link
                               key={child.name}
