@@ -1,6 +1,8 @@
 import axios, { AxiosRequestHeaders } from 'axios';
 import { API_BASE_URL } from '@/lib/config';
 import { getSession } from 'next-auth/react'; // ★★★ 変更: コメントアウト解除 ★★★
+import { ChatSession as ChatSessionType, ChatSubmitRequest, ChatTypeValue } from "@/types/chat";
+import { AxiosResponse } from "axios";
 
 // 各種レスポンス型を定義
 type ApiResponse<T> = {
@@ -296,64 +298,60 @@ interface ChatSession {
 }
 
 // チャットAPI
-export const chatApi = {
-  sendMessage: async (message: string) => {
-    return apiClient.post('/api/v1/chat', { message });
-  },
-  sendStreamMessage: async (message: string, sessionId?: string, sessionType?: string) => {
-    // Stream APIは fetch を直接使っているので Authorization ヘッダーを明示的に設定する必要あり
-    const session = await getSession() as SessionWithToken | null;
-    const accessToken = session?.accessToken || session?.user?.accessToken || '';
-    
-    // StreamChatMessage型を使用してリクエストボディを作成
-    const requestBody: StreamChatMessage = {
-      message,
-      session_id: sessionId,
-      session_type: sessionType
-    };
-    
-    return fetch(`${API_BASE_URL}/api/v1/chat/stream`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
-        'Accept': 'text/event-stream',
-      },
-      body: JSON.stringify(requestBody),
-      credentials: 'include'
+const chatApiBase = {
+  // チャットメッセージ送信 (ストリーミングなしの通常のPOSTリクエスト)
+  sendChatMessage: async (token: string, data: ChatSubmitRequest): Promise<AxiosResponse<any>> => {
+    return apiClient.post("/api/v1/chat", data, {
+      headers: { Authorization: `Bearer ${token}` },
     });
   },
-  getSessions: async () => {
-    return apiClient.get<ApiResponse<ChatSession[]>>('/api/v1/chat/sessions');
+
+  // チャットセッションリスト取得 (アクティブなもの)
+  getActiveSessions: async (token: string, chatType: ChatTypeValue): Promise<AxiosResponse<ChatSessionType[]>> => {
+    return apiClient.get<ChatSessionType[]>("/api/v1/chat/sessions", {
+      headers: { Authorization: `Bearer ${token}` },
+      params: { chat_type: chatType, status: 'ACTIVE' },
+    });
   },
-  getArchivedSessions: async () => {
-    return apiClient.get<ApiResponse<ChatSession[]>>('/api/v1/chat/sessions/archived');
+
+  // 特定のチャットセッションのメッセージ履歴取得
+  getSessionMessages: async (token: string, sessionId: string): Promise<AxiosResponse<any[]>> => { // any[] は ChatMessage[] になるべき
+    return apiClient.get<any[]>(`/api/v1/chat/sessions/${sessionId}/messages`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
   },
-  getSessionMessages: async (sessionId: string) => {
-    return apiClient.get(`/api/v1/chat/sessions/${sessionId}/messages`);
+
+  // チャットセッションをアーカイブする
+  archiveSession: async (token: string, sessionId: string): Promise<AxiosResponse<ChatSessionType>> => {
+    return apiClient.patch<ChatSessionType>(`/api/v1/chat/sessions/${sessionId}/archive`, {}, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
   },
-  archiveSession: async (sessionId: string) => {
-    return apiClient.patch(`/api/v1/chat/sessions/${sessionId}/archive`, {});
+
+  // アーカイブ済みチャットセッションリスト取得
+  getArchivedSessions: async (token: string, chatType: ChatTypeValue): Promise<AxiosResponse<ChatSessionType[]>> => {
+    return apiClient.get<ChatSessionType[]>("/api/v1/chat/sessions/archived", {
+      headers: { Authorization: `Bearer ${token}` },
+      params: { chat_type: chatType }, // chat_type でフィルタリング
+    });
   },
-  getChecklist: async (chatId: string) => {
-    return apiClient.get(`/api/v1/chat/${chatId}/checklist`);
+
+  // チャットセッションをアーカイブ解除する
+  unarchiveSession: async (token: string, sessionId: string): Promise<AxiosResponse<ChatSessionType>> => {
+    return apiClient.patch<ChatSessionType>(`/api/v1/chat/sessions/${sessionId}/unarchive`, {}, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
   },
-  startSelfAnalysis: async (message: string) => {
-    return apiClient.post('/api/v1/chat/self-analysis', { message });
-  },
-  getSelfAnalysisReport: async () => {
-    return apiClient.get('/api/v1/chat/self-analysis/report');
-  },
-  startAdmissionChat: async (message: string) => {
-    return apiClient.post('/api/v1/chat/admission', { message });
-  },
-  startStudySupportChat: async (message: string) => {
-    return apiClient.post('/api/v1/chat/study-support', { message });
-  },
-  getChatAnalysis: async () => {
-    return apiClient.get('/api/v1/chat/analysis');
-  }
+
+  // 他のチャット関連API呼び出し関数があればここに追加
+  // 例: createNewSession, updateSessionTitle など
 };
+
+// 既存の chatApi のエクスポート方法に合わせて調整する
+// もし chatApi が apiClient をラップしたオブジェクトとしてエクスポートされているなら、そこにマージする
+// 例: export const chatApi = { ...apiClient, ...chatApiBase };
+// ここでは chatApiBase を chatApi としてエクスポートすると仮定する (既存の構造による)
+export const chatApi = chatApiBase;
 
 interface University {
   id: string;

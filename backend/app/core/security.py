@@ -7,6 +7,8 @@ import uuid
 import os
 import hashlib
 from sqlalchemy.orm import Session
+from fastapi import HTTPException, status
+import logging
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -19,7 +21,12 @@ derived_key = hashlib.sha512(AUTH_SECRET.encode('utf-8')).digest()
 
 # --- JWT アルゴリズム --- 
 # AuthMiddleware と合わせる
-JWT_ALGORITHM = "HS512"
+# JWT_ALGORITHM = "HS512" # settings から読むので削除
+
+# JWTアルゴリズム (config.py にないため、ここで定義するか、configに追加する)
+# ALGORITHM = "HS256" # settings から読むので削除、また HS512 に統一
+
+logger = logging.getLogger(__name__)
 
 def create_access_token(
     data: Dict[str, Any], expires_delta: Optional[timedelta] = None
@@ -49,7 +56,7 @@ def create_access_token(
     encoded_jwt = jwt.encode(
         to_encode,
         derived_key,      # 導出したキーを使用
-        algorithm=JWT_ALGORITHM # HS512 アルゴリズムを使用
+        algorithm=settings.JWT_ALGORITHM # settings から読み込む
     )
     return encoded_jwt
 
@@ -78,7 +85,7 @@ def create_refresh_token(
     encoded_jwt = jwt.encode(
         to_encode,
         derived_key,      # 導出したキーを使用
-        algorithm=JWT_ALGORITHM # HS512 アルゴリズムを使用
+        algorithm=settings.JWT_ALGORITHM # settings から読み込む
     )
     return encoded_jwt
 
@@ -89,8 +96,8 @@ def verify_token(token: str) -> bool:
     try:
         payload = jwt.decode(
             token,
-            derived_key,
-            algorithms=[JWT_ALGORITHM]
+            derived_key, # derived_key を使用
+            algorithms=[settings.JWT_ALGORITHM] # settings から読み込む
         )
         return True
     except JWTError:
@@ -103,8 +110,8 @@ def decode_token(token: str) -> Optional[Dict[str, Any]]:
     try:
         payload = jwt.decode(
             token,
-            derived_key,
-            algorithms=[JWT_ALGORITHM]
+            derived_key, # derived_key を使用
+            algorithms=[settings.JWT_ALGORITHM] # settings から読み込む
         )
         return payload
     except JWTError:
@@ -158,4 +165,41 @@ def get_password_hash(password: str) -> str:
     """
     パスワードをハッシュ化
     """
-    return pwd_context.hash(password) 
+    return pwd_context.hash(password)
+
+def decode_token_to_user_id(token: str) -> str | None:
+    """
+    JWTトークンをデコードし、ユーザーID (subクレーム) を返します。
+    デコードに失敗した場合はHTTPExceptionを発生させます。
+    """
+    try:
+        payload = jwt.decode(
+            token, 
+            derived_key, # settings.SECRET_KEY から derived_key に変更
+            algorithms=[settings.JWT_ALGORITHM] # settings から読み込む
+        )
+        user_id: str | None = payload.get("sub")
+        if user_id is None:
+            logger.warning("Token decoding successful, but 'sub' claim is missing.")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials (sub claim missing)",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        logger.debug(f"Token decoded successfully. User ID (sub): {user_id}")
+        return user_id
+    except JWTError as e:
+        logger.error(f"JWTError during token decoding: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Could not validate credentials, token may be invalid or expired ({str(e)})",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error during token decoding: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while processing authentication token.",
+        )
+
+# パスワードハッシュ化などの他のセキュリティ関連ユーティリティもここに追加可能 

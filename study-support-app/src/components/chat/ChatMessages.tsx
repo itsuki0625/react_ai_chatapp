@@ -30,8 +30,8 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({ messages, isLoading,
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 bg-muted/20">
       {messages.map((message, index) => {
-        const isUserMessage = message.sender_type === 'USER';
-        const isAiMessage = message.sender_type === 'AI';
+        const isUserMessage = message.sender === 'USER';
+        const isAiMessage = message.sender === 'AI';
         
         // Add temporary fields check for optimistic/error states
         const isOptimisticLoading = message.isLoading; 
@@ -80,7 +80,7 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({ messages, isLoading,
                
               {/* Timestamp */} 
                <p className="text-xs mt-1 text-right opacity-70">
-                 {formatTimestamp(message.created_at)}
+                 {formatTimestamp(message.timestamp)}
                </p>
             </div>
 
