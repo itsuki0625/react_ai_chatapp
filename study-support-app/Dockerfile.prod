@@ -12,6 +12,7 @@ COPY . .
 ENV NEXT_PUBLIC_API_BASE_URL=https://api.smartao.jp
 ENV NEXT_PUBLIC_BROWSER_API_URL=https://api.smartao.jp
 ENV INTERNAL_API_BASE_URL=https://api.smartao.jp
+ENV NEXT_PUBLIC_WEBSOCKET_URL=wss://api.smartao.jp/api/v1/chat/ws/chat
 # NextAuth環境変数を追加（Build-time）
 ENV NEXTAUTH_URL=https://app.smartao.jp
 ENV NEXTAUTH_COOKIE_DOMAIN=app.smartao.jp

@@ -146,10 +146,12 @@ class ChatAnalysisResponse(BaseModel):
 
 # ChatSidebar で使用するためのセッション概要スキーマ
 class ChatSessionSummary(BaseModel):
-    id: UUID # ★ id を UUID に変更
-    title: Optional[str] = None # ★ title を追加
+    id: UUID
+    title: Optional[str] = None
     chat_type: ChatType
-    updated_at: Optional[datetime] = None # 変更後: オプショナルに変更
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    last_message_summary: Optional[str] = None
 
     class Config:
         from_attributes = True 

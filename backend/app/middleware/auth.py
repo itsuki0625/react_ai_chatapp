@@ -12,7 +12,8 @@ from sqlalchemy import select
 from app.models.user import User, UserRole, Role, RolePermission, Permission
 from jose import jwt, jwe, JWTError
 from datetime import datetime, timezone
-from app.core.security import derived_key, JWT_ALGORITHM
+from app.core.security import derived_key
+from app.core.config import settings
 import uuid
 
 # ロガーの設定
@@ -46,7 +47,7 @@ def decode_bearer_token(token: str) -> Optional[Dict[str, Any]]:
         payload = jwt.decode(
             token,
             derived_key, # security.py からインポートしたキーを使用
-            algorithms=[JWT_ALGORITHM]
+            algorithms=[settings.JWT_ALGORITHM]
         )
         # 有効期限チェック
         if "exp" in payload and datetime.fromtimestamp(payload["exp"], timezone.utc) < datetime.now(timezone.utc):

@@ -16,6 +16,7 @@ ENV NEXT_PUBLIC_API_BASE_URL=http://localhost:5050
 ENV NEXT_PUBLIC_BROWSER_API_URL=http://localhost:5050
 ENV INTERNAL_API_BASE_URL=http://localhost:5050
 ENV NEXT_PUBLIC_ASSET_BASE_URL=http://localhost:5050
+ENV NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:5050/api/v1/chat/ws/chat
 # NextAuth環境変数を追加（Build-time）
 ENV NEXTAUTH_URL=http://localhost:3000
 ENV NEXTAUTH_COOKIE_DOMAIN=localhost:3000

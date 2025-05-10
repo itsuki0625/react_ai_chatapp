@@ -21,6 +21,7 @@ pyotp
 qrcode
 pillow
 openai-agents
+websockets
 
 # tests
 pytest>=8.2.2

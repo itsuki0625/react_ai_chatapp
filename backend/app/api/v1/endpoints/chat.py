@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks, status
+from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks, status, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import StreamingResponse
 from typing import List, Dict, Optional
 from datetime import datetime
@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.services.openai_service import stream_openai_response
 import uuid
 from openai import AsyncOpenAI
-from app.api.deps import get_current_user, User, require_permission
+from app.api.deps import get_current_user, User, require_permission, get_current_user_from_token, check_permissions_for_user
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.database import get_async_db
 from app.crud.chat import (
@@ -25,9 +25,9 @@ from app.crud.chat import (
 from fastapi.middleware.cors import CORSMiddleware
 from app.crud.checklist import (
     ChecklistEvaluator,
-    create_evaluation,
-    get_evaluation_by_chat_id,
-    update_evaluation
+    create_evaluation_records,
+    get_evaluation_by_session_id,
+    update_evaluation_for_session
 )
 from uuid import UUID
 from sqlalchemy.orm import Session
@@ -40,6 +40,10 @@ from app.services.ai_service import (
     get_study_support_agent_response
 )
 from app.crud.async_chat import get_user_chat_sessions
+import json
+import asyncio
+from app.models.enums import ChatType as ChatTypeEnum, SessionStatus as ChatSessionStatusEnum # Enumを別名でインポート
+from starlette.websockets import WebSocketState # WebSocketState をインポート
 
 router = APIRouter()
 
@@ -48,189 +52,206 @@ logger = logging.getLogger(__name__)
 
 checklist_evaluator = ChecklistEvaluator()
 
-@router.options("/stream")
-async def chat_stream_options():
-    return {"message": "OK"}
-
-@router.post("/stream")
-async def chat_stream(
-    request: Request,
-    chat_request: ChatRequest,
-    background_tasks: BackgroundTasks,
-    current_user: User = Depends(require_permission('chat_message_send')),
-    db: AsyncSession = Depends(get_async_db),
+@router.websocket("/ws/chat")
+async def websocket_chat_endpoint(
+    websocket: WebSocket,
+    db: AsyncSession = Depends(get_async_db)
 ):
-    logger.info("--- chat_stream endpoint called ---")
-    logger.info(f"Received message: {chat_request.message}")
-    logger.info(f"Chat request: {chat_request}")
-    
+    await websocket.accept()
+    logger.info(f"WebSocket connection accepted from: {websocket.client}")
+    current_user: Optional[User] = None
+    token = websocket.query_params.get("token")
+    session_id_from_request: Optional[UUID] = None # ChatRequestから取得するセッションID
+
     try:
-        chat_session = await get_or_create_chat_session(
-            db=db,
-            user_id=current_user.id,
-            session_id=chat_request.session_id,
-            chat_type=chat_request.chat_type.value
-        )
-        logger.info("セッションの取得または作成に成功しました")
+        if not token:
+            logger.warning("Token not provided in query params for WebSocket.")
+            await websocket.send_text(json.dumps({"type": "error", "detail": "Authentication token required."}))
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Token not provided")
+            return
+
+        current_user = await get_current_user_from_token(token, db)
         
-        session_id = str(chat_session.id)
-        logger.info(f"Session ID: {session_id}")
-        
-        if not chat_request.session_id:
-            title = chat_request.message[:30] + "..." if len(chat_request.message) > 30 else chat_request.message
-            await update_session_title(
-                db, 
-                chat_session.id, 
-                current_user.id, 
-                title
-            )
-            logger.info(f"Session title updated to: {title}")
+        logger.info(f"User {current_user.email} authenticated for WebSocket chat.")
 
-        user_message = await save_chat_message(
-            db=db,
-            session_id=session_id,
-            content=chat_request.message,
-            sender_id=current_user.id,
-            sender_type="USER"
-        )
-        logger.info(f"User message saved (ID: {user_message.id})")
+        if not await check_permissions_for_user(current_user, ('chat_message_send',)):
+            logger.warning(f"User {current_user.email} lacks 'chat_message_send' permission for WebSocket.")
+            await websocket.send_text(json.dumps({"type": "error", "detail": "Insufficient permissions to send messages."}))
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Insufficient permissions")
+            return
 
-        session_messages = await get_chat_messages_history(
-            db,
-            session_id
-        )
-        logger.info(f"Fetched {len(session_messages)} existing messages for the session")
-        formatted_history = [
-            {
-                "role": "assistant" if msg.sender_type == "AI" else "user",
-                "content": msg.content
-            }
-            for msg in session_messages
-        ]
-        logger.info("Formatted message history")
+        while True:
+            data = await websocket.receive_text()
+            logger.debug(f"Received raw data via WebSocket from {current_user.email}: {data[:200]}")
 
-        system_message = ""
-        if chat_request.chat_type == ChatType.FAQ:
-            system_message = "あなたは総合型選抜に関する質問に答えるFAQボットです。"
-        elif chat_request.chat_type == ChatType.CONSULTATION:
-            logger.warning(f"Handling potentially unused chat_type: {chat_request.chat_type}")
-            system_message = settings.INSTRUCTION
-        else:
-            base_instruction = settings.INSTRUCTION
-            system_message = base_instruction
-            logger.info(f"Using base instruction for chat_type: {chat_request.chat_type}")
-
-        logger.info(f"System message: {system_message[:100]}...")
-
-        messages = [
-            {"role": "system", "content": system_message},
-            *formatted_history,
-            {"role": "user", "content": chat_request.message}
-        ]
-
-        ai_message = await save_chat_message(
-            db=db,
-            session_id=session_id,
-            content="",
-            sender_type="AI"
-        )
-        logger.info(f"Empty AI message saved (ID: {ai_message.id})")
-
-        async def stream_and_save():
-            full_response = ""
             try:
-                async for chunk in stream_openai_response(messages, session_id):
+                chat_request_data = json.loads(data)
+                if 'chat_type' in chat_request_data and isinstance(chat_request_data['chat_type'], str):
+                    chat_request_data['chat_type'] = chat_request_data['chat_type'].lower().replace('-', '_')
+                chat_request = ChatRequest(**chat_request_data)
+                session_id_from_request = chat_request.session_id
+            except json.JSONDecodeError:
+                logger.error(f"Invalid JSON received from {current_user.email}: {data}")
+                await websocket.send_text(json.dumps({"type": "error", "detail": "Invalid JSON format"}))
+                continue
+            except Exception as e:
+                logger.error(f"Error parsing ChatRequest from {current_user.email}: {str(e)}. Data: {data}")
+                await websocket.send_text(json.dumps({"type": "error", "detail": f"Invalid request payload: {str(e)}"}))
+                continue
+
+            logger.info(f"Processing chat request for user {current_user.email}, session: {chat_request.session_id}, type: {chat_request.chat_type}")
+
+            chat_session = await get_or_create_chat_session(
+                db=db,
+                user_id=current_user.id,
+                session_id=chat_request.session_id, # ここで UUID オブジェクトが渡される可能性がある
+                chat_type=chat_request.chat_type.value
+            )
+            actual_session_id = str(chat_session.id)
+            logger.info(f"Using chat session ID: {actual_session_id}")
+
+            if not chat_request.session_id and chat_request.message:
+                try:
+                    user_message_prefix = chat_request.message.replace('\n', ' ').strip()
+                    title = user_message_prefix[:30].strip() + "..." if len(user_message_prefix) > 30 else user_message_prefix.strip()
+                    if title:
+                        await update_session_title(db, chat_session.id, current_user.id, title)
+                        logger.info(f"Session title updated to '{title}' for new session {actual_session_id}")
+                except Exception as e:
+                    logger.error(f"Failed to update session title for {actual_session_id}: {e}", exc_info=True)
+            
+            user_message_db_obj = await save_chat_message(
+                db=db, session_id=UUID(actual_session_id), content=chat_request.message,
+                user_id=current_user.id, sender_type="USER"
+            )
+            logger.info(f"User message saved (ID: {user_message_db_obj.id}) for session {actual_session_id}")
+
+            session_messages_history = await get_chat_messages_history(db, actual_session_id)
+            formatted_history = []
+            if isinstance(session_messages_history, list):
+                for msg_item in session_messages_history:
+                    if isinstance(msg_item, dict):
+                        formatted_history.append({"role": msg_item.get("role", "unknown"), "content": msg_item.get("content", "")})
+                    else: logger.warning(f"Unexpected item type in session_messages_history: {type(msg_item)}")
+            
+            system_message_content = settings.INSTRUCTION
+            if chat_request.chat_type == ChatTypeEnum.FAQ:
+                system_message_content = "あなたは総合型選抜に関する質問に答えるFAQボットです。"
+
+            # messages_for_openai の準備段階
+            temp_messages = [
+                {"role": "system", "content": system_message_content},
+                *formatted_history,
+            ]
+            # ユーザーの最新メッセージを追加 (重複を避けるチェックはそのまま)
+            if not any(m['role'] == 'user' and m['content'] == chat_request.message for m in formatted_history):
+                 temp_messages.append({"role": "user", "content": chat_request.message})
+            
+            # OpenAI APIに渡す最終的な messages_for_openai リストを生成
+            # ここで 'ai' ロールを 'assistant' に強制的に変換する
+            messages_for_openai = []
+            for msg in temp_messages:
+                role = msg.get("role")
+                content = msg.get("content")
+                # MessageSender.AI.value は "ai"
+                if role == MessageSender.AI.value: 
+                    messages_for_openai.append({"role": "assistant", "content": content})
+                elif role in ["user", "system", "assistant"]: # 有効なロールはそのまま
+                    messages_for_openai.append({"role": role, "content": content})
+                else: # 不明なロールの場合はログを残し、'user'ロールとして扱う (またはエラー処理)
+                    logger.warning(f"Unknown role '{role}' in message preparation for OpenAI. Original message: {msg}")
+                    messages_for_openai.append({"role": "user", "content": content}) # 安全策
+
+            # デバッグログで変換後の内容を確認
+            logger.debug(f"Final messages for OpenAI API: {messages_for_openai}")
+
+            ai_message_db_obj = await save_chat_message(
+                db=db, session_id=UUID(actual_session_id), content="", sender_type="AI"
+            )
+            logger.info(f"Empty AI message saved (ID: {ai_message_db_obj.id}) for session {actual_session_id}")
+            await db.commit() # 先にAIメッセージのプレースホルダーをコミット
+            await db.refresh(ai_message_db_obj)
+
+            full_ai_response = ""
+            try:
+                logger.debug(f"Streaming OpenAI response for session {actual_session_id} with {len(messages_for_openai)} messages.")
+                async for chunk in stream_openai_response(messages_for_openai, actual_session_id):
                     if isinstance(chunk, str):
-                        sanitized = chunk.replace("data: ", "").strip()
-                        if sanitized == "[DONE]":
-                            logger.info("Received [DONE] signal")
+                        sanitized_chunk = chunk.replace("data: ", "").strip()
+                        if sanitized_chunk == "[DONE]":
+                            logger.info(f"Received [DONE] signal from stream_openai_response for session {actual_session_id}")
                             break
-                        full_response += sanitized
-                        yield f'data: {sanitized}\n\n'
+                        if sanitized_chunk:
+                            full_ai_response += sanitized_chunk
+                            await websocket.send_text(json.dumps({"type": "chunk", "content": sanitized_chunk, "session_id": actual_session_id}))
                     else:
-                         logger.warning(f"Received non-string chunk: {type(chunk)}")
+                        logger.warning(f"Received non-string chunk from stream: {type(chunk)} for session {actual_session_id}")
+                
+                logger.info(f"Streaming finished for session {actual_session_id}. Full AI response length: {len(full_ai_response)}")
 
-                logger.info(f"Streaming finished. Full AI response length: {len(full_response)}")
-
-                if ai_message:
-                    ai_message.content = full_response
-                    ai_message.updated_at = datetime.utcnow()
-                    db.add(ai_message)
+                if ai_message_db_obj:
+                    ai_message_db_obj.content = full_ai_response
+                    ai_message_db_obj.updated_at = datetime.utcnow()
+                    db.add(ai_message_db_obj)
                     await db.commit()
-                    await db.refresh(ai_message)
-                    logger.info(f"AI response saved/updated for message ID: {ai_message.id}")
-                else:
-                     logger.error("ai_message object was None before saving full response")
+                    await db.refresh(ai_message_db_obj)
+                    logger.info(f"AI response saved/updated for message ID: {ai_message_db_obj.id} in session {actual_session_id}")
+                
+                # 自己分析評価ロジックは呼び出さない (コメントアウトまたは削除)
+                # if chat_request.chat_type == ChatTypeEnum.SELF_ANALYSIS: 
+                #     try:
+                #         # ... (略) ...
+                #     except Exception as eval_e:
+                #         logger.error(f"Error during self-analysis evaluation for session {actual_session_id}: {eval_e}", exc_info=True)
 
-                if chat_request.chat_type == ChatType.SELF_ANALYSIS:
-                    try:
-                        fresh_messages_history = await get_chat_messages_history(
-                            db,
-                            str(chat_session.id)
-                        )
-                        chat_history_for_eval = []
-                        if isinstance(fresh_messages_history, list):
-                            for msg_item in fresh_messages_history:
-                                if isinstance(msg_item, dict):
-                                     chat_history_for_eval.append({
-                                         "role": msg_item.get("role", "unknown"), 
-                                         "content": msg_item.get("content", "")
-                                     })
-                                elif hasattr(msg_item, 'sender_type') and hasattr(msg_item, 'content'):
-                                     chat_history_for_eval.append({
-                                         "role": "assistant" if msg_item.sender_type == "AI" else "user",
-                                         "content": msg_item.content
-                                     })
-                                else:
-                                     logger.warning(f"Unexpected item type in message history: {type(msg_item)}")
-                        else:
-                            logger.error(f"Expected list from get_chat_messages_history, got: {type(fresh_messages_history)}")
+                await websocket.send_text(json.dumps({"type": "done", "session_id": actual_session_id}))
+                logger.info(f"Sent [DONE] signal to client for session {actual_session_id}")
 
-                        logger.info(f"Chat history for evaluation ({len(chat_history_for_eval)} messages)")
-
-                        evaluation_result = await checklist_evaluator.evaluate_chat(chat_history_for_eval)
-                        logger.info(f"Evaluation result obtained: {evaluation_result is not None}")
-
-                        if evaluation_result:
-                            existing_evaluation = await get_evaluation_by_chat_id(db, UUID(session_id))
-                            if existing_evaluation:
-                                await update_evaluation(db, existing_evaluation.id, evaluation_result)
-                                logger.info("Evaluation updated successfully")
-                            else:
-                                await create_evaluation(db, UUID(session_id), evaluation_result)
-                                logger.info("Evaluation created successfully")
-                        else:
-                            logger.warning("Evaluation result was None, skipping DB update.")
-                    except Exception as eval_e:
-                        logger.error(f"Error during checklist evaluation or DB update: {str(eval_e)}")
-                        # ここでエラーを raise するかは検討事項
-
-                yield 'data: [DONE]\n\n'
-                logger.info("Sent final [DONE] signal")
             except Exception as stream_err:
-                 logger.error(f"Error during streaming or saving: {stream_err}", exc_info=True)
-                 yield 'data: [ERROR] Streaming failed\n\n'
-                 yield 'data: [DONE]\n\n'
+                logger.error(f"Error during OpenAI streaming or saving for session {actual_session_id}: {stream_err}", exc_info=True)
+                error_payload = {"type": "error", "detail": "Error processing your request with AI.", "session_id": actual_session_id}
+                try:
+                    if websocket.client_state == WebSocketState.CONNECTED:
+                        await websocket.send_text(json.dumps(error_payload))
+                except Exception as send_err:
+                    logger.error(f"Failed to send error to client after stream error for session {actual_session_id}: {send_err}")
+                try:
+                    if websocket.client_state == WebSocketState.CONNECTED:
+                        await websocket.send_text(json.dumps({"type": "done", "session_id": actual_session_id, "error": True}))
+                except Exception as send_done_err:
+                    logger.error(f"Failed to send done signal to client after stream error for session {actual_session_id}: {send_done_err}")
 
-        return StreamingResponse(
-            stream_and_save(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-            }
-        )
+    except WebSocketDisconnect:
+        if current_user:
+            logger.info(f"WebSocket disconnected for user {current_user.email}: {websocket.client}")
+        else:
+            logger.info(f"WebSocket disconnected (unauthenticated): {websocket.client}")
+        return
 
-    except ValueError as ve:
-        logger.error(f"Invalid chat type provided: {chat_request.chat_type}", exc_info=True)
-        raise HTTPException(status_code=400, detail=str(ve))
+    except HTTPException as http_exc:
+        logger.warning(f"HTTPException during WebSocket handshake or processing: {http_exc.detail}")
+        try:
+            if websocket.client_state == WebSocketState.CONNECTED:
+                 await websocket.send_text(json.dumps({"type": "error", "detail": http_exc.detail}))
+        except Exception: pass 
+        try:
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=http_exc.detail)
+        except Exception: pass
+        return
+
     except Exception as e:
-        logger.error(f"Error in chat_stream endpoint: {str(e)}", exc_info=True)
-        if db.in_transaction():
-             await db.rollback()
-             logger.info("Rolled back transaction due to error")
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+        error_message = f"Unexpected error in WebSocket endpoint: {str(e)}"
+        logger.error(error_message, exc_info=True)
+        try:
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.send_text(json.dumps({"type": "error", "detail": "Internal server error"}))
+        except Exception: pass
+        try:
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+        except Exception: pass
+        return
 
 @router.delete("/sessions")
 async def end_session(request: Request):
@@ -311,70 +332,191 @@ async def get_chat_messages(
     try:
         session_uuid = UUID(session_id)
         session = await get_chat_session_by_id(db, session_uuid)
-        if not session or session.user_id != current_user.id:
+        if not session: # セッションが存在しない
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # --- デバッグログ追加 ---
+        logger.debug(f"Auth check for session {session_id}: session.user_id = {session.user_id}, current_user.id = {current_user.id}")
+        # --- デバッグログ追加ここまで ---
+
+        if session.user_id != current_user.id: # 所有権がない
             raise HTTPException(status_code=403, detail="Not authorized to view messages for this session")
 
         messages = await get_chat_messages_history(db, session_id)
         return messages
-    except ValueError:
+    except ValueError: # UUIDの形式が不正な場合
         raise HTTPException(status_code=400, detail="Invalid session ID format")
-    except Exception as e:
-        logger.error(f"Error fetching messages for session {session_id}: {str(e)}")
-        if db.in_transaction():
-            await db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to fetch messages")
+    except HTTPException as http_exc: # 意図したHTTPExceptionはそのまま再送出
+        raise http_exc
+    except Exception as e: # その他の予期せぬエラー
+        logger.error(f"Unexpected error fetching messages for session {session_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch messages due to an unexpected error.")
 
 @router.patch("/sessions/{session_id}/archive")
 async def archive_chat_session(
     session_id: str,
-    current_user: User = Depends(require_permission('chat_session_read')),
-    db: AsyncSession = Depends(get_async_db),
-    chat_type: str = "general"
+    current_user: User = Depends(require_permission('chat_session_read')), 
+    db: AsyncSession = Depends(get_async_db)
+    # chat_type クエリパラメータを削除
 ):
     try:
         session_uuid = UUID(session_id)
-        updated_session = await update_session_status(db, session_uuid, current_user.id, "ARCHIVED", chat_type)
+
+        # 1. まずセッションを取得して存在確認と所有権確認、そして chat_type を得る
+        session_to_archive = await get_chat_session_by_id(db, session_uuid)
+
+        if not session_to_archive:
+            raise HTTPException(status_code=404, detail="Session to archive not found")
+        
+        if session_to_archive.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to archive this session")
+
+        # 2. 取得したセッションの chat_type を使ってステータスを更新
+        updated_session = await update_session_status(
+            db, 
+            session_uuid, 
+            current_user.id, 
+            "ARCHIVED", 
+            session_to_archive.chat_type.value # 実際のチャットタイプを渡す
+        )
+        
         if not updated_session:
-            logger.error(f"update_session_status returned None unexpectedly for session {session_id}")
-            raise HTTPException(status_code=500, detail="Failed to archive session due to unexpected error.")
+            logger.error(f"update_session_status returned None unexpectedly for session {session_id} during archive.")
+            raise HTTPException(status_code=500, detail="Failed to archive session due to an unexpected internal error.")
+        
         return updated_session
-    except ValueError as ve:
-        detail = str(ve)
-        status_code = 400
-        if "Invalid session ID format" in detail:
-            status_code = 400
-        elif "Invalid chat type" in detail:
-            status_code = 400
-        else:
-            status_code = 400
-        logger.error(f"Error processing archive request: {detail}")
-        raise HTTPException(status_code=status_code, detail=detail)
+    except ValueError: # UUID(session_id) でのエラー
+        raise HTTPException(status_code=400, detail="Invalid session ID format")
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        logger.error(f"Error archiving session {session_id}: {str(e)}")
-        if db.in_transaction():
-             await db.rollback()
+        logger.error(f"Error archiving session {session_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to archive session")
+
+@router.patch("/sessions/{session_id}/unarchive")
+async def unarchive_chat_session(
+    session_id: str,
+    current_user: User = Depends(require_permission('chat_session_read')),
+    db: AsyncSession = Depends(get_async_db)
+):
+    try:
+        session_uuid = UUID(session_id)
+        session_to_unarchive = await get_chat_session_by_id(db, session_uuid)
+
+        if not session_to_unarchive:
+            raise HTTPException(status_code=404, detail="Session to unarchive not found")
+        
+        if session_to_unarchive.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to unarchive this session")
+
+        updated_session = await update_session_status(
+            db,
+            session_uuid,
+            current_user.id,
+            ChatSessionStatusEnum.ACTIVE.value, # SessionStatus.ACTIVE.value から変更
+            session_to_unarchive.chat_type.value
+        )
+
+        if not updated_session:
+            logger.error(f"update_session_status returned None for session {session_id} during unarchive.")
+            raise HTTPException(status_code=500, detail="Failed to unarchive session due to internal error.")
+            
+        return updated_session
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID format")
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        logger.error(f"Error unarchiving session {session_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to unarchive session")
 
 @router.get("/sessions", response_model=List[ChatSessionSummary])
 async def get_chat_sessions(
     current_user: User = Depends(require_permission('chat_session_read')),
     db: AsyncSession = Depends(get_async_db),
-    chat_type: Optional[ChatType] = None,
-    status: Optional[ChatSessionStatus] = None
+    chat_type_str: Optional[str] = Query(None, alias="chat_type"), # 文字列として受け取り、エイリアスを指定
+    status_str: Optional[str] = Query(None, alias="status")       # 文字列として受け取り、エイリアスを指定
 ):
+    """
+    ユーザーのチャットセッションのリストを取得します。
+    オプションでチャットタイプとステータスでフィルタリングできます。
+    """
+    logger.debug(f"Attempting to fetch sessions for user {current_user.email} with chat_type_str='{chat_type_str}' and status_str='{status_str}'")
+    
+    chat_type_enum: Optional[ChatTypeEnum] = None
+    if chat_type_str:
+        try:
+            # ChatTypeEnum の値は小文字スネークケースなので、入力もそれに合わせる
+            chat_type_enum = ChatTypeEnum(chat_type_str.lower().replace('-', '_'))
+        except ValueError:
+            logger.warning(f"Invalid chat_type string received: {chat_type_str}. Valid values are: {[e.value for e in ChatTypeEnum]}")
+            # 422を返すか、フィルタリングなしとするか。ここではフィルタリングなしとする。
+            # raise HTTPException(status_code=422, detail=f"Invalid chat_type: {chat_type_str}")
+            pass 
+    
+    status_enum: Optional[ChatSessionStatusEnum] = None
+    if status_str:
+        try:
+            # SessionStatusEnum の値は大文字なので、入力もそれに合わせる
+            status_enum = ChatSessionStatusEnum(status_str.upper())
+        except ValueError:
+            logger.warning(f"Invalid status string received: {status_str}. Valid values are: {[e.value for e in ChatSessionStatusEnum]}")
+            # raise HTTPException(status_code=422, detail=f"Invalid status: {status_str}")
+            pass
+
     try:
-        sessions = await get_user_chat_sessions(
-            db,
-            current_user.id,
-            chat_type=chat_type,
-            status=status
+        chat_type_value_for_crud = chat_type_enum.value if chat_type_enum else None
+        # SessionStatusEnum は str を継承したので .value は文字列 (e.g. "ACTIVE")
+        status_value_for_crud = status_enum.value if status_enum else None
+
+        logger.debug(f"Calling get_user_chat_sessions with user_id='{current_user.id}', chat_type='{chat_type_value_for_crud}', session_status='{status_value_for_crud}'")
+
+        sessions_db = await get_user_chat_sessions(
+            db=db, 
+            user_id=current_user.id, 
+            chat_type=chat_type_value_for_crud, 
+            status=status_value_for_crud
         )
-        return sessions
+        
+        logger.debug(f"Retrieved {len(sessions_db)} sessions from DB.")
+        # デバッグ: 取得したセッションの最初の1件の型と内容を出力
+        # if sessions_db:
+        #    logger.debug(f"First session from DB raw type: {type(sessions_db[0])}, content: {sessions_db[0].__dict__ if hasattr(sessions_db[0], '__dict__') else sessions_db[0]}")
+
+
+        # response_model=List[ChatSessionSummary] により、FastAPIが自動的に変換を試みる
+        # sessions_dbの各要素がChatSessionSummaryのフィールドと互換性があるか確認
+        # 特に、ChatSessionSummaryのchat_typeはChatTypeEnum型なので、
+        # sessions_dbから取得したchat_typeの文字列がChatTypeEnumの有効な値である必要がある。
+        # get_user_chat_sessions が返すオブジェクトの chat_type フィールドがEnumのメンバーの .value (e.g., "self_analysis") であることを期待。
+        
+        # 手動で変換する場合の例 (FastAPIの自動変換に任せる前にデバッグとして)
+        # response_data = []
+        # for session_obj in sessions_db:
+        #     try:
+        #         # DBのchat_type (文字列) を ChatTypeEnum に変換
+        #         db_chat_type_enum = ChatTypeEnum(session_obj.chat_type) if session_obj.chat_type else None
+        #         summary = ChatSessionSummary(
+        #             id=session_obj.id,
+        #             title=session_obj.title,
+        #             chat_type=db_chat_type_enum, # Enum型で渡す
+        #             created_at=session_obj.created_at,
+        #             updated_at=session_obj.updated_at
+        #         )
+        #         response_data.append(summary)
+        #     except Exception as conv_e:
+        #         logger.error(f"Error converting session DB object to ChatSessionSummary: {conv_e}, object: {session_obj.__dict__ if hasattr(session_obj, '__dict__') else session_obj}", exc_info=True)
+        #         # エラーのあるオブジェクトはスキップするか、エラーレスポンスを返す
+        # return response_data
+
+        return sessions_db
+
     except Exception as e:
-        logger.error(f"Error fetching chat sessions for user {current_user.id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch chat sessions")
+        logger.error(f"Error in get_chat_sessions for user {current_user.email}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch chat sessions."
+        )
 
 @router.get("/{chat_id}/checklist")
 async def get_checklist_evaluation_endpoint(
@@ -387,7 +529,7 @@ async def get_checklist_evaluation_endpoint(
         if not session or session.user_id != current_user.id:
              raise HTTPException(status_code=403, detail="Not authorized to view this evaluation")
 
-        evaluation = await get_evaluation_by_chat_id(db, chat_id)
+        evaluation = await get_evaluation_by_session_id(db, chat_id)
         if not evaluation:
             return []
 
@@ -461,21 +603,21 @@ async def create_new_chat_session(
     )
     return session
 
-@router.get("/sessions/{session_id}", response_model=ChatSession)
-def read_chat_session(
-    session_id: UUID,
-    db: Session = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_user)
+@router.get("/{session_id}", response_model=ChatSession)
+async def read_chat_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(require_permission("chat_session_read"))
 ):
-    """
-    特定のチャットセッションの詳細を取得します。
-    メッセージは含まれません。メッセージ取得は別のエンドポイントを使用します。
-    """
-    session = crud.chat.get_chat_session(db=db, session_id=session_id)
-    if not session:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
-    if session.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this session")
+    """指定されたIDのチャットセッションを取得する"""
+    try:
+        session_uuid = UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID format")
+
+    session = await crud.chat.get_chat_session_by_id(db=db, session_id=session_uuid)
+    if not session or session.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Chat session not found")
     return session
 
 @router.post("/sessions/{session_id}/messages/", response_model=ChatMessageSchema, status_code=status.HTTP_201_CREATED)

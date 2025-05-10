@@ -11,8 +11,8 @@ class ChatType(str, enum.Enum):
     ADMISSION = "admission" # 総合型選抜
     STUDY_SUPPORT = "study_support" # 汎用学習支援
     GENERAL = "general" # スキーマにあったもの (元々ここにあった)
-    # CONSULTATION = "consultation" # Keep commented out if not used
-    # FAQ = "faq" # Keep commented out if not used
+    CONSULTATION = "consultation" # コメントアウトを解除
+    FAQ = "faq" # コメントアウトを解除済み
     # 必要に応じて他のタイプを追加
 
 class SessionType(enum.Enum):
@@ -20,7 +20,7 @@ class SessionType(enum.Enum):
     CONSULTATION = "consultation"
     FAQ = "faq"
 
-class SessionStatus(enum.Enum):
+class SessionStatus(str, enum.Enum):
     ACTIVE = "ACTIVE"
     CLOSED = "CLOSED"
     ARCHIVED = "ARCHIVED"

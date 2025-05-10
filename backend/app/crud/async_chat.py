@@ -14,8 +14,8 @@ from app.models.enums import SessionStatus
 async def get_user_chat_sessions(
     db: AsyncSession,
     user_id: uuid.UUID,
-    chat_type: Optional[ChatType] = None,
-    status: Optional[SessionStatus] = None
+    chat_type: Optional[str] = None,
+    status: Optional[str] = None
 ) -> List[chat_models.ChatSession]:
     """
     指定されたユーザーのチャットセッションを非同期で取得します。
@@ -23,9 +23,9 @@ async def get_user_chat_sessions(
     """
     stmt = select(chat_models.ChatSession).where(chat_models.ChatSession.user_id == user_id)
     if chat_type:
-        stmt = stmt.where(chat_models.ChatSession.chat_type == chat_type.value)
+        stmt = stmt.where(chat_models.ChatSession.chat_type == chat_type)
     if status:
-        stmt = stmt.where(chat_models.ChatSession.status == str(status.value))
+        stmt = stmt.where(chat_models.ChatSession.status == status)
 
     stmt = stmt.order_by(chat_models.ChatSession.updated_at.desc())
     

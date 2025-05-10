@@ -1,5 +1,5 @@
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
-import { ChatSession, ChatMessage } from '@/types/chat'; // Ensure types are correctly defined and imported
+import { ChatSession, ChatMessage, ChatTypeEnum, type ChatTypeValue } from '@/types/chat'; // Ensure types are correctly defined and imported
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5050';
 const CHAT_API_URL = `${API_BASE_URL}/api/v1/chat`;
@@ -95,17 +95,35 @@ export const archiveChatSession = async (sessionId: string): Promise<ChatSession
 
 /**
  * Sends a message and processes the streaming response.
- * @param sessionId ID of the session (must not be null)
- * @param message The message content
+ * @param sessionId ID of the session (null for new session)
+ * @param messageContent The message content
+ * @param chatType The type of chat (e.g., ChatType.ADMISSION)
  * @param onChunk Callback function called with each received chunk of the AI response
+ * @param onSessionInitialized Optional callback function called when a new session ID is initialized
  */
 export const sendMessageStream = async (
-    sessionId: string, 
-    message: string,
-    onChunk: (chunk: string) => void
+    sessionId: string | null,
+    messageContent: string,
+    chatType: ChatTypeValue,
+    onChunk: (chunk: string) => void,
+    onSessionInitialized?: (newSessionId: string, initialTitle?: string) => void
 ): Promise<void> => {
     const url = `${CHAT_API_URL}/stream`;
-    console.log(`[ChatService] Sending message stream to: ${url} for session: ${sessionId}`);
+    console.log(`[ChatService] Sending message stream to: ${url}. Session ID: ${sessionId}, Chat Type: ${chatType}, Message: "${messageContent}"`);
+
+    const requestBody: {
+        message: string;
+        chat_type: ChatTypeValue;
+        session_id?: string;
+    } = {
+        message: messageContent,
+        chat_type: chatType,
+    };
+
+    if (sessionId) {
+        requestBody.session_id = sessionId;
+    }
+
     try {
         const response = await fetchWithAuth(url, {
             method: 'POST',
@@ -113,59 +131,104 @@ export const sendMessageStream = async (
                 'Content-Type': 'application/json',
                 'Accept': 'text/event-stream'
             },
-            body: JSON.stringify({ 
-                session_id: sessionId, 
-                content: message,
-                session_type: "CONSULTATION" // Match backend expectation
-            }),
+            body: JSON.stringify(requestBody),
         });
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`HTTP error ${response.status}: ${errorText}`);
+            console.error(`[ChatService] HTTP error ${response.status}: ${errorText}`);
+            // より詳細なエラー情報を取得試行
+            let detail = errorText;
+            try {
+                const errorJson = JSON.parse(errorText);
+                detail = errorJson.detail || errorText;
+            } catch (e) {
+                // JSONパース失敗時はそのままテキストを使用
+            }
+            throw new Error(`メッセージの送信に失敗しました。(サーバーエラー: ${response.status} ${detail})`);
         }
 
         if (!response.body) {
-            throw new Error('Response body is null for stream');
+            throw new Error('ストリーミング応答のボディがありません。');
         }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let newSessionIdReceived = false;
 
         while (true) {
             const { done, value } = await reader.read();
             if (done) {
                 console.log("[ChatService] Stream finished.");
+                if (buffer.trim()) { // バッファに残りがあれば処理
+                    // 最後のチャンクがJSON形式である可能性も考慮 (ただし通常はプレーンテキスト)
+                     try {
+                        const parsedChunk = JSON.parse(buffer.trim());
+                        if (parsedChunk.event === 'session_initialized' && parsedChunk.session_id && onSessionInitialized && !newSessionIdReceived) {
+                            onSessionInitialized(parsedChunk.session_id, parsedChunk.title);
+                            newSessionIdReceived = true;
+                        } else if (parsedChunk.content) {
+                            onChunk(parsedChunk.content);
+                        } else {
+                             onChunk(buffer.trim()); // JSONだが期待した形式でない場合はそのまま
+                        }
+                    } catch (_e) {
+                        onChunk(buffer.trim()); // JSONでなければそのままテキストとして処理
+                    }
+                }
                 break;
             }
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; 
+            buffer = lines.pop() || '';
 
             for (const line of lines) {
                 if (line.startsWith('data:')) {
                     const chunkData = line.substring(5).trim();
                     if (chunkData) {
+                        if (chunkData === "[DONE]") { // バックエンドが [DONE] を送る場合
+                            console.log("[ChatService] Received [DONE] signal from stream.");
+                            // done フラグが true になるので、通常はこのループの外で break
+                            continue;
+                        }
                         try {
-                            const parsedChunk = JSON.parse(chunkData);
-                            if (typeof parsedChunk.content === 'string') {
-                                onChunk(parsedChunk.content);
-                            } else {
-                                console.warn("[ChatService] Received non-string content:", parsedChunk);
+                            const parsedEvent = JSON.parse(chunkData);
+                            if (parsedEvent.event === 'session_initialized' && parsedEvent.session_id && onSessionInitialized && !newSessionIdReceived) {
+                                console.log(`[ChatService] New session initialized from stream: ${parsedEvent.session_id}, Title: ${parsedEvent.title}`);
+                                onSessionInitialized(parsedEvent.session_id, parsedEvent.title);
+                                newSessionIdReceived = true;
+                                if (parsedEvent.content) { // 初期化イベントにメッセージチャンクが含まれる場合
+                                    onChunk(parsedEvent.content);
+                                }
+                            } else if (parsedEvent.event === 'chunk' && typeof parsedEvent.content === 'string') {
+                                onChunk(parsedEvent.content);
+                            } else if (parsedEvent.event === 'error') {
+                                console.error("[ChatService] Received error event from stream:", parsedEvent.detail);
+                                throw new Error(parsedEvent.detail || "ストリームからのエラーイベント");
+                            } else if (typeof parsedEvent.content === 'string') { // eventタイプがないがcontentがある場合
+                                onChunk(parsedEvent.content);
+                            }
+                             else {
+                                // 上記のどれにも当てはまらないJSONだが、とりあえずそのまま送ってみる (デバッグ用)
+                                // 本来はバックエンドの出力形式を固定すべき
+                                console.warn("[ChatService] Received unhandled JSON structure in stream, treating as plain text:", chunkData);
+                                onChunk(chunkData);
                             }
                         } catch (_e) {
-                            console.warn("[ChatService] Chunk not JSON, treating as text:", chunkData);
-                            console.log("Error:", _e);
+                            // JSONパースに失敗した場合、そのままテキストとして扱う
                             onChunk(chunkData);
                         }
                     }
+                } else if (line.trim()) { // "data:" プレフィックスなしの行 (稀だが念のため)
+                    onChunk(line.trim());
                 }
             }
         }
-    } catch (_error) {
-        console.error('[ChatService] Error in sendMessageStream:', _error);
-        throw _error; // Re-throw for mutation handler
+    } catch (error) {
+        console.error('[ChatService] Error in sendMessageStream:', error);
+        // エラーを onChunk 経由ではなく、呼び出し元にスローして処理させる
+        throw error;
     }
 };
 
@@ -184,6 +247,7 @@ export const restoreChatSession = async (sessionId: string): Promise<ChatSession
         title: `復元済: ${sessionId.substring(0, 6)}`,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        chat_type: ChatTypeEnum.GENERAL,
     };
     return mockSession; 
     // throw new Error("Restore functionality not implemented yet.");
