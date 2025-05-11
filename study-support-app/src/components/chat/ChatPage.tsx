@@ -150,40 +150,77 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
   const activeChatType = contextChatType; // Use the renamed context variable
 
   return (
-    <div className="flex h-full bg-gray-100">
+    <div className="flex h-screen min-h-[500px] w-full overflow-hidden bg-gray-100">
       <ChatSidebar />
-      <div className="flex-1 flex flex-col border-l border-gray-300">
+      <div className="flex-1 flex flex-col h-full min-h-0 border-l border-gray-300">
         <ChatWindow
         />
-        <footer className="flex-none bg-white border-t border-gray-200 px-4 py-3">
-          <form onSubmit={handleSendMessage} className="flex space-x-3 items-center">
-            <Textarea
-              ref={textareaRef}
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder={!isConnected ? "接続していません..." : (!canSendMessagePermission ? "メッセージ送信権限がありません" : (viewingSessionStatus === 'ARCHIVED' ? "アーカイブされたチャットです (読み取り専用)" : "メッセージを入力... (Shift+Enterで改行)"))}
-              rows={1}
-              className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[44px] max-h-[150px] overflow-y-auto disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={!isConnected || chatIsLoading || isAuthLoading || !canSendMessagePermission || viewingSessionStatus === 'ARCHIVED'}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage(e);
+        <footer className="flex-none bg-white border-t border-gray-200 px-6 py-3 shadow-sm">
+          <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto w-full">
+            <div className="relative flex items-center">
+              <Textarea
+                ref={textareaRef}
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder={
+                  !isConnected 
+                    ? "接続していません..." 
+                    : (!canSendMessagePermission 
+                      ? "メッセージ送信権限がありません" 
+                      : (viewingSessionStatus === 'ARCHIVED' 
+                        ? "アーカイブされたチャットです (読み取り専用)" 
+                        : "メッセージを入力... (Shift+Enterで改行)"))
                 }
-              }}
-            />
-            <Button
-              type="submit"
-              disabled={!isConnected || !newMessage.trim() || chatIsLoading || isAuthLoading || !canSendMessagePermission || viewingSessionStatus === 'ARCHIVED'}
-              className="h-[44px] w-[44px] flex-shrink-0 flex items-center justify-center bg-blue-600 text-white rounded-full hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:bg-blue-400 transition-colors duration-150"
-              size="icon"
-            >
-              {chatIsLoading && !messages.find(m=>m.isStreaming) ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <SendHorizontal className="h-5 w-5" />
+                rows={1}
+                className="flex-1 py-3 px-4 pr-12 bg-gray-50 border-0 rounded-full focus:ring-2 focus:ring-indigo-500 focus:bg-white resize-none min-h-[48px] max-h-[150px] overflow-y-auto shadow-sm transition-all duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-70"
+                disabled={!isConnected || chatIsLoading || isAuthLoading || !canSendMessagePermission || viewingSessionStatus === 'ARCHIVED'}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage(e);
+                  }
+                }}
+              />
+              <Button
+                type="submit"
+                disabled={!isConnected || !newMessage.trim() || chatIsLoading || isAuthLoading || !canSendMessagePermission || viewingSessionStatus === 'ARCHIVED'}
+                className="absolute right-2 h-10 w-10 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center transition-all duration-200 disabled:opacity-60 disabled:bg-gray-400 focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                size="icon"
+              >
+                {chatIsLoading && !messages.find(m=>m.isStreaming) ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <SendHorizontal className="h-5 w-5" />
+                )}
+              </Button>
+            </div>
+            
+            {/* 接続状態とパーミッション情報 */}
+            <div className="flex justify-between items-center mt-2 px-1 text-xs text-gray-500">
+              <div className="flex items-center">
+                {isConnected ? (
+                  <span className="flex items-center text-green-600">
+                    <span className="h-1.5 w-1.5 rounded-full bg-green-500 mr-1.5 animate-pulse"></span>
+                    接続中
+                  </span>
+                ) : (
+                  <span className="flex items-center text-red-600">
+                    <span className="h-1.5 w-1.5 rounded-full bg-red-500 mr-1.5"></span>
+                    未接続
+                  </span>
+                )}
+              </div>
+              
+              {/* チャットタイプ表示 */}
+              {activeChatType && (
+                <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium">
+                  {activeChatType === ChatTypeEnum.STUDY_SUPPORT ? '学習支援' :
+                   activeChatType === ChatTypeEnum.SELF_ANALYSIS ? '自己分析' :
+                   activeChatType === ChatTypeEnum.ADMISSION ? '総合型選抜' : 
+                   activeChatType === ChatTypeEnum.FAQ ? 'FAQ' : activeChatType}
+                </span>
               )}
-            </Button>
+            </div>
           </form>
         </footer>
       </div>

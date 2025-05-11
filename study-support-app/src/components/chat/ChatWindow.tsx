@@ -5,6 +5,7 @@ import MessageList from './MessageList';
 import { useChat } from '@/store/chat/ChatContext';
 import { useSession } from 'next-auth/react';
 import { ChatTypeEnum } from '@/types/chat'; // ChatTypeEnumをインポート
+import { Loader2, AlertCircle, UserX, MessageSquare } from 'lucide-react';
 
 // ChatWindowProps はほぼ不要になるか、表示に関するオプションのみになる
 // interface ChatWindowProps {
@@ -12,7 +13,7 @@ import { ChatTypeEnum } from '@/types/chat'; // ChatTypeEnumをインポート
 //   // sessionId?: string;    // Contextから取得
 // }
 
-const ChatWindow: React.FC<{/* ChatWindowProps */}> = (/*props*/) => {
+const ChatWindow: React.FC = () => {
   const {
     messages,
     isLoading, 
@@ -49,59 +50,133 @@ const ChatWindow: React.FC<{/* ChatWindowProps */}> = (/*props*/) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, messages.length, authStatus, isLoading, fetchMessages]); // fetchMessages を依存配列に追加
 
-
+  // 認証ローディング状態
   if (authStatus === 'loading') {
     return (
-      <div className="flex flex-col flex-1 items-center justify-center p-4">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        <p className="mt-2 text-muted-foreground">認証情報を確認中...</p>
-      </div>
-    );
-  }
-  if (authStatus === 'unauthenticated') {
-    return (
-      <div className="flex flex-col flex-1 items-center justify-center p-4">
-        <p className="text-muted-foreground">チャットを利用するにはログインしてください。</p>
+      <div className="flex flex-col flex-1 items-center justify-center h-full min-h-[300px] p-8 bg-gradient-to-b from-white to-gray-50">
+        <div className="flex flex-col items-center justify-center">
+          <div className="w-16 h-16 relative mb-4">
+            <div className="absolute inset-0 rounded-full border-t-4 border-indigo-500 animate-spin"></div>
+            <div className="absolute inset-3 rounded-full bg-white shadow-md flex items-center justify-center">
+              <Loader2 className="w-6 h-6 text-indigo-500" />
+            </div>
+          </div>
+          <h3 className="text-lg font-medium text-gray-800">認証情報を確認中</h3>
+          <p className="mt-2 text-gray-500 text-center max-w-xs">ログイン情報を検証しています...</p>
+        </div>
       </div>
     );
   }
 
+  // 未認証状態
+  if (authStatus === 'unauthenticated') {
+    return (
+      <div className="flex flex-col flex-1 items-center justify-center h-full min-h-[300px] p-8 bg-gradient-to-b from-white to-gray-50">
+        <div className="flex flex-col items-center justify-center text-center max-w-md">
+          <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mb-4">
+            <UserX className="h-8 w-8 text-red-500" />
+          </div>
+          <h3 className="text-xl font-semibold text-gray-800 mb-3">ログインが必要です</h3>
+          <p className="text-gray-600 mb-6">
+            チャット機能を利用するには、ログインが必要です。アカウントをお持ちでない場合は、新規登録してください。
+          </p>
+          <div className="flex space-x-4">
+            <a href="/auth/login" className="px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-150 font-medium">
+              ログイン
+            </a>
+            <a href="/auth/register" className="px-5 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-150 font-medium">
+              新規登録
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 履歴読み込み中
   if (isLoading && messages.length === 0 && sessionId) {
     return (
-      <div className="flex flex-col flex-1 items-center justify-center p-4">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        <p className="mt-2 text-muted-foreground">会話履歴を読み込み中...</p>
+      <div className="flex flex-col flex-1 items-center justify-center h-full min-h-[300px] p-8 bg-gradient-to-b from-white to-gray-50">
+        <div className="animate-pulse flex flex-col items-center">
+          <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mb-4">
+            <Loader2 className="h-6 w-6 text-indigo-500 animate-spin" />
+          </div>
+          <h3 className="text-lg font-medium text-gray-800">会話履歴を読み込み中</h3>
+          <p className="mt-2 text-gray-500">少々お待ちください...</p>
+        </div>
       </div>
     );
   }
   
   // セッションが開始されていない、またはメッセージが空の場合の表示
   if (!sessionId && messages.length === 0) {
-    let welcomeMessage = "チャットへようこそ！";
+    let welcomeMessage = "AIチャットへようこそ";
+    let welcomeDescription = "下の入力欄からメッセージを送信して会話を始めましょう";
+    
     switch(currentChatType) {
-        case ChatTypeEnum.SELF_ANALYSIS:
-            welcomeMessage = "自己分析チャットへようこそ！あなたのことについて教えてください。";
-            break;
-        case ChatTypeEnum.ADMISSION:
-            welcomeMessage = "入試相談チャットへようこそ！入試に関する質問にお答えします。";
-            break;
-        // 他のチャットタイプのウェルカムメッセージ
+      case ChatTypeEnum.SELF_ANALYSIS:
+        welcomeMessage = "自己分析チャットへようこそ";
+        welcomeDescription = "あなた自身についての質問をして、自己理解を深めましょう";
+        break;
+      case ChatTypeEnum.ADMISSION:
+        welcomeMessage = "総合型選抜チャットへようこそ";
+        welcomeDescription = "入試に関する質問や相談に答えます";
+        break;
+      case ChatTypeEnum.STUDY_SUPPORT:
+        welcomeMessage = "学習支援チャットへようこそ";
+        welcomeDescription = "学習に関するサポートや質問に答えます";
+        break;
+      case ChatTypeEnum.FAQ:
+        welcomeMessage = "FAQチャットへようこそ";
+        welcomeDescription = "よくある質問に答えます";
+        break;
     }
+    
     return (
-      <div className="flex flex-col flex-1 items-center justify-center p-6 text-center">
-        <h2 className="text-xl font-semibold mb-3">{welcomeMessage}</h2>
-        <p className="text-muted-foreground">
-          サイドバーから過去のセッションを選択するか、下の入力欄から新しいメッセージを送信してチャットを開始してください。
-        </p>
+      <div className="flex flex-col flex-1 items-center justify-center h-full min-h-[300px] p-8 bg-gradient-to-b from-white to-gray-50">
+        <div className="max-w-md text-center">
+          <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6">
+            <MessageSquare className="h-10 w-10 text-indigo-500" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-3">{welcomeMessage}</h2>
+          <p className="text-gray-600 mb-8">
+            {welcomeDescription}
+          </p>
+          
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+            <h3 className="font-medium text-gray-900 mb-3">チャットの始め方</h3>
+            <ul className="text-left text-sm text-gray-600 space-y-2">
+              <li className="flex items-start">
+                <span className="flex-shrink-0 h-5 w-5 rounded-full bg-indigo-100 flex items-center justify-center mr-2 mt-0.5">
+                  <span className="text-xs font-bold text-indigo-600">1</span>
+                </span>
+                下の入力欄にメッセージを入力
+              </li>
+              <li className="flex items-start">
+                <span className="flex-shrink-0 h-5 w-5 rounded-full bg-indigo-100 flex items-center justify-center mr-2 mt-0.5">
+                  <span className="text-xs font-bold text-indigo-600">2</span>
+                </span>
+                送信ボタンをクリックまたはEnterキーを押す
+              </li>
+              <li className="flex items-start">
+                <span className="flex-shrink-0 h-5 w-5 rounded-full bg-indigo-100 flex items-center justify-center mr-2 mt-0.5">
+                  <span className="text-xs font-bold text-indigo-600">3</span>
+                </span>
+                AIからの応答を待つ
+              </li>
+            </ul>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col flex-1 overflow-hidden h-full"> 
+    <div className="flex flex-col flex-1 overflow-hidden h-full min-h-0"> 
       {error && (
-        <div className="p-3 bg-red-100 text-red-700 text-sm text-center sticky top-0 z-10 shadow-sm">
-          エラー: {typeof error === 'string' ? error : error.message} 
+        <div className="p-3 bg-red-50 border-b border-red-200 text-red-700 text-sm flex items-center justify-center shadow-sm">
+          <AlertCircle className="h-4 w-4 mr-2" />
+          <span>エラー: {typeof error === 'string' ? error : error.message}</span>
         </div>
       )}
       <MessageList />

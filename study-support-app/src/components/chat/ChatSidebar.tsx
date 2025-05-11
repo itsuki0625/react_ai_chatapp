@@ -92,6 +92,18 @@ const ChatSidebar: React.FC = () => {
     }
   };
 
+  const getAINameByType = (type: ChatTypeValue | null | undefined): string => {
+    if (!type) return "アシスタント";
+    switch (type) {
+      case ChatTypeEnum.SELF_ANALYSIS: return "自己分析AI";
+      case ChatTypeEnum.ADMISSION: return "入試アドバイザーAI";
+      case ChatTypeEnum.STUDY_SUPPORT: return "学習サポートAI";
+      case ChatTypeEnum.GENERAL: return "ジェネラルAI";
+      case ChatTypeEnum.FAQ: return "ヘルプAI";
+      default: return "アシスタントAI";
+    }
+  };
+
   const handleToggleSidebar = () => {
     setIsOpen(!isOpen);
   };
@@ -182,7 +194,7 @@ const ChatSidebar: React.FC = () => {
   return (
     <div className={`transition-all duration-300 ease-in-out ${isOpen ? "w-72" : "w-16"} bg-gray-800 text-white flex flex-col`}>
       <div className="flex items-center justify-between p-4 border-b border-gray-700">
-        {isOpen && <h2 className="text-lg font-semibold">{`${getChatTypeName(currentChatType)} AI：チャット履歴`}</h2>}
+        {isOpen && <h2 className="text-lg font-semibold">{getAINameByType(currentChatType)}</h2>}
         <button onClick={handleToggleSidebar} className="p-1 hover:bg-gray-700 rounded">
           {isOpen ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
         </button>
@@ -219,7 +231,7 @@ const ChatSidebar: React.FC = () => {
             <div
               key={session.id}
               onClick={() => handleSelectSession(session.id, session.chat_type)} 
-              className={`p-3 rounded-lg cursor-pointer hover:bg-gray-700 ${currentSessionIdFromContext === session.id ? "bg-gray-700 font-semibold" : ""}`}
+              className={`p-2 rounded-lg cursor-pointer hover:bg-gray-700 ${currentSessionIdFromContext === session.id ? "bg-gray-700 font-semibold" : ""}`}
             >
               <div className="flex justify-between items-center">
                 <span className="truncate text-sm">{session.title || "無題のチャット"}</span>
@@ -230,7 +242,7 @@ const ChatSidebar: React.FC = () => {
                       className="p-1 hover:bg-gray-600 rounded"
                       title="アーカイブ解除"
                     >
-                      <ArchiveRestore size={16} />
+                      <ArchiveRestore size={14} />
                     </button>
                   ) : (
                     <button 
@@ -238,14 +250,14 @@ const ChatSidebar: React.FC = () => {
                       className="p-1 hover:bg-gray-600 rounded"
                       title="アーカイブ"
                     >
-                      <Archive size={16} />
+                      <Archive size={14} />
                     </button>
                   )}
                 </div>
               </div>
-              <p className="text-xs text-gray-400 truncate">{session.last_message_summary || "メッセージなし"}</p>
-              <p className="text-xs text-gray-500">
-                {session.updated_at ? new Date(session.updated_at).toLocaleString() : (session.created_at ? new Date(session.created_at).toLocaleString() : '日時不明')}
+              
+              <p className="text-xs text-gray-500 mt-1">
+                {session.updated_at ? new Date(session.updated_at).toLocaleString('ja-JP', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : (session.created_at ? new Date(session.created_at).toLocaleString('ja-JP', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : '日時不明')}
               </p>
             </div>
           ))}
