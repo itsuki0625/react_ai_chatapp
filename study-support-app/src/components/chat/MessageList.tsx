@@ -35,16 +35,16 @@ const MessageList: React.FC = () => { // Props を削除
   // console.log("Is AI Streaming (in MessageList)?", isAiStreaming);
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 pt-6 pb-8 h-full min-h-0 space-y-6 bg-gradient-to-b from-gray-50 to-white scrollbar-thin scrollbar-thumb-indigo-300 scrollbar-track-gray-100 scroll-smooth">
+    <div className="flex-1 overflow-y-auto h-full space-y-6 bg-white pb-40 p-4 pt-6 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100 scroll-smooth">
       {messages.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-center">
+        <div className="flex flex-col items-center justify-center h-full text-center pb-40">
           <div className="w-16 h-16 mb-4 rounded-full bg-blue-50 flex items-center justify-center">
             <svg className="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
             </svg>
           </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">会話を始めましょう</h3>
-          <p className="text-gray-500 max-w-sm">下のフォームからメッセージを送信して、AIとの会話を開始できます。</p>
+          <h3 className="text-lg font-medium text-slate-900 mb-2">会話を始めましょう</h3>
+          <p className="text-slate-500 max-w-sm">下のフォームからメッセージを送信して、AIとの会話を開始できます。</p>
         </div>
       ) : (
         <>
@@ -54,7 +54,7 @@ const MessageList: React.FC = () => { // Props を削除
           
           {isLoading && messages.some(m => m.isStreaming) && (
             <div className="flex justify-center py-2">
-              <div className="inline-flex items-center px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 text-xs">
+              <div className="inline-flex items-center px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-xs">
                 <Loader2 className="w-3 h-3 mr-2 animate-spin" />
                 応答を生成中...
               </div>

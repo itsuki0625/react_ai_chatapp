@@ -1,5 +1,9 @@
 import ChatPage from '@/components/chat/ChatPage';
 
 export default function Page() {
-  return <ChatPage />;
+  return (
+    <div className="h-full w-full">
+      <ChatPage />
+    </div>
+  );
 }

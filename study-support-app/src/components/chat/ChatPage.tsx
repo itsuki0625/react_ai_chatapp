@@ -1,14 +1,10 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Loader2, SendHorizontal } from 'lucide-react';
+import React, { useRef, useEffect } from 'react';
 import ChatSidebar from '@/components/chat/ChatSidebar';
 import ChatWindow from '@/components/chat/ChatWindow';
-import { ChecklistEvaluation } from './ChecklistEvaluation';
-import { ChatTypeValue, ChatTypeEnum, ChatMessage as FrontendChatMessage, type SessionStatusValue } from '@/types/chat'; // ChatMessage を FrontendChatMessageとしてインポート, SessionStatusValue を追加インポート
-import { useAuthHelpers } from '@/lib/authUtils';
-import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
+import { ChatInput } from '@/components/chat/ChatInput';
+import { ChatTypeValue, ChatTypeEnum } from '@/types/chat';
 import { useRouter, usePathname } from 'next/navigation';
 import { useChat } from '@/store/chat/ChatContext';
 
@@ -22,9 +18,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
   const pathname = usePathname();
 
   const {
-    messages,
     isLoading: chatIsLoading,
-    error: chatError,
     isConnected,
     sendMessage: sendChatMessage,
     changeChatType,
@@ -37,20 +31,26 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
     dispatch,
   } = useChat();
 
-  const [newMessage, setNewMessage] = useState('');
   const checklistRef = useRef<{ triggerUpdate: () => void }>(null);
-  const { hasPermission, isLoading: isAuthLoading } = useAuthHelpers();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevContextSessionIdRef = useRef<string | null | undefined>(contextSessionId);
 
   // Derived state from URL
   const getChatInfoFromPath = () => {
     const pathSegments = pathname.split('/').filter(Boolean);
     const chatSegmentIndex = pathSegments.findIndex(segment => segment === 'chat');
+    
     // Ensure chatSegmentIndex is found and there's a segment after 'chat' for type
-    const typeFromUrl = chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 1 ? pathSegments[chatSegmentIndex + 1].toUpperCase() as ChatTypeValue : undefined;
+    let typeFromUrl = undefined;
+    if (chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 1) {
+      const rawType = pathSegments[chatSegmentIndex + 1];
+      // URLの形式（ハイフン）をEnum値（アンダースコア）に変換
+      typeFromUrl = rawType.replace('-', '_').toUpperCase() as ChatTypeValue;
+      console.log('[DEBUG] Path parsing:', rawType, '->', typeFromUrl);
+    }
+    
     // Ensure there's a segment after type for session ID
     const sessionIdFromUrl = chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 2 ? pathSegments[chatSegmentIndex + 2] : undefined;
+    
     return { typeFromUrl, sessionIdFromUrl };
   };
 
@@ -133,106 +133,68 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
     router
     // prevContextSessionIdRef should not be in dependencies
   ]);
-
-  const canSendMessagePermission = hasPermission('chat_message_send');
-
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim() || chatIsLoading || isAuthLoading || !canSendMessagePermission || !isConnected) return;
-
-    sendChatMessage(newMessage);
-    setNewMessage('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
-  };
   
-  const activeChatType = contextChatType; // Use the renamed context variable
+  const activeChatType = contextChatType;
 
   return (
-    <div className="flex h-screen min-h-[500px] w-full overflow-hidden bg-gray-100">
+    <div className="flex h-full w-full overflow-hidden bg-slate-50 rounded-lg shadow-sm border border-slate-200">
       <ChatSidebar />
-      <div className="flex-1 flex flex-col h-full min-h-0 border-l border-gray-300">
-        <ChatWindow
-        />
-        <footer className="flex-none bg-white border-t border-gray-200 px-6 py-3 shadow-sm">
-          <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto w-full">
-            <div className="relative flex items-center">
-              <Textarea
-                ref={textareaRef}
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                placeholder={
-                  !isConnected 
-                    ? "接続していません..." 
-                    : (!canSendMessagePermission 
-                      ? "メッセージ送信権限がありません" 
-                      : (viewingSessionStatus === 'ARCHIVED' 
-                        ? "アーカイブされたチャットです (読み取り専用)" 
-                        : "メッセージを入力... (Shift+Enterで改行)"))
-                }
-                rows={1}
-                className="flex-1 py-3 px-4 pr-12 bg-gray-50 border-0 rounded-full focus:ring-2 focus:ring-indigo-500 focus:bg-white resize-none min-h-[48px] max-h-[150px] overflow-y-auto shadow-sm transition-all duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-70"
-                disabled={!isConnected || chatIsLoading || isAuthLoading || !canSendMessagePermission || viewingSessionStatus === 'ARCHIVED'}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage(e);
-                  }
-                }}
+      <div className="flex-1 flex flex-col h-full border-l border-slate-200">
+        <div className="bg-white py-4 px-6 border-b border-slate-200 hidden sm:block shadow-sm sticky top-0 z-10">
+          <div className="max-w-4xl mx-auto">
+            <h1 className="text-lg font-semibold text-slate-800">
+              {contextChatType === ChatTypeEnum.SELF_ANALYSIS ? '自己分析AI' :
+               contextChatType === ChatTypeEnum.ADMISSION ? '総合型選抜AI' :
+               contextChatType === ChatTypeEnum.STUDY_SUPPORT ? '学習サポートAI' :
+               contextChatType === ChatTypeEnum.FAQ ? 'FAQヘルプAI' : 'AIチャット'}
+            </h1>
+            <p className="text-sm text-slate-500">
+              {contextChatType === ChatTypeEnum.SELF_ANALYSIS ? '自己分析を深め、自分の強みを見つけましょう' :
+               contextChatType === ChatTypeEnum.ADMISSION ? '総合型選抜に関する相談や志望理由書の添削を行います' :
+               contextChatType === ChatTypeEnum.STUDY_SUPPORT ? '学習に関する質問や課題の解決をサポートします' :
+               contextChatType === ChatTypeEnum.FAQ ? 'よくある質問に回答します' : 'AIとチャットして情報を得ましょう'}
+            </p>
+          </div>
+        </div>
+        <div className="flex-1 overflow-hidden relative">
+          <ChatWindow />
+          <div className="absolute bottom-0 left-0 right-0 z-10">
+            <div className="px-4 py-3 bg-white border-t border-slate-200 shadow-lg">
+              <ChatInput 
+                onSendMessage={sendChatMessage} 
+                isLoading={chatIsLoading} 
               />
-              <Button
-                type="submit"
-                disabled={!isConnected || !newMessage.trim() || chatIsLoading || isAuthLoading || !canSendMessagePermission || viewingSessionStatus === 'ARCHIVED'}
-                className="absolute right-2 h-10 w-10 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center transition-all duration-200 disabled:opacity-60 disabled:bg-gray-400 focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                size="icon"
-              >
-                {chatIsLoading && !messages.find(m=>m.isStreaming) ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <SendHorizontal className="h-5 w-5" />
-                )}
-              </Button>
-            </div>
-            
-            {/* 接続状態とパーミッション情報 */}
-            <div className="flex justify-between items-center mt-2 px-1 text-xs text-gray-500">
-              <div className="flex items-center">
-                {isConnected ? (
-                  <span className="flex items-center text-green-600">
-                    <span className="h-1.5 w-1.5 rounded-full bg-green-500 mr-1.5 animate-pulse"></span>
-                    接続中
-                  </span>
-                ) : (
-                  <span className="flex items-center text-red-600">
-                    <span className="h-1.5 w-1.5 rounded-full bg-red-500 mr-1.5"></span>
-                    未接続
+              
+              {/* 接続状態とチャットタイプ情報 */}
+              <div className="flex justify-between items-center mt-2 px-1 text-xs text-slate-500 max-w-4xl mx-auto">
+                <div className="flex items-center">
+                  {isConnected ? (
+                    <span className="flex items-center text-green-600">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-500 mr-1.5 animate-pulse"></span>
+                      接続中
+                    </span>
+                  ) : (
+                    <span className="flex items-center text-red-600">
+                      <span className="h-1.5 w-1.5 rounded-full bg-red-500 mr-1.5"></span>
+                      未接続
+                    </span>
+                  )}
+                </div>
+                
+                {/* チャットタイプ表示 */}
+                {activeChatType && (
+                  <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
+                    {activeChatType === ChatTypeEnum.STUDY_SUPPORT ? '学習支援' :
+                     activeChatType === ChatTypeEnum.SELF_ANALYSIS ? '自己分析' :
+                     activeChatType === ChatTypeEnum.ADMISSION ? '総合型選抜' : 
+                     activeChatType === ChatTypeEnum.FAQ ? 'FAQ' : activeChatType}
                   </span>
                 )}
               </div>
-              
-              {/* チャットタイプ表示 */}
-              {activeChatType && (
-                <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium">
-                  {activeChatType === ChatTypeEnum.STUDY_SUPPORT ? '学習支援' :
-                   activeChatType === ChatTypeEnum.SELF_ANALYSIS ? '自己分析' :
-                   activeChatType === ChatTypeEnum.ADMISSION ? '総合型選抜' : 
-                   activeChatType === ChatTypeEnum.FAQ ? 'FAQ' : activeChatType}
-                </span>
-              )}
             </div>
-          </form>
-        </footer>
-      </div>
-      {/* {currentSessionIdFromContext && currentChatType === ChatTypeEnum.SELF_ANALYSIS && (
-        <div className="w-80 border-l border-gray-300 bg-gray-50 p-4 overflow-y-auto hidden lg:block">
-          <ChecklistEvaluation
-            ref={checklistRef}
-            chatId={contextSessionId} // Use renamed context variable
-            sessionType={contextChatType as ChatTypeEnum} // Use renamed context variable
-          />
+          </div>
         </div>
-      )} */}
+      </div>
     </div>
   );
 };

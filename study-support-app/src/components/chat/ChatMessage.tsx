@@ -20,10 +20,10 @@ const ChatMessageItemDisplay: React.FC<ChatMessageItemDisplayProps> = ({ message
       isUser ? "justify-end" : "justify-start"
     )}>
       {isAI && ( // AIの場合のアバター
-        <Avatar className="h-10 w-10 flex-shrink-0 ring-2 ring-indigo-200 bg-indigo-50">
+        <Avatar className="h-10 w-10 flex-shrink-0 ring-2 ring-blue-100 bg-blue-50">
           <AvatarImage src="/icons/bot.svg" alt="AI" />
           <AvatarFallback>
-            <div className="bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center w-full h-full rounded-full">
+            <div className="bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center w-full h-full rounded-full">
               <Sparkles size={20} className="text-white" />
             </div>
           </AvatarFallback>
@@ -34,8 +34,8 @@ const ChatMessageItemDisplay: React.FC<ChatMessageItemDisplayProps> = ({ message
           "p-4 rounded-2xl max-w-xs lg:max-w-md xl:max-w-lg break-words",
           "transition-all duration-200 ease-in-out",
           isUser 
-            ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-md shadow-blue-500/20" 
-            : "bg-white border border-gray-200 shadow-md shadow-gray-200/50",
+            ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-md shadow-blue-500/10" 
+            : "bg-white border border-slate-200 shadow-md shadow-slate-200/40",
           message.isError 
             ? "bg-red-50 border-red-200 text-red-800 shadow-red-500/10" 
             : ""
@@ -43,7 +43,7 @@ const ChatMessageItemDisplay: React.FC<ChatMessageItemDisplayProps> = ({ message
       >
         <p className={cn(
           "text-sm md:text-base whitespace-pre-wrap leading-relaxed",
-          !isUser && "text-gray-800"
+          !isUser && "text-slate-800"
         )}>
           {message.content}
         </p>
@@ -58,7 +58,7 @@ const ChatMessageItemDisplay: React.FC<ChatMessageItemDisplayProps> = ({ message
 
         {/* AIメッセージのストリーミング中 */}
         {isAI && message.isStreaming && (
-          <div className="flex items-center text-xs text-indigo-500 mt-2"> 
+          <div className="flex items-center text-xs text-blue-500 mt-2"> 
             <Loader2 className="mr-1 h-3 w-3 animate-spin" />
             <span className="animate-pulse">回答を生成中...</span>
           </div>
@@ -75,15 +75,15 @@ const ChatMessageItemDisplay: React.FC<ChatMessageItemDisplayProps> = ({ message
         {/* タイムスタンプ (必要に応じて表示) */}
         <p className={cn(
           "text-xs mt-1 text-right opacity-80", 
-          isUser ? "text-blue-100" : "text-gray-500"
+          isUser ? "text-blue-100" : "text-slate-500"
         )}>
           {new Date(message.timestamp).toLocaleTimeString('ja-JP', {hour: '2-digit', minute:'2-digit'})}
         </p>
       </div>
       {isUser && ( // ユーザーの場合のアバター
-        <Avatar className="h-10 w-10 flex-shrink-0 ring-2 ring-blue-400 bg-blue-50">
+        <Avatar className="h-10 w-10 flex-shrink-0 ring-2 ring-blue-200 bg-blue-50">
           <AvatarFallback>
-            <div className="bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center w-full h-full rounded-full">
+            <div className="bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center w-full h-full rounded-full">
               <User size={20} className="text-white" />
             </div>
           </AvatarFallback>

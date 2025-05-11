@@ -68,6 +68,8 @@ const ChatSidebar: React.FC = () => {
   // 初回レンダリング時または currentChatType 変更時にセッションを読み込む
   useEffect(() => {
     console.log(`[ChatSidebar EFFECT on type/auth/showArchived change] authStatus: ${authStatus}, currentChatType: ${currentChatType}, showArchived: ${showArchived}`);
+    console.log('[ChatSidebar DEBUG] CurrentChatType type:', typeof currentChatType, 'value:', currentChatType, 'enum val:', ChatTypeEnum.SELF_ANALYSIS);
+    
     if (authStatus === 'authenticated' && currentChatType) {
       if (showArchived) {
         console.log(`[ChatSidebar EFFECT] Fetching ARCHIVED sessions for ${currentChatType}. Current showArchived: ${showArchived}`);
@@ -89,18 +91,6 @@ const ChatSidebar: React.FC = () => {
       case ChatTypeEnum.GENERAL: return "ジェネラル";
       case ChatTypeEnum.FAQ: return "FAQ";
       default: return "チャット";
-    }
-  };
-
-  const getAINameByType = (type: ChatTypeValue | null | undefined): string => {
-    if (!type) return "アシスタント";
-    switch (type) {
-      case ChatTypeEnum.SELF_ANALYSIS: return "自己分析AI";
-      case ChatTypeEnum.ADMISSION: return "入試アドバイザーAI";
-      case ChatTypeEnum.STUDY_SUPPORT: return "学習サポートAI";
-      case ChatTypeEnum.GENERAL: return "ジェネラルAI";
-      case ChatTypeEnum.FAQ: return "ヘルプAI";
-      default: return "アシスタントAI";
     }
   };
 
@@ -192,27 +182,40 @@ const ChatSidebar: React.FC = () => {
   }
 
   return (
-    <div className={`transition-all duration-300 ease-in-out ${isOpen ? "w-72" : "w-16"} bg-gray-800 text-white flex flex-col`}>
-      <div className="flex items-center justify-between p-4 border-b border-gray-700">
-        {isOpen && <h2 className="text-lg font-semibold">{getAINameByType(currentChatType)}</h2>}
-        <button onClick={handleToggleSidebar} className="p-1 hover:bg-gray-700 rounded">
+    <div className={`transition-all duration-300 ease-in-out ${isOpen ? "w-72" : "w-16"} bg-white border-r border-slate-200 shadow-sm flex flex-col h-full`}>
+      <div className="flex items-center justify-between p-4 border-b border-slate-200 flex-shrink-0">
+        {isOpen && (
+          <h2 className="text-lg font-semibold text-slate-800">
+            {currentChatType?.toLowerCase() === 'self_analysis' ? '自己分析AI' :
+             currentChatType?.toLowerCase() === 'admission' ? '総合型選抜AI' :
+             currentChatType?.toLowerCase() === 'study_support' ? '学習サポートAI' :
+             currentChatType?.toLowerCase() === 'faq' ? 'ヘルプAI' : 
+             `AIチャット${currentChatType ? ` (${currentChatType})` : ''}`}
+          </h2>
+        )}
+        <button onClick={handleToggleSidebar} className="p-1 hover:bg-slate-100 rounded text-slate-600">
           {isOpen ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
         </button>
       </div>
 
       {isOpen && (
-        <div className="p-4">
+        <div className="p-4 flex-shrink-0">
+          <div className="text-xs text-slate-500 mb-2">
+            ChatType: {String(currentChatType) || 'なし'} / 
+            Enum: {String(ChatTypeEnum.SELF_ANALYSIS)} /
+            Equal?: {String(currentChatType === ChatTypeEnum.SELF_ANALYSIS)}
+          </div>
           <button
             onClick={handleStartNewChat}
             disabled={showArchived} // アーカイブ表示中は新規チャットボタンを無効化
-            className="w-full flex items-center justify-center px-4 py-2 mb-3 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-500"
+            className="w-full flex items-center justify-center px-4 py-2 mb-3 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-slate-400"
           >
             <PlusCircle size={18} className="mr-2" />
             新しいチャット
           </button>
           <button
             onClick={handleToggleArchivedView}
-            className="w-full flex items-center justify-center px-4 py-2 mb-3 text-sm font-medium text-white bg-gray-600 rounded-md hover:bg-gray-700"
+            className="w-full flex items-center justify-center px-4 py-2 mb-3 text-sm font-medium text-slate-700 bg-slate-100 border border-slate-200 rounded-md hover:bg-slate-200"
           >
             {showArchived ? <Inbox size={18} className="mr-2" /> : <Archive size={18} className="mr-2" />}
             {showArchived ? "アクティブなチャットを表示" : "アーカイブ済みを表示"}
@@ -222,24 +225,27 @@ const ChatSidebar: React.FC = () => {
 
       {isOpen && (
         <div className="flex-grow overflow-y-auto p-4 space-y-2">
-          {isLoadingDisplay && <p>読み込み中...</p>}
-          {errorDisplay && <p className="text-red-400">エラー: {typeof errorDisplay === 'string' ? errorDisplay : errorDisplay.message}</p>}
+          {isLoadingDisplay && <p className="text-slate-500 text-sm">読み込み中...</p>}
+          {errorDisplay && <p className="text-red-500 text-sm">エラー: {typeof errorDisplay === 'string' ? errorDisplay : errorDisplay.message}</p>}
           {!isLoadingDisplay && !errorDisplay && sessionsToDisplay.length === 0 && (
-            <p className="text-gray-400">{showArchived ? "アーカイブ済みのチャットはありません。" : "チャット履歴はありません。"}</p>
+            <p className="text-slate-400 text-sm">{showArchived ? "アーカイブ済みのチャットはありません。" : "チャット履歴はありません。"}</p>
           )}
           {sessionsToDisplay.map((session: ChatSession) => (
             <div
               key={session.id}
               onClick={() => handleSelectSession(session.id, session.chat_type)} 
-              className={`p-2 rounded-lg cursor-pointer hover:bg-gray-700 ${currentSessionIdFromContext === session.id ? "bg-gray-700 font-semibold" : ""}`}
+              className={`p-2 rounded-lg cursor-pointer hover:bg-slate-100 transition-colors
+                ${currentSessionIdFromContext === session.id 
+                  ? "bg-blue-50 border border-blue-100 text-blue-800" 
+                  : "bg-white border border-slate-100"}`}
             >
               <div className="flex justify-between items-center">
-                <span className="truncate text-sm">{session.title || "無題のチャット"}</span>
+                <span className="truncate text-sm font-medium">{session.title || "無題のチャット"}</span>
                 <div className="flex space-x-1">
                   {showArchived ? (
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleUnarchiveSession(session.id); }}
-                      className="p-1 hover:bg-gray-600 rounded"
+                      className="p-1 hover:bg-slate-200 rounded text-slate-600"
                       title="アーカイブ解除"
                     >
                       <ArchiveRestore size={14} />
@@ -247,7 +253,7 @@ const ChatSidebar: React.FC = () => {
                   ) : (
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleArchiveSession(session.id); }}
-                      className="p-1 hover:bg-gray-600 rounded"
+                      className="p-1 hover:bg-slate-200 rounded text-slate-600"
                       title="アーカイブ"
                     >
                       <Archive size={14} />
@@ -256,7 +262,7 @@ const ChatSidebar: React.FC = () => {
                 </div>
               </div>
               
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-slate-500 mt-1">
                 {session.updated_at ? new Date(session.updated_at).toLocaleString('ja-JP', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : (session.created_at ? new Date(session.created_at).toLocaleString('ja-JP', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : '日時不明')}
               </p>
             </div>
