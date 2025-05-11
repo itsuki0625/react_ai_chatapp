@@ -67,19 +67,17 @@ const ChatSidebar: React.FC = () => {
 
   // 初回レンダリング時または currentChatType 変更時にセッションを読み込む
   useEffect(() => {
-    console.log(`[ChatSidebar EFFECT on type/auth/showArchived change] authStatus: ${authStatus}, currentChatType: ${currentChatType}, showArchived: ${showArchived}`);
-    console.log('[ChatSidebar DEBUG] CurrentChatType type:', typeof currentChatType, 'value:', currentChatType, 'enum val:', ChatTypeEnum.SELF_ANALYSIS);
+    console.log(`[ChatSidebar EFFECT] authStatus: ${authStatus}, currentChatType: ${currentChatType}, showArchived: ${showArchived}`);
     
     if (authStatus === 'authenticated' && currentChatType) {
       if (showArchived) {
-        console.log(`[ChatSidebar EFFECT] Fetching ARCHIVED sessions for ${currentChatType}. Current showArchived: ${showArchived}`);
+        console.log(`[ChatSidebar] Fetching ARCHIVED sessions for ${currentChatType}`);
         fetchArchivedSessions(currentChatType);
       } else {
-        console.log(`[ChatSidebar EFFECT] Fetching ACTIVE sessions for ${currentChatType}. Current showArchived: ${showArchived}`);
+        console.log(`[ChatSidebar] Fetching ACTIVE sessions for ${currentChatType}`);
         fetchSessions(currentChatType);
       }
     }
-    console.log(`[ChatSidebar EFFECT on type/auth/showArchived change] END. Current showArchived: ${showArchived}`);
   }, [authStatus, currentChatType, fetchSessions, fetchArchivedSessions, showArchived]);
 
   const getChatTypeName = (type: ChatTypeValue | null | undefined): string => {
@@ -200,11 +198,6 @@ const ChatSidebar: React.FC = () => {
 
       {isOpen && (
         <div className="p-4 flex-shrink-0">
-          <div className="text-xs text-slate-500 mb-2">
-            ChatType: {String(currentChatType) || 'なし'} / 
-            Enum: {String(ChatTypeEnum.SELF_ANALYSIS)} /
-            Equal?: {String(currentChatType === ChatTypeEnum.SELF_ANALYSIS)}
-          </div>
           <button
             onClick={handleStartNewChat}
             disabled={showArchived} // アーカイブ表示中は新規チャットボタンを無効化
