@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function StudySupportChatPage() {
-  return <ChatPage initialChatType={ChatTypeEnum.STUDY_SUPPORT} />;
+  return <ChatPage key="fixedChatPageKey" initialChatType={ChatTypeEnum.STUDY_SUPPORT} />;
 } 

@@ -21,6 +21,7 @@ export async function generateMetadata(
 export default function SelfAnalysisChatSessionPage({ params }: ChatSessionPageProps) {
   return (
     <ChatPage
+      key="fixedChatPageKey"
       initialChatType={ChatTypeEnum.SELF_ANALYSIS}
       initialSessionId={params.sessionId}
     />

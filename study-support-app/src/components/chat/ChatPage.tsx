@@ -28,11 +28,12 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
     isConnected,
     sendMessage: sendChatMessage,
     changeChatType,
-    currentChatType,
-    sessionId: currentSessionIdFromContext,
+    currentChatType: contextChatType,
+    sessionId: contextSessionId,
     sessions,
     archivedSessions,
     viewingSessionStatus,
+    justStartedNewChat,
     dispatch,
   } = useChat();
 
@@ -40,67 +41,98 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
   const checklistRef = useRef<{ triggerUpdate: () => void }>(null);
   const { hasPermission, isLoading: isAuthLoading } = useAuthHelpers();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const prevContextSessionIdRef = useRef<string | null | undefined>(contextSessionId);
 
-  useEffect(() => {
-    const typeToSet = initialChatType || ChatTypeEnum.GENERAL;
-    console.log("[DEBUG] ChatPage Initial Effect - Props:", { initialChatType, initialSessionId }, "Context:", { currentChatTypeCtx: currentChatType, currentSessionIdCtx: currentSessionIdFromContext }, "Pathname:", pathname);
-
-    if (typeToSet !== currentChatType) {
-      console.log(`[DEBUG] ChatPage Initial Effect - Dispatching changeChatType. Type to set: ${typeToSet}, Context type: ${currentChatType}`);
-      changeChatType(typeToSet);
-    }
-
+  // Derived state from URL
+  const getChatInfoFromPath = () => {
     const pathSegments = pathname.split('/').filter(Boolean);
     const chatSegmentIndex = pathSegments.findIndex(segment => segment === 'chat');
-    let sessionIdFromUrl: string | undefined = undefined;
-    if (chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 2) {
-        sessionIdFromUrl = pathSegments[chatSegmentIndex + 2];
-    }
-    console.log("[DEBUG] ChatPage Initial Effect - Parsed from URL:", { sessionIdFromUrl });
-
-    let sessionToSetId: string | null = null;
-    let sessionToSetStatus: SessionStatusValue | undefined = undefined;
-
-    if (sessionIdFromUrl) {
-      sessionToSetId = sessionIdFromUrl;
-      const foundSession = sessions.find(s => s.id === sessionIdFromUrl) || archivedSessions.find(s => s.id === sessionIdFromUrl);
-      sessionToSetStatus = foundSession?.status;
-    } else if (initialSessionId) {
-      sessionToSetId = initialSessionId;
-      const foundSession = sessions.find(s => s.id === initialSessionId) || archivedSessions.find(s => s.id === initialSessionId);
-      sessionToSetStatus = foundSession?.status;
-    }
-
-    if (sessionToSetId && sessionToSetId !== currentSessionIdFromContext) {
-      console.log(`[DEBUG] ChatPage Initial Effect - Dispatching SET_SESSION_ID. Target ID: ${sessionToSetId}, Target Status: ${sessionToSetStatus || 'default ACTIVE'}`);
-      dispatch({ type: 'SET_SESSION_ID', payload: { id: sessionToSetId, status: sessionToSetStatus } });
-    } else if (!sessionToSetId && currentSessionIdFromContext) {
-      console.log(`[DEBUG] ChatPage Initial Effect - No session ID from URL or props. Context ID ${currentSessionIdFromContext} is kept or should be cleared by other effects.`);
-    }
-  }, [pathname, initialChatType, initialSessionId, currentChatType, changeChatType, dispatch, sessions, archivedSessions]);
+    // Ensure chatSegmentIndex is found and there's a segment after 'chat' for type
+    const typeFromUrl = chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 1 ? pathSegments[chatSegmentIndex + 1].toUpperCase() as ChatTypeValue : undefined;
+    // Ensure there's a segment after type for session ID
+    const sessionIdFromUrl = chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 2 ? pathSegments[chatSegmentIndex + 2] : undefined;
+    return { typeFromUrl, sessionIdFromUrl };
+  };
 
   useEffect(() => {
-    const pathSegments = pathname.split('/').filter(Boolean);
-    const chatSegmentIndex = pathSegments.findIndex(segment => segment === 'chat');
-    let typeInUrl = chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 1 ? pathSegments[chatSegmentIndex + 1] : null;
-    let sessionIdInUrl = chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 2 ? pathSegments[chatSegmentIndex + 2] : null;
+    const { typeFromUrl, sessionIdFromUrl } = getChatInfoFromPath();
+    const previousContextSessionId = prevContextSessionIdRef.current;
 
-    console.log("[DEBUG] ChatPage Context Sync Effect - Current Context:", { currentChatType, currentSessionIdFromContext }, "Current URL:", { typeInUrl: typeInUrl?.toUpperCase(), sessionIdInUrl, pathname });
+    console.log(`[DEBUG ChatPage UnifiedEffect] Start. Path: ${pathname}, PrevCtxSessID: ${previousContextSessionId}, Ctx: CType=${contextChatType} CSessID=${contextSessionId} JustNew=${justStartedNewChat}, URL: UType=${typeFromUrl} USessID=${sessionIdFromUrl}`);
 
-    if (currentChatType && currentSessionIdFromContext) {
-      if (typeInUrl?.toUpperCase() !== currentChatType || sessionIdInUrl !== currentSessionIdFromContext) {
-        const newPath = `/chat/${currentChatType.toLowerCase()}/${currentSessionIdFromContext}`;
-        console.log(`[DEBUG] ChatPage Context Sync Effect (with sessionID) - Updating URL to: ${newPath} from ${pathname}`);
-        router.replace(newPath);
-      }
-    } else if (currentChatType && !currentSessionIdFromContext) {
-      if (typeInUrl?.toUpperCase() !== currentChatType || sessionIdInUrl) { 
-        const newPath = `/chat/${currentChatType.toLowerCase()}`;
-        console.log(`[DEBUG] ChatPage Context Sync Effect (no sessionID) - Updating URL to: ${newPath} from ${pathname}`);
-        router.replace(newPath);
+    // Priority 1: New Chat URL Update
+    if (contextChatType && contextSessionId && !sessionIdFromUrl && 
+        (previousContextSessionId === null || previousContextSessionId === undefined)) {
+      const newChatPath = `/chat/${contextChatType.toLowerCase()}/${contextSessionId}`;
+      console.log(`[DEBUG ChatPage UnifiedEffect Priority 1] ContextSessionId changed from ${previousContextSessionId} to ${contextSessionId}. URL has no session. Updating URL to: ${newChatPath}`);
+      router.replace(newChatPath);
+      // prevContextSessionIdRef.current is updated at the end of the effect
+      return; 
+    }
+
+    // Priority 2: Synchronize Context from URL and other cases
+    if (typeFromUrl && typeFromUrl !== contextChatType) {
+      console.log(`[DEBUG ChatPage UnifiedEffect] URL chat type (${typeFromUrl}) differs from context (${contextChatType}). Changing context chat type.`);
+      changeChatType(typeFromUrl);
+      // prevContextSessionIdRef.current is updated at the end
+      return;
+    }
+
+    if (typeFromUrl && typeFromUrl === contextChatType) {
+      if (sessionIdFromUrl && sessionIdFromUrl !== contextSessionId) {
+        const foundSession = sessions.find(s => s.id === sessionIdFromUrl) || archivedSessions.find(s => s.id === sessionIdFromUrl);
+        const sessionStatus = foundSession?.status;
+        console.log(`[DEBUG ChatPage UnifiedEffect] URL session ID (${sessionIdFromUrl}) differs from context (${contextSessionId}). Setting context session ID. Status: ${sessionStatus}`);
+        dispatch({ type: 'SET_SESSION_ID', payload: { id: sessionIdFromUrl, status: sessionStatus } });
+        // prevContextSessionIdRef.current is updated at the end
+        return;
+      } else if (!sessionIdFromUrl && contextSessionId && !justStartedNewChat) {
+        if (previousContextSessionId !== null && previousContextSessionId !== undefined) {
+            console.log(`[DEBUG ChatPage UnifiedEffect] URL has no session, context has ${contextSessionId} (was ${previousContextSessionId}). Clearing context session.`);
+            dispatch({ type: 'SET_SESSION_ID', payload: { id: null, status: null } });
+            // prevContextSessionIdRef.current is updated at the end
+            return;
+        } else {
+            console.log(`[DEBUG ChatPage UnifiedEffect] URL has no session, context has ${contextSessionId}, prev was ${previousContextSessionId}. Not clearing, likely new session flow or waiting for URL update.`);
+        }
+      } else if (sessionIdFromUrl && !contextSessionId && !justStartedNewChat && typeFromUrl === contextChatType) {
+        const foundSession = sessions.find(s => s.id === sessionIdFromUrl) || archivedSessions.find(s => s.id === sessionIdFromUrl);
+        const sessionStatus = foundSession?.status;
+        console.log(`[DEBUG ChatPage UnifiedEffect] URL has session ${sessionIdFromUrl}, context has no session (not new chat). Setting context session ID. Status: ${sessionStatus}`);
+        dispatch({ type: 'SET_SESSION_ID', payload: { id: sessionIdFromUrl, status: sessionStatus } });
+        // prevContextSessionIdRef.current is updated at the end
+        return;
       }
     }
-  }, [currentSessionIdFromContext, currentChatType, router, pathname]);
+    
+    if (!typeFromUrl && initialChatType && initialChatType !== contextChatType && !contextChatType) {
+        console.log(`[DEBUG ChatPage UnifiedEffect] No URL type, initialChatType (${initialChatType}) provided. Setting context chat type.`);
+        changeChatType(initialChatType);
+        // prevContextSessionIdRef.current is updated at the end
+        return;
+    }
+    
+    if (justStartedNewChat && typeFromUrl && !sessionIdFromUrl && !contextSessionId) {
+        console.log(`[DEBUG ChatPage UnifiedEffect] New chat state: URL is /chat/${typeFromUrl}, context session is null. Waiting for backend session ID.`);
+    }
+
+    console.log(`[DEBUG ChatPage UnifiedEffect] End. Path: ${pathname}, PrevCtxSessID: ${previousContextSessionId}, Ctx: CType=${contextChatType} CSessID=${contextSessionId} JustNew=${justStartedNewChat}, URL: UType=${typeFromUrl} USessID=${sessionIdFromUrl}`);
+    
+    prevContextSessionIdRef.current = contextSessionId;
+
+  }, [
+    pathname, 
+    contextChatType, 
+    contextSessionId, 
+    justStartedNewChat, 
+    initialChatType,
+    sessions, 
+    archivedSessions, 
+    changeChatType, 
+    dispatch, 
+    router
+    // prevContextSessionIdRef should not be in dependencies
+  ]);
 
   const canSendMessagePermission = hasPermission('chat_message_send');
 
@@ -115,7 +147,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
     }
   };
   
-  const activeChatType = currentChatType;
+  const activeChatType = contextChatType; // Use the renamed context variable
 
   return (
     <div className="flex h-full bg-gray-100">
@@ -159,8 +191,8 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
         <div className="w-80 border-l border-gray-300 bg-gray-50 p-4 overflow-y-auto hidden lg:block">
           <ChecklistEvaluation
             ref={checklistRef}
-            chatId={currentSessionIdFromContext}
-            sessionType={currentChatType as ChatTypeEnum} 
+            chatId={contextSessionId} // Use renamed context variable
+            sessionType={contextChatType as ChatTypeEnum} // Use renamed context variable
           />
         </div>
       )} */}

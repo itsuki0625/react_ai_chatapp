@@ -19,7 +19,7 @@ const ChatWindow: React.FC<{/* ChatWindowProps */}> = (/*props*/) => {
     error,
     sessionId,
     currentChatType,
-    dispatch, // LOAD_MESSAGES アクションのために dispatch を取得
+    fetchMessages, // fetchMessages を useChat から取得
   } = useChat();
 
   const { data: authSession, status: authStatus } = useSession();
@@ -43,15 +43,11 @@ const ChatWindow: React.FC<{/* ChatWindowProps */}> = (/*props*/) => {
   // ただし、無限ループを避けるための条件やフラグ管理が重要。
   useEffect(() => {
     if (sessionId && messages.length === 0 && authStatus === 'authenticated' && !isLoading) {
-        console.log(`ChatWindow: sessionId ${sessionId} detected with no messages. Attempting to load history (if not already loaded by provider).`);
-        // ここで履歴取得APIを叩き、LOAD_MESSAGESをdispatchする
-        // dispatch({ type: 'FETCH_HISTORY_FOR_SESSION', payload: sessionId }); // Providerで処理するカスタムアクション
-        // または、ChatProviderがsessionIdの変更を検知して自動でロードするのを待つ。
-        // 今回は、ChatProviderが自動ロードしない前提で、もしAPIを叩くならここに書くが、
-        // APIコールはProviderに寄せたいので、ここではコメントアウト。
-        // 現状のChatProviderは自動ロード機能がないので、何もしない。
+      console.log(`ChatWindow: sessionId ${sessionId} detected with no messages. Attempting to load history via fetchMessages.`);
+      fetchMessages(sessionId); // ★★★ fetchMessages を呼び出す ★★★
     }
-  }, [sessionId, messages.length, authStatus, dispatch, isLoading]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, messages.length, authStatus, isLoading, fetchMessages]); // fetchMessages を依存配列に追加
 
 
   if (authStatus === 'loading') {

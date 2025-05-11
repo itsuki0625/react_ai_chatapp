@@ -1,5 +1,12 @@
-import FaqChatPage from '@/components/chat/FaqChatPage';
+import { Metadata } from 'next';
+import ChatPage from '@/components/chat/ChatPage';
+import { ChatTypeEnum } from '@/types/chat';
+
+export const metadata: Metadata = {
+  title: 'FAQチャット',
+  description: 'よくある質問にAIが答えます。',
+};
 
 export default function Page() {
-  return <FaqChatPage />;
+  return <ChatPage key="fixedChatPageKey" initialChatType={ChatTypeEnum.FAQ} />;
 }

@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function AdmissionChatPage() {
-  return <ChatPage initialChatType={ChatTypeEnum.ADMISSION} />;
+  return <ChatPage key="fixedChatPageKey" initialChatType={ChatTypeEnum.ADMISSION} />;
 } 
