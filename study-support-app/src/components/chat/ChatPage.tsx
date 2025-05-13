@@ -1,14 +1,10 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Loader2, SendHorizontal } from 'lucide-react';
+import React, { useRef, useEffect } from 'react';
 import ChatSidebar from '@/components/chat/ChatSidebar';
 import ChatWindow from '@/components/chat/ChatWindow';
-import { ChecklistEvaluation } from './ChecklistEvaluation';
-import { ChatTypeValue, ChatTypeEnum, ChatMessage as FrontendChatMessage, type SessionStatusValue } from '@/types/chat'; // ChatMessage を FrontendChatMessageとしてインポート, SessionStatusValue を追加インポート
-import { useAuthHelpers } from '@/lib/authUtils';
-import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
+import { ChatInput } from '@/components/chat/ChatInput';
+import { ChatTypeValue, ChatTypeEnum } from '@/types/chat';
 import { useRouter, usePathname } from 'next/navigation';
 import { useChat } from '@/store/chat/ChatContext';
 
@@ -22,148 +18,183 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
   const pathname = usePathname();
 
   const {
-    messages,
     isLoading: chatIsLoading,
-    error: chatError,
     isConnected,
     sendMessage: sendChatMessage,
     changeChatType,
-    currentChatType,
-    sessionId: currentSessionIdFromContext,
+    currentChatType: contextChatType,
+    sessionId: contextSessionId,
     sessions,
     archivedSessions,
     viewingSessionStatus,
+    justStartedNewChat,
     dispatch,
   } = useChat();
 
-  const [newMessage, setNewMessage] = useState('');
   const checklistRef = useRef<{ triggerUpdate: () => void }>(null);
-  const { hasPermission, isLoading: isAuthLoading } = useAuthHelpers();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const prevContextSessionIdRef = useRef<string | null | undefined>(contextSessionId);
 
-  useEffect(() => {
-    const typeToSet = initialChatType || ChatTypeEnum.GENERAL;
-    console.log("[DEBUG] ChatPage Initial Effect - Props:", { initialChatType, initialSessionId }, "Context:", { currentChatTypeCtx: currentChatType, currentSessionIdCtx: currentSessionIdFromContext }, "Pathname:", pathname);
-
-    if (typeToSet !== currentChatType) {
-      console.log(`[DEBUG] ChatPage Initial Effect - Dispatching changeChatType. Type to set: ${typeToSet}, Context type: ${currentChatType}`);
-      changeChatType(typeToSet);
-    }
-
+  // Derived state from URL
+  const getChatInfoFromPath = () => {
     const pathSegments = pathname.split('/').filter(Boolean);
     const chatSegmentIndex = pathSegments.findIndex(segment => segment === 'chat');
-    let sessionIdFromUrl: string | undefined = undefined;
-    if (chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 2) {
-        sessionIdFromUrl = pathSegments[chatSegmentIndex + 2];
+    
+    // Ensure chatSegmentIndex is found and there's a segment after 'chat' for type
+    let typeFromUrl = undefined;
+    if (chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 1) {
+      const rawType = pathSegments[chatSegmentIndex + 1];
+      // URLの形式（ハイフン）をEnum値（アンダースコア）に変換
+      typeFromUrl = rawType.replace('-', '_').toUpperCase() as ChatTypeValue;
+      console.log('[DEBUG] Path parsing:', rawType, '->', typeFromUrl);
     }
-    console.log("[DEBUG] ChatPage Initial Effect - Parsed from URL:", { sessionIdFromUrl });
-
-    let sessionToSetId: string | null = null;
-    let sessionToSetStatus: SessionStatusValue | undefined = undefined;
-
-    if (sessionIdFromUrl) {
-      sessionToSetId = sessionIdFromUrl;
-      const foundSession = sessions.find(s => s.id === sessionIdFromUrl) || archivedSessions.find(s => s.id === sessionIdFromUrl);
-      sessionToSetStatus = foundSession?.status;
-    } else if (initialSessionId) {
-      sessionToSetId = initialSessionId;
-      const foundSession = sessions.find(s => s.id === initialSessionId) || archivedSessions.find(s => s.id === initialSessionId);
-      sessionToSetStatus = foundSession?.status;
-    }
-
-    if (sessionToSetId && sessionToSetId !== currentSessionIdFromContext) {
-      console.log(`[DEBUG] ChatPage Initial Effect - Dispatching SET_SESSION_ID. Target ID: ${sessionToSetId}, Target Status: ${sessionToSetStatus || 'default ACTIVE'}`);
-      dispatch({ type: 'SET_SESSION_ID', payload: { id: sessionToSetId, status: sessionToSetStatus } });
-    } else if (!sessionToSetId && currentSessionIdFromContext) {
-      console.log(`[DEBUG] ChatPage Initial Effect - No session ID from URL or props. Context ID ${currentSessionIdFromContext} is kept or should be cleared by other effects.`);
-    }
-  }, [pathname, initialChatType, initialSessionId, currentChatType, changeChatType, dispatch, sessions, archivedSessions]);
-
-  useEffect(() => {
-    const pathSegments = pathname.split('/').filter(Boolean);
-    const chatSegmentIndex = pathSegments.findIndex(segment => segment === 'chat');
-    let typeInUrl = chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 1 ? pathSegments[chatSegmentIndex + 1] : null;
-    let sessionIdInUrl = chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 2 ? pathSegments[chatSegmentIndex + 2] : null;
-
-    console.log("[DEBUG] ChatPage Context Sync Effect - Current Context:", { currentChatType, currentSessionIdFromContext }, "Current URL:", { typeInUrl: typeInUrl?.toUpperCase(), sessionIdInUrl, pathname });
-
-    if (currentChatType && currentSessionIdFromContext) {
-      if (typeInUrl?.toUpperCase() !== currentChatType || sessionIdInUrl !== currentSessionIdFromContext) {
-        const newPath = `/chat/${currentChatType.toLowerCase()}/${currentSessionIdFromContext}`;
-        console.log(`[DEBUG] ChatPage Context Sync Effect (with sessionID) - Updating URL to: ${newPath} from ${pathname}`);
-        router.replace(newPath);
-      }
-    } else if (currentChatType && !currentSessionIdFromContext) {
-      if (typeInUrl?.toUpperCase() !== currentChatType || sessionIdInUrl) { 
-        const newPath = `/chat/${currentChatType.toLowerCase()}`;
-        console.log(`[DEBUG] ChatPage Context Sync Effect (no sessionID) - Updating URL to: ${newPath} from ${pathname}`);
-        router.replace(newPath);
-      }
-    }
-  }, [currentSessionIdFromContext, currentChatType, router, pathname]);
-
-  const canSendMessagePermission = hasPermission('chat_message_send');
-
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim() || chatIsLoading || isAuthLoading || !canSendMessagePermission || !isConnected) return;
-
-    sendChatMessage(newMessage);
-    setNewMessage('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
+    
+    // Ensure there's a segment after type for session ID
+    const sessionIdFromUrl = chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 2 ? pathSegments[chatSegmentIndex + 2] : undefined;
+    
+    return { typeFromUrl, sessionIdFromUrl };
   };
+
+  useEffect(() => {
+    const { typeFromUrl, sessionIdFromUrl } = getChatInfoFromPath();
+    const previousContextSessionId = prevContextSessionIdRef.current;
+
+    console.log(`[DEBUG ChatPage UnifiedEffect] Start. Path: ${pathname}, PrevCtxSessID: ${previousContextSessionId}, Ctx: CType=${contextChatType} CSessID=${contextSessionId} JustNew=${justStartedNewChat}, URL: UType=${typeFromUrl} USessID=${sessionIdFromUrl}`);
+
+    // Priority 1: New Chat URL Update
+    if (contextChatType && contextSessionId && !sessionIdFromUrl && 
+        (previousContextSessionId === null || previousContextSessionId === undefined)) {
+      const newChatPath = `/chat/${contextChatType.toLowerCase()}/${contextSessionId}`;
+      console.log(`[DEBUG ChatPage UnifiedEffect Priority 1] ContextSessionId changed from ${previousContextSessionId} to ${contextSessionId}. URL has no session. Updating URL to: ${newChatPath}`);
+      router.replace(newChatPath);
+      // prevContextSessionIdRef.current is updated at the end of the effect
+      return; 
+    }
+
+    // Priority 2: Synchronize Context from URL and other cases
+    if (typeFromUrl && typeFromUrl !== contextChatType) {
+      console.log(`[DEBUG ChatPage UnifiedEffect] URL chat type (${typeFromUrl}) differs from context (${contextChatType}). Changing context chat type.`);
+      changeChatType(typeFromUrl);
+      // prevContextSessionIdRef.current is updated at the end
+      return;
+    }
+
+    if (typeFromUrl && typeFromUrl === contextChatType) {
+      if (sessionIdFromUrl && sessionIdFromUrl !== contextSessionId) {
+        const foundSession = sessions.find(s => s.id === sessionIdFromUrl) || archivedSessions.find(s => s.id === sessionIdFromUrl);
+        const sessionStatus = foundSession?.status;
+        console.log(`[DEBUG ChatPage UnifiedEffect] URL session ID (${sessionIdFromUrl}) differs from context (${contextSessionId}). Setting context session ID. Status: ${sessionStatus}`);
+        dispatch({ type: 'SET_SESSION_ID', payload: { id: sessionIdFromUrl, status: sessionStatus } });
+        // prevContextSessionIdRef.current is updated at the end
+        return;
+      } else if (!sessionIdFromUrl && contextSessionId && !justStartedNewChat) {
+        if (previousContextSessionId !== null && previousContextSessionId !== undefined) {
+            console.log(`[DEBUG ChatPage UnifiedEffect] URL has no session, context has ${contextSessionId} (was ${previousContextSessionId}). Clearing context session.`);
+            dispatch({ type: 'SET_SESSION_ID', payload: { id: null, status: null } });
+            // prevContextSessionIdRef.current is updated at the end
+            return;
+        } else {
+            console.log(`[DEBUG ChatPage UnifiedEffect] URL has no session, context has ${contextSessionId}, prev was ${previousContextSessionId}. Not clearing, likely new session flow or waiting for URL update.`);
+        }
+      } else if (sessionIdFromUrl && !contextSessionId && !justStartedNewChat && typeFromUrl === contextChatType) {
+        const foundSession = sessions.find(s => s.id === sessionIdFromUrl) || archivedSessions.find(s => s.id === sessionIdFromUrl);
+        const sessionStatus = foundSession?.status;
+        console.log(`[DEBUG ChatPage UnifiedEffect] URL has session ${sessionIdFromUrl}, context has no session (not new chat). Setting context session ID. Status: ${sessionStatus}`);
+        dispatch({ type: 'SET_SESSION_ID', payload: { id: sessionIdFromUrl, status: sessionStatus } });
+        // prevContextSessionIdRef.current is updated at the end
+        return;
+      }
+    }
+    
+    if (!typeFromUrl && initialChatType && initialChatType !== contextChatType && !contextChatType) {
+        console.log(`[DEBUG ChatPage UnifiedEffect] No URL type, initialChatType (${initialChatType}) provided. Setting context chat type.`);
+        changeChatType(initialChatType);
+        // prevContextSessionIdRef.current is updated at the end
+        return;
+    }
+    
+    if (justStartedNewChat && typeFromUrl && !sessionIdFromUrl && !contextSessionId) {
+        console.log(`[DEBUG ChatPage UnifiedEffect] New chat state: URL is /chat/${typeFromUrl}, context session is null. Waiting for backend session ID.`);
+    }
+
+    console.log(`[DEBUG ChatPage UnifiedEffect] End. Path: ${pathname}, PrevCtxSessID: ${previousContextSessionId}, Ctx: CType=${contextChatType} CSessID=${contextSessionId} JustNew=${justStartedNewChat}, URL: UType=${typeFromUrl} USessID=${sessionIdFromUrl}`);
+    
+    prevContextSessionIdRef.current = contextSessionId;
+
+  }, [
+    pathname, 
+    contextChatType, 
+    contextSessionId, 
+    justStartedNewChat, 
+    initialChatType,
+    sessions, 
+    archivedSessions, 
+    changeChatType, 
+    dispatch, 
+    router
+    // prevContextSessionIdRef should not be in dependencies
+  ]);
   
-  const activeChatType = currentChatType;
+  const activeChatType = contextChatType;
 
   return (
-    <div className="flex h-full bg-gray-100">
+    <div className="flex h-full w-full overflow-hidden bg-slate-50 rounded-lg shadow-sm border border-slate-200">
       <ChatSidebar />
-      <div className="flex-1 flex flex-col border-l border-gray-300">
-        <ChatWindow
-        />
-        <footer className="flex-none bg-white border-t border-gray-200 px-4 py-3">
-          <form onSubmit={handleSendMessage} className="flex space-x-3 items-center">
-            <Textarea
-              ref={textareaRef}
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder={!isConnected ? "接続していません..." : (!canSendMessagePermission ? "メッセージ送信権限がありません" : (viewingSessionStatus === 'ARCHIVED' ? "アーカイブされたチャットです (読み取り専用)" : "メッセージを入力... (Shift+Enterで改行)"))}
-              rows={1}
-              className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[44px] max-h-[150px] overflow-y-auto disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={!isConnected || chatIsLoading || isAuthLoading || !canSendMessagePermission || viewingSessionStatus === 'ARCHIVED'}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage(e);
-                }
-              }}
-            />
-            <Button
-              type="submit"
-              disabled={!isConnected || !newMessage.trim() || chatIsLoading || isAuthLoading || !canSendMessagePermission || viewingSessionStatus === 'ARCHIVED'}
-              className="h-[44px] w-[44px] flex-shrink-0 flex items-center justify-center bg-blue-600 text-white rounded-full hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:bg-blue-400 transition-colors duration-150"
-              size="icon"
-            >
-              {chatIsLoading && !messages.find(m=>m.isStreaming) ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <SendHorizontal className="h-5 w-5" />
-              )}
-            </Button>
-          </form>
-        </footer>
-      </div>
-      {/* {currentSessionIdFromContext && currentChatType === ChatTypeEnum.SELF_ANALYSIS && (
-        <div className="w-80 border-l border-gray-300 bg-gray-50 p-4 overflow-y-auto hidden lg:block">
-          <ChecklistEvaluation
-            ref={checklistRef}
-            chatId={currentSessionIdFromContext}
-            sessionType={currentChatType as ChatTypeEnum} 
-          />
+      <div className="flex-1 flex flex-col h-full border-l border-slate-200">
+        <div className="bg-white py-4 px-6 border-b border-slate-200 hidden sm:block shadow-sm sticky top-0 z-10">
+          <div className="max-w-4xl mx-auto">
+            <h1 className="text-lg font-semibold text-slate-800">
+              {contextChatType === ChatTypeEnum.SELF_ANALYSIS ? '自己分析AI' :
+               contextChatType === ChatTypeEnum.ADMISSION ? '総合型選抜AI' :
+               contextChatType === ChatTypeEnum.STUDY_SUPPORT ? '学習サポートAI' :
+               contextChatType === ChatTypeEnum.FAQ ? 'FAQヘルプAI' : 'AIチャット'}
+            </h1>
+            <p className="text-sm text-slate-500">
+              {contextChatType === ChatTypeEnum.SELF_ANALYSIS ? '自己分析を深め、自分の強みを見つけましょう' :
+               contextChatType === ChatTypeEnum.ADMISSION ? '総合型選抜に関する相談や志望理由書の添削を行います' :
+               contextChatType === ChatTypeEnum.STUDY_SUPPORT ? '学習に関する質問や課題の解決をサポートします' :
+               contextChatType === ChatTypeEnum.FAQ ? 'よくある質問に回答します' : 'AIとチャットして情報を得ましょう'}
+            </p>
+          </div>
         </div>
-      )} */}
+        <div className="flex-1 overflow-hidden relative">
+          <ChatWindow />
+          <div className="absolute bottom-0 left-0 right-0 z-10">
+            <div className="px-4 py-3 bg-white border-t border-slate-200 shadow-lg">
+              <ChatInput 
+                onSendMessage={sendChatMessage} 
+                isLoading={chatIsLoading} 
+              />
+              
+              {/* 接続状態とチャットタイプ情報 */}
+              <div className="flex justify-between items-center mt-2 px-1 text-xs text-slate-500 max-w-4xl mx-auto">
+                <div className="flex items-center">
+                  {isConnected ? (
+                    <span className="flex items-center text-green-600">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-500 mr-1.5 animate-pulse"></span>
+                      接続中
+                    </span>
+                  ) : (
+                    <span className="flex items-center text-red-600">
+                      <span className="h-1.5 w-1.5 rounded-full bg-red-500 mr-1.5"></span>
+                      未接続
+                    </span>
+                  )}
+                </div>
+                
+                {/* チャットタイプ表示 */}
+                {activeChatType && (
+                  <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
+                    {activeChatType === ChatTypeEnum.STUDY_SUPPORT ? '学習支援' :
+                     activeChatType === ChatTypeEnum.SELF_ANALYSIS ? '自己分析' :
+                     activeChatType === ChatTypeEnum.ADMISSION ? '総合型選抜' : 
+                     activeChatType === ChatTypeEnum.FAQ ? 'FAQ' : activeChatType}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

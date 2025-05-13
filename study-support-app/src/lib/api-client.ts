@@ -202,83 +202,83 @@ export const dashboardApi = {
 // 志望校管理API
 export const applicationApi = {
   getApplications: async () => {
-    return apiClient.get('/api/v1/applications');
+    return apiClient.get('/api/v1/applications/');
   },
   getApplication: async (id: string) => {
-    return apiClient.get(`/api/v1/applications/${id}`);
+    return apiClient.get(`/api/v1/applications/${id}/`);
   },
   createApplication: async (data: ApplicationData) => {
-    return apiClient.post('/api/v1/applications', data);
+    return apiClient.post('/api/v1/applications/', data);
   },
   updateApplication: async (id: string, data: ApplicationData) => {
-    return apiClient.put(`/api/v1/applications/${id}`, data);
+    return apiClient.put(`/api/v1/applications/${id}/`, data);
   },
   deleteApplication: async (id: string) => {
-    return apiClient.delete(`/api/v1/applications/${id}`);
+    return apiClient.delete(`/api/v1/applications/${id}/`);
   },
   addDocument: async (applicationId: string, data: DocumentData) => {
-    return apiClient.post(`/api/v1/applications/${applicationId}/documents`, data);
+    return apiClient.post(`/api/v1/applications/${applicationId}/documents/`, data);
   },
   updateDocument: async (applicationId: string, documentId: string, data: DocumentData) => {
-    return apiClient.put(`/api/v1/applications/${applicationId}/documents/${documentId}`, data);
+    return apiClient.put(`/api/v1/applications/${applicationId}/documents/${documentId}/`, data);
   },
   deleteDocument: async (applicationId: string, documentId: string) => {
-    return apiClient.delete(`/api/v1/applications/${applicationId}/documents/${documentId}`);
+    return apiClient.delete(`/api/v1/applications/${applicationId}/documents/${documentId}/`);
   },
   addSchedule: async (applicationId: string, data: ScheduleData) => {
-    return apiClient.post(`/api/v1/applications/${applicationId}/schedules`, data);
+    return apiClient.post(`/api/v1/applications/${applicationId}/schedules/`, data);
   },
   updateSchedule: async (applicationId: string, scheduleId: string, data: ScheduleData) => {
-    return apiClient.put(`/api/v1/applications/${applicationId}/schedules/${scheduleId}`, data);
+    return apiClient.put(`/api/v1/applications/${applicationId}/schedules/${scheduleId}/`, data);
   },
   deleteSchedule: async (applicationId: string, scheduleId: string) => {
-    return apiClient.delete(`/api/v1/applications/${applicationId}/schedules/${scheduleId}`);
+    return apiClient.delete(`/api/v1/applications/${applicationId}/schedules/${scheduleId}/`);
   },
   reorderApplications: async (data: { application_order: Record<string, number> }) => {
-    return apiClient.put('/api/v1/applications/reorder', data);
+    return apiClient.put('/api/v1/applications/reorder/', data);
   },
   getStatistics: async () => {
-    return apiClient.get('/api/v1/applications/statistics');
+    return apiClient.get('/api/v1/applications/statistics/');
   },
   getDeadlines: async () => {
-    return apiClient.get('/api/v1/applications/deadlines');
+    return apiClient.get('/api/v1/applications/deadlines/');
   }
 };
 
 // 志望理由書管理API
 export const statementApi = {
   getStatements: async () => {
-    return apiClient.get('/api/v1/statements');
+    return apiClient.get('/api/v1/statements/');
   },
   getStatement: async (id: string) => {
-    return apiClient.get(`/api/v1/statements/${id}`);
+    return apiClient.get(`/api/v1/statements/${id}/`);
   },
   createStatement: async (data: StatementData) => {
-    return apiClient.post('/api/v1/statements', data);
+    return apiClient.post('/api/v1/statements/', data);
   },
   updateStatement: async (id: string, data: StatementData) => {
-    return apiClient.put(`/api/v1/statements/${id}`, data);
+    return apiClient.put(`/api/v1/statements/${id}/`, data);
   },
   deleteStatement: async (id: string) => {
-    return apiClient.delete(`/api/v1/statements/${id}`);
+    return apiClient.delete(`/api/v1/statements/${id}/`);
   },
   requestFeedback: async (id: string, data: { message?: string }) => {
-    return apiClient.post(`/api/v1/statements/${id}/feedback/request`, data);
+    return apiClient.post(`/api/v1/statements/${id}/feedback/request/`, data);
   },
   getFeedback: async (id: string) => {
-    return apiClient.get(`/api/v1/statements/${id}/feedback`);
+    return apiClient.get(`/api/v1/statements/${id}/feedback/`);
   },
   provideFeedback: async (id: string, data: { content: string }) => {
-    return apiClient.post(`/api/v1/statements/${id}/feedback`, data);
+    return apiClient.post(`/api/v1/statements/${id}/feedback/`, data);
   },
   improveWithAI: async (id: string) => {
-    return apiClient.post(`/api/v1/statements/${id}/ai-improve`, {});
+    return apiClient.post(`/api/v1/statements/${id}/ai-improve/`, {});
   },
   getTemplates: async () => {
-    return apiClient.get('/api/v1/statements/templates');
+    return apiClient.get('/api/v1/statements/templates/');
   },
   getExamples: async () => {
-    return apiClient.get('/api/v1/statements/examples');
+    return apiClient.get('/api/v1/statements/examples/');
   }
 };
 
@@ -301,14 +301,14 @@ interface ChatSession {
 const chatApiBase = {
   // チャットメッセージ送信 (ストリーミングなしの通常のPOSTリクエスト)
   sendChatMessage: async (token: string, data: ChatSubmitRequest): Promise<AxiosResponse<any>> => {
-    return apiClient.post("/api/v1/chat", data, {
+    return apiClient.post("/api/v1/chat/", data, {
       headers: { Authorization: `Bearer ${token}` },
     });
   },
 
   // チャットセッションリスト取得 (アクティブなもの)
   getActiveSessions: async (token: string, chatType: ChatTypeValue): Promise<AxiosResponse<ChatSessionType[]>> => {
-    return apiClient.get<ChatSessionType[]>("/api/v1/chat/sessions", {
+    return apiClient.get<ChatSessionType[]>("/api/v1/chat/sessions/", {
       headers: { Authorization: `Bearer ${token}` },
       params: { chat_type: chatType, status: 'ACTIVE' },
     });
@@ -316,21 +316,21 @@ const chatApiBase = {
 
   // 特定のチャットセッションのメッセージ履歴取得
   getSessionMessages: async (token: string, sessionId: string): Promise<AxiosResponse<any[]>> => { // any[] は ChatMessage[] になるべき
-    return apiClient.get<any[]>(`/api/v1/chat/sessions/${sessionId}/messages`, {
+    return apiClient.get<any[]>(`/api/v1/chat/sessions/${sessionId}/messages/`, {
       headers: { Authorization: `Bearer ${token}` },
     });
   },
 
   // チャットセッションをアーカイブする
   archiveSession: async (token: string, sessionId: string): Promise<AxiosResponse<ChatSessionType>> => {
-    return apiClient.patch<ChatSessionType>(`/api/v1/chat/sessions/${sessionId}/archive`, {}, {
+    return apiClient.patch<ChatSessionType>(`/api/v1/chat/sessions/${sessionId}/archive/`, {}, {
       headers: { Authorization: `Bearer ${token}` },
     });
   },
 
   // アーカイブ済みチャットセッションリスト取得
   getArchivedSessions: async (token: string, chatType: ChatTypeValue): Promise<AxiosResponse<ChatSessionType[]>> => {
-    return apiClient.get<ChatSessionType[]>("/api/v1/chat/sessions/archived", {
+    return apiClient.get<ChatSessionType[]>("/api/v1/chat/sessions/archived/", {
       headers: { Authorization: `Bearer ${token}` },
       params: { chat_type: chatType }, // chat_type でフィルタリング
     });
@@ -338,7 +338,7 @@ const chatApiBase = {
 
   // チャットセッションをアーカイブ解除する
   unarchiveSession: async (token: string, sessionId: string): Promise<AxiosResponse<ChatSessionType>> => {
-    return apiClient.patch<ChatSessionType>(`/api/v1/chat/sessions/${sessionId}/unarchive`, {}, {
+    return apiClient.patch<ChatSessionType>(`/api/v1/chat/sessions/${sessionId}/unarchive/`, {}, {
       headers: { Authorization: `Bearer ${token}` },
     });
   },
@@ -435,36 +435,36 @@ interface Review {
 export const contentApi = {
   getContents: async (categoryId?: string) => {
     const url = categoryId 
-      ? `/api/v1/contents/categories/${categoryId}` 
-      : '/api/v1/contents';
+      ? `/api/v1/contents/categories/${categoryId}/` 
+      : '/api/v1/contents/';
     return apiClient.get<ApiResponse<Content[]>>(url);
   },
   getContent: async (id: string) => {
-    return apiClient.get<ApiResponse<Content>>(`/api/v1/contents/${id}`);
+    return apiClient.get<ApiResponse<Content>>(`/api/v1/contents/${id}/`);
   },
   getCategories: async () => {
-    return apiClient.get<ApiResponse<Category[]>>('/api/v1/contents/categories');
+    return apiClient.get<ApiResponse<Category[]>>('/api/v1/contents/categories/');
   },
   getFaqs: async () => {
-    return apiClient.get<ApiResponse<Faq[]>>('/api/v1/contents/faqs');
+    return apiClient.get<ApiResponse<Faq[]>>('/api/v1/contents/faqs/');
   },
   getFaq: async (id: string) => {
-    return apiClient.get<ApiResponse<Faq>>(`/api/v1/contents/faqs/${id}`);
+    return apiClient.get<ApiResponse<Faq>>(`/api/v1/contents/faqs/${id}/`);
   },
   recordView: async (contentId: string) => {
-    return apiClient.post(`/api/v1/contents/${contentId}/view`, {});
+    return apiClient.post(`/api/v1/contents/${contentId}/view/`, {});
   },
   getReviews: async (contentId: string) => {
-    return apiClient.get<ApiResponse<Review[]>>(`/api/v1/contents/${contentId}/reviews`);
+    return apiClient.get<ApiResponse<Review[]>>(`/api/v1/contents/${contentId}/reviews/`);
   },
   addReview: async (contentId: string, data: Review) => {
-    return apiClient.post<ApiResponse<Review>>(`/api/v1/contents/${contentId}/reviews`, data);
+    return apiClient.post<ApiResponse<Review>>(`/api/v1/contents/${contentId}/reviews/`, data);
   },
   getRecommended: async () => {
-    return apiClient.get<ApiResponse<Content[]>>('/api/v1/contents/recommended');
+    return apiClient.get<ApiResponse<Content[]>>('/api/v1/contents/recommended/');
   },
   getHistory: async () => {
-    return apiClient.get<ApiResponse<Content[]>>('/api/v1/contents/history');
+    return apiClient.get<ApiResponse<Content[]>>('/api/v1/contents/history/');
   }
 };
 
@@ -574,46 +574,46 @@ interface QuizResult {
 // クイズ・テストAPI
 export const quizApi = {
   getQuizzes: async () => {
-    return apiClient.get<ApiResponse<Quiz[]>>('/api/v1/quizzes');
+    return apiClient.get<ApiResponse<Quiz[]>>('/api/v1/quizzes/');
   },
   getQuiz: async (id: string) => {
-    return apiClient.get<ApiResponse<Quiz>>(`/api/v1/quizzes/${id}`);
+    return apiClient.get<ApiResponse<Quiz>>(`/api/v1/quizzes/${id}/`);
   },
   createQuiz: async (data: Quiz) => {
-    return apiClient.post<ApiResponse<Quiz>>('/api/v1/quizzes', data);
+    return apiClient.post<ApiResponse<Quiz>>('/api/v1/quizzes/', data);
   },
   updateQuiz: async (id: string, data: Quiz) => {
-    return apiClient.put<ApiResponse<Quiz>>(`/api/v1/quizzes/${id}`, data);
+    return apiClient.put<ApiResponse<Quiz>>(`/api/v1/quizzes/${id}/`, data);
   },
   deleteQuiz: async (id: string) => {
-    return apiClient.delete<ApiResponse<void>>(`/api/v1/quizzes/${id}`);
+    return apiClient.delete<ApiResponse<void>>(`/api/v1/quizzes/${id}/`);
   },
   addQuestion: async (quizId: string, data: QuizQuestion) => {
-    return apiClient.post<ApiResponse<QuizQuestion>>(`/api/v1/quizzes/${quizId}/questions`, data);
+    return apiClient.post<ApiResponse<QuizQuestion>>(`/api/v1/quizzes/${quizId}/questions/`, data);
   },
   updateQuestion: async (quizId: string, questionId: string, data: QuizQuestion) => {
-    return apiClient.put<ApiResponse<QuizQuestion>>(`/api/v1/quizzes/${quizId}/questions/${questionId}`, data);
+    return apiClient.put<ApiResponse<QuizQuestion>>(`/api/v1/quizzes/${quizId}/questions/${questionId}/`, data);
   },
   deleteQuestion: async (quizId: string, questionId: string) => {
-    return apiClient.delete<ApiResponse<void>>(`/api/v1/quizzes/${quizId}/questions/${questionId}`);
+    return apiClient.delete<ApiResponse<void>>(`/api/v1/quizzes/${quizId}/questions/${questionId}/`);
   },
   startAttempt: async (quizId: string) => {
-    return apiClient.post<ApiResponse<{ attemptId: string }>>(`/api/v1/quizzes/${quizId}/attempt`, {});
+    return apiClient.post<ApiResponse<{ attemptId: string }>>(`/api/v1/quizzes/${quizId}/attempt/`, {});
   },
   submitAnswers: async (quizId: string, data: { answers: QuizAnswer[] }) => {
-    return apiClient.post<ApiResponse<QuizResult>>(`/api/v1/quizzes/${quizId}/submit`, data);
+    return apiClient.post<ApiResponse<QuizResult>>(`/api/v1/quizzes/${quizId}/submit/`, data);
   },
   getResults: async (quizId: string) => {
-    return apiClient.get<ApiResponse<QuizResult[]>>(`/api/v1/quizzes/${quizId}/results`);
+    return apiClient.get<ApiResponse<QuizResult[]>>(`/api/v1/quizzes/${quizId}/results/`);
   },
   getRecommended: async () => {
-    return apiClient.get<ApiResponse<Quiz[]>>('/api/v1/quizzes/recommended');
+    return apiClient.get<ApiResponse<Quiz[]>>('/api/v1/quizzes/recommended/');
   },
   getHistory: async () => {
-    return apiClient.get<ApiResponse<QuizResult[]>>('/api/v1/quizzes/history');
+    return apiClient.get<ApiResponse<QuizResult[]>>('/api/v1/quizzes/history/');
   },
   getAnalysis: async () => {
-    return apiClient.get<ApiResponse<{ strengths: string[]; weaknesses: string[] }>>('/api/v1/quizzes/analysis');
+    return apiClient.get<ApiResponse<{ strengths: string[]; weaknesses: string[] }>>('/api/v1/quizzes/analysis/');
   }
 };
 

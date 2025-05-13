@@ -16,6 +16,14 @@ import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 
 const StatementListPage: React.FC = () => {
+    if (process.env.NODE_ENV === 'production') {
+        return (
+            <div className="flex h-full w-full items-center justify-center">
+                <p className="text-xl">開発中です。公開までお待ちください。</p>
+            </div>
+        );
+    }
+
     const queryClient = useQueryClient();
     const { hasPermission, isLoading: isAuthLoading } = useAuthHelpers();
     const router = useRouter();

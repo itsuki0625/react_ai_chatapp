@@ -217,8 +217,8 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
         </nav>
       </div>
 
-      <main className="lg:pl-64">
-        <div className="py-6 px-4 sm:px-6 lg:px-8">
+      <main className="lg:pl-64 h-screen flex flex-col">
+        <div className="py-6 px-4 sm:px-6 lg:px-8 flex-1 overflow-hidden h-full">
           {children}
         </div>
       </main>

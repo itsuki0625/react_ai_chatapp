@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function SelfAnalysisChatPage() {
-  return <ChatPage initialChatType={ChatTypeEnum.SELF_ANALYSIS} />;
+  return <ChatPage key="fixedChatPageKey" initialChatType={ChatTypeEnum.SELF_ANALYSIS} />;
 } 

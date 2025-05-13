@@ -50,11 +50,11 @@ chat_type: ChatTypeValue; // ChatTypeEnum の値を使用
 
 // 現在アクティブな単一チャットウィンドウの状態 (useReducer で管理)
 export interface ChatState {
-sessionId: string | null;
+sessionId: string | null | undefined; // ★ undefined を許容
 messages: ChatMessage[];
 isLoading: boolean; // AIからの応答待ち or ユーザーメッセージ送信中
 error: string | Error | null; // Error型も許容するように変更
-currentChatType: ChatTypeValue;
+currentChatType: ChatTypeValue | null; // ★ null を許容
 // --- セッションリスト関連のstateを追加 ---
 sessions: ChatSession[]; // ChatSessionSummary の代わりに ChatSession を使用
 isLoadingSessions: boolean;
@@ -64,12 +64,14 @@ isLoadingArchivedSessions: boolean;
 errorArchivedSessions: string | Error | null;
 justStartedNewChat?: boolean; // ★新しいチャット開始直後フラグ
 viewingSessionStatus?: SessionStatusValue | null; // ★追加: 表示中セッションのステータス
+isWebSocketConnected: boolean; // ★追加
+sessionStatus: SessionStatusValue | 'PENDING' | 'INACTIVE'; // ★追加 PENDING と INACTIVE も許容
 }
 
 // useReducer のための Action 型
 export type ChatAction =
-| { type: 'SET_SESSION_ID'; payload: { id: string | null; status?: SessionStatusValue } }
-| { type: 'SET_CURRENT_CHAT_TYPE'; payload: ChatTypeValue }
+| { type: 'SET_SESSION_ID'; payload: { id: string | null | undefined; status?: SessionStatusValue } } // ★ undefined を許容
+| { type: 'SET_CURRENT_CHAT_TYPE'; payload: ChatTypeValue | null } // ★ null を許容
 | { type: 'ADD_MESSAGE'; payload: ChatMessage }
 | { type: 'FETCH_HISTORY_START' }
 | { type: 'FETCH_HISTORY_SUCCESS'; payload: ChatMessage[] }
@@ -80,13 +82,18 @@ export type ChatAction =
 | { type: 'FETCH_SESSIONS_START' }
 | { type: 'FETCH_SESSIONS_SUCCESS'; payload: ChatSession[] }
 | { type: 'FETCH_SESSIONS_FAILURE'; payload: string | Error }
-| { type: 'START_NEW_CHAT_SESSION'; payload: { sessionId: string; chatType: ChatTypeValue } }
+| { type: 'START_NEW_CHAT_SESSION'; payload: { sessionId: string | null | undefined; chatType: ChatTypeValue | null } } // ★ undefined, null を許容
 | { type: 'ARCHIVE_SESSION_SUCCESS'; payload: { sessionId: string } }
 | { type: 'FETCH_ARCHIVED_SESSIONS_START' }
 | { type: 'FETCH_ARCHIVED_SESSIONS_SUCCESS'; payload: ChatSession[] }
 | { type: 'FETCH_ARCHIVED_SESSIONS_FAILURE'; payload: string | Error }
 | { type: 'UNARCHIVE_SESSION_SUCCESS'; payload: { sessionId: string } }
-| { type: 'SET_VIEWING_SESSION_STATUS'; payload: SessionStatusValue | null };
+| { type: 'SET_VIEWING_SESSION_STATUS'; payload: SessionStatusValue | null }
+// ★ 以下、新しいアクションタイプを追加
+| { type: 'PREPARE_NEW_CHAT'; payload: { chatType: ChatTypeValue } }
+| { type: 'SET_CHAT_TYPE'; payload: ChatTypeValue | null }
+| { type: 'CLEAR_CHAT'; payload: { chatType?: ChatTypeValue | null } }
+| { type: 'SET_WEBSOCKET_CONNECTED'; payload: boolean };
 
 // ChatContext で提供される値の型 (ChatProvider から渡される)
 export interface ChatContextType extends ChatState {

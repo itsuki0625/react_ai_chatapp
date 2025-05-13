@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 // import { apiClient } from '@/lib/api-client'; // ChatProvider側でAPIコール
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -14,6 +14,7 @@ import { ChatTypeEnum, type ChatTypeValue, type ChatSession } from '@/types/chat
 
 const ChatSidebar: React.FC = () => {
   const router = useRouter();
+  const pathname = usePathname(); // pathname を usePathname から取得
   const { data: authSession, status: authStatus } = useSession();
   const {
     currentChatType,
@@ -38,25 +39,42 @@ const ChatSidebar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(true);
   const [showArchived, setShowArchived] = useState(false); // アーカイブ表示状態
 
-  // 画面サイズに応じてサイドバーの初期状態を設定
+  // ★ マウント・アンマウント監視用の useEffect
   useEffect(() => {
+    console.log('[ChatSidebar MOUNTED_OR_UPDATED] Initial setup effect for screen size ran.');
     const checkScreenSize = () => {
       setIsOpen(window.innerWidth >= 768);
     };
     checkScreenSize();
     window.addEventListener('resize', checkScreenSize);
-    return () => window.removeEventListener('resize', checkScreenSize);
-  }, []);
+    return () => {
+      console.log('[ChatSidebar UNMOUNTING] Cleanup effect for screen size ran.');
+      window.removeEventListener('resize', checkScreenSize);
+    };
+  }, []); // 空の依存配列でマウント・アンマウント時にのみ実行
+
+  // 画面サイズに応じてサイドバーの初期状態を設定 (これは既存のuseEffect、上記と統合しても良いが一旦分離のまま)
+  // useEffect(() => {
+  //   const checkScreenSize = () => {
+  //     setIsOpen(window.innerWidth >= 768);
+  //   };
+  //   checkScreenSize();
+  //   window.addEventListener('resize', checkScreenSize);
+  //   return () => window.removeEventListener('resize', checkScreenSize);
+  // }, []); 
+  // ↑既存の画面サイズuseEffectは、上記の新しいマウント監視useEffectとほぼ同じなので、コメントアウトまたは削除を検討。
+  // 今回は新しいマウント監視useEffectにログを追加した形。
 
   // 初回レンダリング時または currentChatType 変更時にセッションを読み込む
   useEffect(() => {
-    console.log(`[ChatSidebar EFFECT on type/auth/showArchived change] authStatus: ${authStatus}, currentChatType: ${currentChatType}, showArchived: ${showArchived}`);
+    console.log(`[ChatSidebar EFFECT] authStatus: ${authStatus}, currentChatType: ${currentChatType}, showArchived: ${showArchived}`);
+    
     if (authStatus === 'authenticated' && currentChatType) {
       if (showArchived) {
-        console.log(`[ChatSidebar EFFECT] Fetching ARCHIVED sessions for ${currentChatType}`);
+        console.log(`[ChatSidebar] Fetching ARCHIVED sessions for ${currentChatType}`);
         fetchArchivedSessions(currentChatType);
       } else {
-        console.log(`[ChatSidebar EFFECT] Fetching ACTIVE sessions for ${currentChatType}`);
+        console.log(`[ChatSidebar] Fetching ACTIVE sessions for ${currentChatType}`);
         fetchSessions(currentChatType);
       }
     }
@@ -79,52 +97,47 @@ const ChatSidebar: React.FC = () => {
   };
 
   const handleSelectSession = (sessionId: string, chatType: ChatTypeValue) => {
-    const currentShowArchivedState = showArchived; // この関数スコープでのshowArchivedの状態を保持
+    const currentShowArchivedState = showArchived; 
     console.log(`[ChatSidebar handleSelectSession] Called with sessionId: ${sessionId}, chatType: ${chatType}. Current showArchived state is: ${currentShowArchivedState}`);
 
-    // const selectedSession = sessions.find(s => s.id === sessionId) || archivedSessions.find(s => s.id === sessionId);
-    const selectedSession = currentShowArchivedState
-      ? archivedSessions.find(s => s.id === sessionId)
-      : sessions.find(s => s.id === sessionId);
-
-    if (!selectedSession) {
-      console.warn(`[ChatSidebar handleSelectSession] Session with ID ${sessionId} not found in ${currentShowArchivedState ? 'archived' : 'active'} lists.`);
-      return;
-    }
-    // セッションの実際のステータスを決定（APIレスポンスにstatusがない場合を考慮）
-    const sessionStatusOnClick = currentShowArchivedState ? 'ARCHIVED' : (selectedSession.status || 'ACTIVE');
-
-    console.log(`[ChatSidebar handleSelectSession] Selected session status from data: ${selectedSession.status}, Determined status for dispatch: ${sessionStatusOnClick}, Is current list displaying archived items? ${currentShowArchivedState}`);
-
-    if (currentSessionIdFromContext === sessionId && currentChatType === chatType) {
-      console.log(`[ChatSidebar handleSelectSession] Session ${sessionId} is already selected and chat type matches. No action needed.`);
+    // Check if already selected to prevent unnecessary navigation
+    // Also check if the current pathname already reflects this selection
+    const targetPath = `/chat/${chatType.toLowerCase()}/${sessionId}`;
+    if (currentChatType === chatType && currentSessionIdFromContext === sessionId && pathname === targetPath) {
+      console.log(`[ChatSidebar handleSelectSession] Session ${sessionId} of type ${chatType} is already active and URL matches (${pathname}). No action needed.`);
       return;
     }
     
-    console.log(`[ChatSidebar handleSelectSession] Proceeding to dispatch actions for session ${sessionId}`);
-    if (currentChatType !== chatType) {
-      dispatch({ type: 'SET_CURRENT_CHAT_TYPE', payload: chatType }); 
-      // dispatch({ type: 'SET_SESSION_ID', payload: { id: sessionId, status: selectedSession.status || 'ACTIVE' } }); // 修正前
-      dispatch({ type: 'SET_SESSION_ID', payload: { id: sessionId, status: sessionStatusOnClick } }); // 修正後
-    } else {
-      // dispatch({ type: 'SET_SESSION_ID', payload: { id: sessionId, status: selectedSession.status || 'ACTIVE' } }); // 修正前
-      dispatch({ type: 'SET_SESSION_ID', payload: { id: sessionId, status: sessionStatusOnClick } }); // 修正後
-    }
-    router.push(`/chat/${chatType.toLowerCase()}/${sessionId}`);
+    console.log(`[ChatSidebar handleSelectSession] Navigating to session ${sessionId} of type ${chatType}. Target path: ${targetPath}`);
+    router.push(targetPath); // URLを変更するだけ
+    console.log(`[ChatSidebar handleSelectSession] END - Navigation triggered to ${targetPath}.`); 
   };
 
   const handleStartNewChat = async () => {
     if (showArchived) {
       setShowArchived(false); 
+      if (currentChatType) {
+        fetchSessions(currentChatType);
+      }
+      // For starting a new chat, we don't immediately navigate from here if just toggling archive view.
+      // Instead, let user click "New Chat" again if needed, or handle chat type selection.
+      // For now, simply return after toggling off archived.
       return;
     }
+    
     if (currentChatType) {
-      const newSessionId = await startNewChat(currentChatType); // startNewChat は Promise<string | null> を返す
-      if (typeof newSessionId === 'string') { // 文字列なら成功
-        console.log("New session started, new ID:", newSessionId);
-        // 新しいセッションIDを含むURLに遷移
-        router.push(`/chat/${currentChatType.toLowerCase()}/${newSessionId}`);
-      }
+      console.log(`[ChatSidebar][handleStartNewChat] Calling startNewChat (PREPARE_NEW_CHAT) for type: ${currentChatType}`);
+      // startNewChat dispatches PREPARE_NEW_CHAT, which sets justStartedNewChat = true
+      // and currentChatType, and clears sessionId.
+      await startNewChat(currentChatType); 
+      
+      // After context is prepared for a new chat, navigate to the base URL for that chat type.
+      // ChatPage's Effect 2 should then ensure this URL is maintained until a session ID is available.
+      const newPath = `/chat/${currentChatType.toLowerCase()}`;
+      console.log(`[ChatSidebar][handleStartNewChat] Navigating to ${newPath}`);
+      router.push(newPath);
+    } else {
+      console.warn('[ChatSidebar][handleStartNewChat] currentChatType is null. Cannot start new chat.');
     }
   };
 
@@ -167,27 +180,35 @@ const ChatSidebar: React.FC = () => {
   }
 
   return (
-    <div className={`transition-all duration-300 ease-in-out ${isOpen ? "w-72" : "w-16"} bg-gray-800 text-white flex flex-col`}>
-      <div className="flex items-center justify-between p-4 border-b border-gray-700">
-        {isOpen && <h2 className="text-lg font-semibold">{`${getChatTypeName(currentChatType)} AI：チャット履歴`}</h2>}
-        <button onClick={handleToggleSidebar} className="p-1 hover:bg-gray-700 rounded">
+    <div className={`transition-all duration-300 ease-in-out ${isOpen ? "w-72" : "w-16"} bg-white border-r border-slate-200 shadow-sm flex flex-col h-full`}>
+      <div className="flex items-center justify-between p-4 border-b border-slate-200 flex-shrink-0">
+        {isOpen && (
+          <h2 className="text-lg font-semibold text-slate-800">
+            {currentChatType?.toLowerCase() === 'self_analysis' ? '自己分析AI' :
+             currentChatType?.toLowerCase() === 'admission' ? '総合型選抜AI' :
+             currentChatType?.toLowerCase() === 'study_support' ? '学習サポートAI' :
+             currentChatType?.toLowerCase() === 'faq' ? 'ヘルプAI' : 
+             `AIチャット${currentChatType ? ` (${currentChatType})` : ''}`}
+          </h2>
+        )}
+        <button onClick={handleToggleSidebar} className="p-1 hover:bg-slate-100 rounded text-slate-600">
           {isOpen ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
         </button>
       </div>
 
       {isOpen && (
-        <div className="p-4">
+        <div className="p-4 flex-shrink-0">
           <button
             onClick={handleStartNewChat}
             disabled={showArchived} // アーカイブ表示中は新規チャットボタンを無効化
-            className="w-full flex items-center justify-center px-4 py-2 mb-3 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-500"
+            className="w-full flex items-center justify-center px-4 py-2 mb-3 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-slate-400"
           >
             <PlusCircle size={18} className="mr-2" />
             新しいチャット
           </button>
           <button
             onClick={handleToggleArchivedView}
-            className="w-full flex items-center justify-center px-4 py-2 mb-3 text-sm font-medium text-white bg-gray-600 rounded-md hover:bg-gray-700"
+            className="w-full flex items-center justify-center px-4 py-2 mb-3 text-sm font-medium text-slate-700 bg-slate-100 border border-slate-200 rounded-md hover:bg-slate-200"
           >
             {showArchived ? <Inbox size={18} className="mr-2" /> : <Archive size={18} className="mr-2" />}
             {showArchived ? "アクティブなチャットを表示" : "アーカイブ済みを表示"}
@@ -197,42 +218,45 @@ const ChatSidebar: React.FC = () => {
 
       {isOpen && (
         <div className="flex-grow overflow-y-auto p-4 space-y-2">
-          {isLoadingDisplay && <p>読み込み中...</p>}
-          {errorDisplay && <p className="text-red-400">エラー: {typeof errorDisplay === 'string' ? errorDisplay : errorDisplay.message}</p>}
+          {isLoadingDisplay && <p className="text-slate-500 text-sm">読み込み中...</p>}
+          {errorDisplay && <p className="text-red-500 text-sm">エラー: {typeof errorDisplay === 'string' ? errorDisplay : errorDisplay.message}</p>}
           {!isLoadingDisplay && !errorDisplay && sessionsToDisplay.length === 0 && (
-            <p className="text-gray-400">{showArchived ? "アーカイブ済みのチャットはありません。" : "チャット履歴はありません。"}</p>
+            <p className="text-slate-400 text-sm">{showArchived ? "アーカイブ済みのチャットはありません。" : "チャット履歴はありません。"}</p>
           )}
           {sessionsToDisplay.map((session: ChatSession) => (
             <div
               key={session.id}
               onClick={() => handleSelectSession(session.id, session.chat_type)} 
-              className={`p-3 rounded-lg cursor-pointer hover:bg-gray-700 ${currentSessionIdFromContext === session.id ? "bg-gray-700 font-semibold" : ""}`}
+              className={`p-2 rounded-lg cursor-pointer hover:bg-slate-100 transition-colors
+                ${currentSessionIdFromContext === session.id 
+                  ? "bg-blue-50 border border-blue-100 text-blue-800" 
+                  : "bg-white border border-slate-100"}`}
             >
               <div className="flex justify-between items-center">
-                <span className="truncate text-sm">{session.title || "無題のチャット"}</span>
+                <span className="truncate text-sm font-medium">{session.title || "無題のチャット"}</span>
                 <div className="flex space-x-1">
                   {showArchived ? (
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleUnarchiveSession(session.id); }}
-                      className="p-1 hover:bg-gray-600 rounded"
+                      className="p-1 hover:bg-slate-200 rounded text-slate-600"
                       title="アーカイブ解除"
                     >
-                      <ArchiveRestore size={16} />
+                      <ArchiveRestore size={14} />
                     </button>
                   ) : (
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleArchiveSession(session.id); }}
-                      className="p-1 hover:bg-gray-600 rounded"
+                      className="p-1 hover:bg-slate-200 rounded text-slate-600"
                       title="アーカイブ"
                     >
-                      <Archive size={16} />
+                      <Archive size={14} />
                     </button>
                   )}
                 </div>
               </div>
-              <p className="text-xs text-gray-400 truncate">{session.last_message_summary || "メッセージなし"}</p>
-              <p className="text-xs text-gray-500">
-                {session.updated_at ? new Date(session.updated_at).toLocaleString() : (session.created_at ? new Date(session.created_at).toLocaleString() : '日時不明')}
+              
+              <p className="text-xs text-slate-500 mt-1">
+                {session.updated_at ? new Date(session.updated_at).toLocaleString('ja-JP', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : (session.created_at ? new Date(session.created_at).toLocaleString('ja-JP', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : '日時不明')}
               </p>
             </div>
           ))}
