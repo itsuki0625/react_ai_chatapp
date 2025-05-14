@@ -266,6 +266,7 @@ export const ChatProvider = ({ children, initialAuthToken }: { children: ReactNo
 
   // useEffect for managing WebSocket connection based on authToken and component lifecycle
   useEffect(() => {
+    const currentWebSocket = actualWebSocketRef.current;
     if (authToken) {
       console.log(`[ChatContext Auth Effect - Token Based] AuthToken is present. WebSocket connection should be managed by useChatWebSocket based on token presence.`);
       // ここでは connectWebSocket() や useChatWebSocket への明示的な指示は行わない
@@ -278,7 +279,9 @@ export const ChatProvider = ({ children, initialAuthToken }: { children: ReactNo
     // Cleanup on ChatProvider unmount ONLY
     return () => {
       console.log("[ChatContext Auth Effect - Token Based] ChatProvider is unmounting. Closing WebSocket.");
-      actualWebSocketRef.current?.close(1000, 'ChatProvider unmounted by ChatContext cleanup');
+      if (currentWebSocket) {
+        currentWebSocket.close(1000, 'ChatProvider unmounted by ChatContext cleanup');
+      }
     };
   }, [authToken, actualWebSocketRef]); // 依存配列から state.currentChatType を削除
                                       // actualWebSocketRef はクリーンアップで最新のrefを使うために必要
