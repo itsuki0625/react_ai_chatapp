@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import ChatSidebar from '@/components/chat/ChatSidebar';
 import ChatWindow from '@/components/chat/ChatWindow';
 import { ChatInput } from '@/components/chat/ChatInput';
@@ -35,7 +35,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
   const prevContextSessionIdRef = useRef<string | null | undefined>(contextSessionId);
 
   // Derived state from URL
-  const getChatInfoFromPath = () => {
+  const getChatInfoFromPath = useCallback(() => {
     const pathSegments = pathname.split('/').filter(Boolean);
     const chatSegmentIndex = pathSegments.findIndex(segment => segment === 'chat');
     
@@ -52,7 +52,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
     const sessionIdFromUrl = chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 2 ? pathSegments[chatSegmentIndex + 2] : undefined;
     
     return { typeFromUrl, sessionIdFromUrl };
-  };
+  }, [pathname]);
 
   useEffect(() => {
     const { typeFromUrl, sessionIdFromUrl } = getChatInfoFromPath();
@@ -130,8 +130,8 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
     archivedSessions, 
     changeChatType, 
     dispatch, 
-    router
-    // prevContextSessionIdRef should not be in dependencies
+    router,
+    getChatInfoFromPath
   ]);
   
   const activeChatType = contextChatType;

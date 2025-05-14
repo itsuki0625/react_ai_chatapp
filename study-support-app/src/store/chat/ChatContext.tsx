@@ -284,17 +284,58 @@ export const ChatProvider = ({ children, initialAuthToken }: { children: ReactNo
                                       // actualWebSocketRef はクリーンアップで最新のrefを使うために必要
 
   const connectWebSocket = useCallback(() => {
-    if (authToken && state.currentChatType) {
-        console.log("[ChatProvider] Attempting to connect WebSocket (implicitly by useChatWebSocket dependencies)");
-    } else {
-        console.log("[ChatProvider] Cannot connect WebSocket: authToken or currentChatType missing.");
+    if (!authToken) {
+      console.log('No auth token available, skipping WebSocket connection');
+      return;
     }
-  }, [authToken, state.currentChatType]);
+
+    const actualWebSocket = new WebSocket(`${socketUrl}?token=${authToken}`);
+    socketRef.current = actualWebSocket;
+
+    actualWebSocket.onopen = () => {
+      console.log('WebSocket Connected');
+      setIsConnected(true);
+      dispatch({ type: 'SET_WEBSOCKET_CONNECTED', payload: true });
+    };
+
+    actualWebSocket.onclose = () => {
+      console.log('WebSocket Disconnected');
+      setIsConnected(false);
+      dispatch({ type: 'SET_WEBSOCKET_CONNECTED', payload: false });
+    };
+
+    actualWebSocket.onmessage = (event) => {
+      const wsMessage: WebSocketMessage = JSON.parse(event.data);
+      handleWebSocketMessage(wsMessage);
+    };
+
+    actualWebSocket.onerror = (error) => {
+      console.error('WebSocket Error:', error);
+      setIsConnected(false);
+      dispatch({ type: 'SET_WEBSOCKET_CONNECTED', payload: false });
+    };
+
+    return () => {
+      actualWebSocket.close();
+    };
+  }, [authToken, socketUrl, handleWebSocketMessage, dispatch]);
 
   const disconnectWebSocket = useCallback(() => {
-    console.log("[ChatProvider] Attempting to disconnect WebSocket");
-    actualWebSocketRef.current?.close(1000, 'User explicitly disconnected');
-  }, [actualWebSocketRef]);
+    if (socketRef.current) {
+      socketRef.current.close();
+      socketRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const cleanup = connectWebSocket();
+    return () => {
+      if (cleanup) {
+        cleanup();
+      }
+      disconnectWebSocket();
+    };
+  }, [connectWebSocket, disconnectWebSocket]);
 
   const sendMessage = useCallback(async (messageContent: string) => {
     if (!authToken) {
