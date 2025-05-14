@@ -1,4 +1,3 @@
-"use client";
 import { Metadata } from 'next';
 import ChatPage from '@/components/chat/ChatPage';
 import { ChatTypeEnum } from '@/types/chat';
