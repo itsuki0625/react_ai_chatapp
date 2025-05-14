@@ -16,14 +16,6 @@ import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 
 const StatementListPage: React.FC = () => {
-    if (process.env.NODE_ENV === 'production') {
-        return (
-            <div className="flex h-full w-full items-center justify-center">
-                <p className="text-xl">開発中です。公開までお待ちください。</p>
-            </div>
-        );
-    }
-
     const queryClient = useQueryClient();
     const { hasPermission, isLoading: isAuthLoading } = useAuthHelpers();
     const router = useRouter();
@@ -33,6 +25,17 @@ const StatementListPage: React.FC = () => {
         queryFn: getStatements,
         enabled: !isAuthLoading && hasPermission('statement_manage_own'),
         retry: false,
+    });
+
+    const deleteMutation = useMutation<void, Error, string>({ 
+        mutationFn: deleteStatement, 
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['statements'] });
+            alert('志望理由書を削除しました。');
+        },
+        onError: (error) => {
+            alert(`削除に失敗しました: ${error.message}`);
+        }
     });
 
     useEffect(() => {
@@ -52,16 +55,13 @@ const StatementListPage: React.FC = () => {
         }
     }, [error, router]);
 
-    const deleteMutation = useMutation<void, Error, string>({ 
-        mutationFn: deleteStatement, 
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['statements'] });
-            alert('志望理由書を削除しました。');
-        },
-        onError: (error) => {
-            alert(`削除に失敗しました: ${error.message}`);
-        }
-    });
+    if (process.env.NODE_ENV === 'production') {
+        return (
+            <div className="flex h-full w-full items-center justify-center">
+                <p className="text-xl">開発中です。公開までお待ちください。</p>
+            </div>
+        );
+    }
 
     const handleDelete = (id: string) => {
         if (confirm('この志望理由書を削除してもよろしいですか？')) {

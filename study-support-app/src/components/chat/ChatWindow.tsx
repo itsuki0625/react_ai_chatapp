@@ -1,6 +1,6 @@
 'use client'; // このコンポーネントはクライアントサイドで動作
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import MessageList from './MessageList';
 import { useChat } from '@/store/chat/ChatContext';
 import { useSession } from 'next-auth/react';
@@ -25,18 +25,68 @@ const ChatWindow: React.FC = () => {
 
   const { data: authSession, status: authStatus } = useSession();
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement | null>(null);
+  const userScrolledUpRef = useRef<boolean>(false);
+  const prevMessagesLengthRef = useRef<number>(0);
 
-  const scrollToBottom = () => {
-    // MessageListコンポーネントの末尾にスクロール要素を配置する想定
-    const scrollTarget = document.getElementById('messages-end-sentinel');
-    if (scrollTarget) {
-        scrollTarget.scrollIntoView({ behavior: "smooth" });
+  const scrollToBottomOrPrevious = useCallback(() => {
+    if (userScrolledUpRef.current) {
+      // ユーザーがスクロールアップしている場合、何もしない
+      return;
     }
-  };
 
+    if (chatContainerRef.current) {
+      const { scrollHeight, clientHeight } = chatContainerRef.current;
+      // 常に最下部にスクロール
+      chatContainerRef.current.scrollTop = scrollHeight - clientHeight;
+    }
+  }, []);
+
+  // メッセージリストが変更されたときにスクロール処理を呼び出す
+  // isLoading ストリーミングの開始と終了時など、ロード状態の変化でもスクロール
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    // 初期ロード時やメッセージ更新時に最下部にスクロール
+    scrollToBottomOrPrevious();
+  }, [messages, isLoading, scrollToBottomOrPrevious]);
+
+  // 新しいメッセージが追加された時だけ、強制的に最下部にスクロールするロジック
+  useEffect(() => {
+    if (messages.length > prevMessagesLengthRef.current) {
+      // 新しいメッセージが追加されたと判断
+      // console.log('[DEBUG ChatWindow] New message detected, forcing scroll to bottom.');
+      userScrolledUpRef.current = false; // 自動スクロールを有効化
+      scrollToBottomOrPrevious(); 
+    }
+    prevMessagesLengthRef.current = messages.length;
+  }, [messages, scrollToBottomOrPrevious]);
+
+  // ユーザーのスクロール操作を検出
+  useEffect(() => {
+    const container = chatContainerRef.current;
+    const handleScroll = () => {
+      if (container) {
+        const { scrollTop, scrollHeight, clientHeight } = container;
+        // ユーザーが手動でスクロールアップしたかどうかを判断
+        // 閾値（例: 10px）を設けて、わずかな変動は無視する
+        if (scrollHeight - scrollTop - clientHeight > 10) { 
+          userScrolledUpRef.current = true;
+          // console.log('[DEBUG ChatWindow] User scrolled up.');
+        } else {
+          userScrolledUpRef.current = false;
+          // console.log('[DEBUG ChatWindow] User scrolled to bottom.');
+        }
+      }
+    };
+
+    if (container) {
+      container.addEventListener('scroll', handleScroll);
+    }
+    return () => {
+      if (container) {
+        container.removeEventListener('scroll', handleScroll);
+      }
+    };
+  }, []);
 
   // 履歴読み込みロジック (セッションIDが設定され、メッセージがまだない場合)
   // ChatProvider側でセッションID変更時に履歴を読み込むのが理想だが、
@@ -47,8 +97,7 @@ const ChatWindow: React.FC = () => {
       console.log(`ChatWindow: sessionId ${sessionId} detected with no messages. Attempting to load history via fetchMessages.`);
       fetchMessages(sessionId); // ★★★ fetchMessages を呼び出す ★★★
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, messages.length, authStatus, isLoading, fetchMessages]); // fetchMessages を依存配列に追加
+  }, [sessionId, messages.length, authStatus, isLoading, fetchMessages]);
 
   // 認証ローディング状態
   if (authStatus === 'loading') {

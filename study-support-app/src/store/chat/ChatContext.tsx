@@ -266,6 +266,7 @@ export const ChatProvider = ({ children, initialAuthToken }: { children: ReactNo
 
   // useEffect for managing WebSocket connection based on authToken and component lifecycle
   useEffect(() => {
+    const currentWebSocket = actualWebSocketRef.current;
     if (authToken) {
       console.log(`[ChatContext Auth Effect - Token Based] AuthToken is present. WebSocket connection should be managed by useChatWebSocket based on token presence.`);
       // ここでは connectWebSocket() や useChatWebSocket への明示的な指示は行わない
@@ -278,23 +279,66 @@ export const ChatProvider = ({ children, initialAuthToken }: { children: ReactNo
     // Cleanup on ChatProvider unmount ONLY
     return () => {
       console.log("[ChatContext Auth Effect - Token Based] ChatProvider is unmounting. Closing WebSocket.");
-      actualWebSocketRef.current?.close(1000, 'ChatProvider unmounted by ChatContext cleanup');
+      if (currentWebSocket) {
+        currentWebSocket.close(1000, 'ChatProvider unmounted by ChatContext cleanup');
+      }
     };
   }, [authToken, actualWebSocketRef]); // 依存配列から state.currentChatType を削除
                                       // actualWebSocketRef はクリーンアップで最新のrefを使うために必要
 
   const connectWebSocket = useCallback(() => {
-    if (authToken && state.currentChatType) {
-        console.log("[ChatProvider] Attempting to connect WebSocket (implicitly by useChatWebSocket dependencies)");
-    } else {
-        console.log("[ChatProvider] Cannot connect WebSocket: authToken or currentChatType missing.");
+    if (!authToken) {
+      console.log('No auth token available, skipping WebSocket connection');
+      return;
     }
-  }, [authToken, state.currentChatType]);
+
+    const actualWebSocket = new WebSocket(`${socketUrl}?token=${authToken}`);
+    socketRef.current = actualWebSocket;
+
+    actualWebSocket.onopen = () => {
+      console.log('WebSocket Connected');
+      setIsConnected(true);
+      dispatch({ type: 'SET_WEBSOCKET_CONNECTED', payload: true });
+    };
+
+    actualWebSocket.onclose = () => {
+      console.log('WebSocket Disconnected');
+      setIsConnected(false);
+      dispatch({ type: 'SET_WEBSOCKET_CONNECTED', payload: false });
+    };
+
+    actualWebSocket.onmessage = (event) => {
+      const wsMessage: WebSocketMessage = JSON.parse(event.data);
+      handleWebSocketMessage(wsMessage);
+    };
+
+    actualWebSocket.onerror = (error) => {
+      console.error('WebSocket Error:', error);
+      setIsConnected(false);
+      dispatch({ type: 'SET_WEBSOCKET_CONNECTED', payload: false });
+    };
+
+    return () => {
+      actualWebSocket.close();
+    };
+  }, [authToken, socketUrl, handleWebSocketMessage, dispatch]);
 
   const disconnectWebSocket = useCallback(() => {
-    console.log("[ChatProvider] Attempting to disconnect WebSocket");
-    actualWebSocketRef.current?.close(1000, 'User explicitly disconnected');
-  }, [actualWebSocketRef]);
+    if (socketRef.current) {
+      socketRef.current.close();
+      socketRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const cleanup = connectWebSocket();
+    return () => {
+      if (cleanup) {
+        cleanup();
+      }
+      disconnectWebSocket();
+    };
+  }, [connectWebSocket, disconnectWebSocket]);
 
   const sendMessage = useCallback(async (messageContent: string) => {
     if (!authToken) {
