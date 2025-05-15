@@ -92,9 +92,12 @@ async def get_multi_users(
     return users, total
 
 async def create_user(db: AsyncSession, *, user_in: UserCreate) -> User:
+    logger.info(f"Attempting to create user with email: {user_in.email}")
     role_name = user_in.role
     db_role = await crud_role.get_role_by_name(db, role_name)
     if not db_role:
+        # Ensure this part is handled correctly, maybe raise an error or log as critical
+        logger.error(f"Role '{role_name}' not found in database during user creation for {user_in.email}.")
         raise ValueError(f"Role '{role_name}' not found in database.")
 
     db_user = User(
@@ -102,13 +105,14 @@ async def create_user(db: AsyncSession, *, user_in: UserCreate) -> User:
         email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
         full_name=user_in.full_name,
-        status=SchemaUserStatus.ACTIVE,
-        is_verified=True,
+        status=SchemaUserStatus.ACTIVE, # Default status, ensure this is intended
+        is_verified=True, # Default verification, ensure this is intended
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
     db.add(db_user)
-    await db.flush()
+    await db.flush() # db_user.id is available after flush
+    logger.info(f"User object created and flushed for email: {user_in.email}, user_id: {db_user.id}")
 
     user_role_assoc = ModelUserRole(
         user_id=db_user.id,
@@ -116,17 +120,30 @@ async def create_user(db: AsyncSession, *, user_in: UserCreate) -> User:
         is_primary=True
     )
     db.add(user_role_assoc)
+    logger.info(f"UserRole association created for user_id: {db_user.id}")
 
     try:
         email_verification = UserEmailVerification(
             id=uuid.uuid4(), user_id=db_user.id, email_verified=False, created_at=datetime.utcnow(), updated_at=datetime.utcnow()
         )
-        login_info = UserLoginInfo(
-            id=uuid.uuid4(), user_id=db_user.id, failed_login_attempts=0, created_at=datetime.utcnow(), updated_at=datetime.utcnow()
-        )
         db.add(email_verification)
+        logger.info(f"UserEmailVerification object created for user_id: {db_user.id}")
+        
+        logger.info(f"Attempting to create UserLoginInfo for user_id: {db_user.id}")
+        login_info = UserLoginInfo(
+            id=uuid.uuid4(),
+            user_id=db_user.id, # Ensure this is correct
+            failed_login_attempts=0,
+            # last_login_at is intentionally left null on creation
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
         db.add(login_info)
+        logger.info(f"UserLoginInfo object added to session for user_id: {db_user.id}")
+
+        logger.info(f"Attempting to commit all new records for user: {user_in.email}")
         await db.commit()
+        logger.info(f"Successfully committed new user and related records for email: {user_in.email}")
         
         # コミット後に関連情報を含めてユーザーを再取得して返す
         loaded_user = await get_user(db, db_user.id)
@@ -137,8 +154,9 @@ async def create_user(db: AsyncSession, *, user_in: UserCreate) -> User:
         return loaded_user
 
     except Exception as e:
+        logger.error(f"Error during commit or related record creation for {user_in.email}: {e}", exc_info=True)
         await db.rollback()
-        logger.error(f"Error creating user and related records for {user_in.email}: {e}")
+        logger.info(f"Rolled back transaction for user: {user_in.email}")
         raise e
 
 async def update_user(
@@ -281,29 +299,51 @@ async def disable_2fa(db: AsyncSession, user_id: UUID) -> bool:
     return True
 
 async def record_login_attempt(db: AsyncSession, user_id: UUID, success: bool) -> None:
+    logger.info(f"Attempting to record login for user_id: {user_id}, success: {success}")
     user = await get_user(db, user_id)
+    if not user:
+        logger.warning(f"User not found in record_login_attempt for user_id: {user_id}")
+        return
+
     result = await db.execute(select(UserLoginInfo).filter(UserLoginInfo.user_id == user_id))
     login_info = result.scalars().first()
-    if not user or not login_info:
-         print(f"User or login info not found for user_id: {user_id}")
-         return
+
+    if not login_info:
+        logger.warning(f"UserLoginInfo not found for user_id: {user_id}")
+        # Consider adding logic here to create UserLoginInfo if it doesn't exist
+        # login_info = UserLoginInfo(user_id=user_id, created_at=datetime.utcnow())
+        # db.add(login_info)
+        # logger.info(f"Created new UserLoginInfo for user_id: {user_id}")
+        return # Or handle as appropriate
+
     now = datetime.utcnow()
+    logger.info(f"Current time (UTC): {now}")
+
     if success:
-        if hasattr(login_info, 'last_login_at'):
-            login_info.last_login_at = now
+        logger.info(f"Login successful for user_id: {user_id}. Current last_login_at: {login_info.last_login_at}")
+        login_info.last_login_at = now
         login_info.failed_login_attempts = 0
         login_info.locked_until = None
         login_info.account_lock_reason = None
+        logger.info(f"Updated last_login_at to: {login_info.last_login_at} for user_id: {user_id}")
     else:
-        if hasattr(login_info, 'last_failed_login_at'):
+        logger.info(f"Login failed for user_id: {user_id}")
+        if hasattr(login_info, 'last_failed_login_at'): # Keep this check for last_failed_login_at
             login_info.last_failed_login_at = now
         login_info.failed_login_attempts += 1
-        if login_info.failed_login_attempts >= 5:
-            login_info.locked_until = now + timedelta(minutes=15)
+        if login_info.failed_login_attempts >= 5: # Threshold should be configurable
+            login_info.locked_until = now + timedelta(minutes=15) # Lock duration should be configurable
             login_info.account_lock_reason = AccountLockReason.FAILED_ATTEMPTS
+    
     login_info.updated_at = now
-    db.add(login_info)
-    await db.commit()
+    try:
+        db.add(login_info)
+        await db.commit()
+        await db.refresh(login_info) # Refresh to get the latest state from DB
+        logger.info(f"Successfully committed UserLoginInfo for user_id: {user_id}. Refreshed last_login_at: {login_info.last_login_at}")
+    except Exception as e:
+        logger.error(f"Error committing UserLoginInfo for user_id: {user_id}: {e}", exc_info=True)
+        await db.rollback()
 
 async def is_account_locked(db: AsyncSession, user_id: UUID) -> bool:
     user = await get_user(db, user_id)
