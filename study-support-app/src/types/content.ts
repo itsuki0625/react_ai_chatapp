@@ -27,6 +27,7 @@ export interface Content {
   difficulty?: number;                 // ★ 追加
   provider?: string;                   // ★ 追加 (バックエンドモデルに合わせて)
   provider_item_id?: string;           // ★ 追加 (バックエンドモデルに合わせて)
+  presenter_notes?: string[];
 }
 
 // 新規作成リクエスト用の型 (前回提案済み、必要であれば再確認)
