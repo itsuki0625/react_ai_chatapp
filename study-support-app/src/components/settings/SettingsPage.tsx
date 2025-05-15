@@ -112,9 +112,8 @@ const SettingsPage = () => {
       }
     };
     loadUserSettings();
-  }, [status, userId, userName, userEmail, setUser, user, isAuthLoading, isSubLoading]); // Use extracted values in dependency array
+  }, [status, userId, userName, userEmail, setUser, user, isAuthLoading, isSubLoading, session]); // Use extracted values in dependency array
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (selectedFile) {
         const reader = new FileReader();
