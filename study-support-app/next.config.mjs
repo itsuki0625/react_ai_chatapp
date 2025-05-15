@@ -10,6 +10,30 @@ const nextConfig = { // 型注釈を削除
         protocol: 'https',
         hostname: '**.amazonaws.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'docs.google.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'i.ytimg.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'img.youtube.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'speakerd.s3.amazonaws.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'image.slidesharecdn.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'drive.google.com',
+      }
     ],
   },
   async rewrites() {

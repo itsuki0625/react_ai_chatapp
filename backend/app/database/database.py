@@ -34,7 +34,7 @@ logger.info("Determining SSL context for async engine...")
 # logger.info(f"Result of get_ssl_context: {'SSLContext object' if db_ssl_context else 'None'}")
 
 async_engine_kwargs = {
-    "echo": False, # 環境変数に関わらず常に False にしてログ出力を抑制
+    "echo": False, # 環境変数に関わらず常に True にしてログ出力を抑制
 }
 
 # SSLContext があれば connect_args に設定

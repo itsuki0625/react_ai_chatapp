@@ -127,7 +127,7 @@ export const ApplicationList = () => {
   };
 
   const handleCreateApplication = async () => {
-    router.push('/dashboard/applications/new');
+    router.push('/application/new');
   };
 
   const handleEditApplication = async (e: React.MouseEvent, applicationId: string) => {

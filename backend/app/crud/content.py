@@ -1,183 +1,260 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import select, delete
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from app.models.content import Content, ContentCategory, ContentCategoryRelation, ContentTag
-from app.schemas.content import ContentCreate, ContentUpdate, ContentCategory as ContentCategoryEnum
+from app.schemas.content import ContentCreate, ContentUpdate, ContentCategoryInfo
 from uuid import UUID
 from fastapi import HTTPException
+from sqlalchemy.orm import selectinload
 
-def get_category_by_name(db: Session, category_name: ContentCategoryEnum) -> Optional[ContentCategory]:
-    """カテゴリ名 (Enum値) で ContentCategory を検索するヘルパー関数"""
-    # Enum の .value で実際の文字列値を取得して比較
-    return db.query(ContentCategory).filter(ContentCategory.name == category_name.value).first()
-
-def create_content(db: Session, content: ContentCreate) -> Content:
-    # 1. モデルに渡す基本データを取得 (Enum は値に変換される)
-    content_data = content.model_dump(exclude={'category', 'tags', 'created_by_id', 'author', 'difficulty', 'content_type'}) # content_type も除外
+async def create_content(db: AsyncSession, content: ContentCreate) -> Content:
+    # 1. モデルに渡す基本データを取得
+    content_data = content.model_dump(exclude={'category_id', 'tags', 'created_by_id', 'author', 'difficulty', 'content_type', 'provider', 'provider_item_id'})
 
     # ★★★ duration の値をチェック・変換 ★★★
     if 'duration' in content_data and not isinstance(content_data['duration'], (int, type(None))):
         try:
-            # 空文字列などを None に変換、数値文字列は int に変換
             duration_val = content_data['duration']
-            # str(duration_val).strip() で空白文字のみの場合も空として扱う
             content_data['duration'] = int(duration_val) if duration_val is not None and str(duration_val).strip() else None
         except (ValueError, TypeError):
-            # 変換できない場合は None にする (またはエラーにする)
             print(f"警告: duration の値 '{content_data['duration']}' を整数に変換できませんでした。None として扱います。")
             content_data['duration'] = None
 
-    # 2. Content インスタンスを作成し、Enum メンバーを明示的に渡す
+    # 2. Content インスタンスを作成
     db_content = Content(
-        **content_data,                   # 他のデータはそのまま渡す
-        content_type=content.content_type.name  # DBのEnumが大文字ラベル(SLIDE等)を期待するため、nameを渡す
+        **content_data,
+        content_type=content.content_type.name,
+        created_by_id=content.created_by_id,
+        provider=content.provider,
+        provider_item_id=content.provider_item_id
     )
 
     # 3. DBに追加してIDを割り当て
     db.add(db_content)
     try:
-      db.flush() # ID を確定させるために flush
+      await db.flush()
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         print(f"データベース flush エラー (Content 追加時): {e}")
-        # エラーメッセージにSQLとパラメータを含める (デバッグ用)
         if hasattr(e, 'params') and hasattr(e, 'statement'):
              print(f"SQL: {e.statement}")
              print(f"Params: {e.params}")
         raise HTTPException(status_code=500, detail="コンテンツ基本情報の保存中にエラーが発生しました。")
 
-    # 4. カテゴリの処理
-    if content.category:
-        db_category = get_category_by_name(db, content.category)
-        if not db_category:
-             # 存在しないカテゴリが指定された場合のエラーハンドリング
-             print(f"警告: カテゴリ '{content.category.value}' が見つかりません。関連付けはスキップされます。")
-             # 必要であれば HTTPException を raise する
-             # raise HTTPException(status_code=400, detail=f"カテゴリ '{content.category.value}' が見つかりません")
-        else:
-            # 中間テーブルにレコードを作成
-            db_relation = ContentCategoryRelation(
-                content_id=db_content.id,
-                category_id=db_category.id
-            )
-            db.add(db_relation)
-            try:
-                db.flush() # 関連レコードの flush
-            except Exception as e:
-                db.rollback()
-                print(f"データベース flush エラー (カテゴリ関連付け時): {e}")
-                raise HTTPException(status_code=500, detail="カテゴリ情報の保存中にエラーが発生しました。")
-
+    # 4. カテゴリの処理 (★ category_id を使用するように変更)
+    if content.category_id:
+        db_relation = ContentCategoryRelation(
+            content_id=db_content.id,
+            category_id=content.category_id # Use category_id directly
+        )
+        db.add(db_relation)
+        try:
+            await db.flush()
+        except Exception as e:
+            await db.rollback()
+            print(f"データベース flush エラー (カテゴリ関連付け時): {e}")
+            raise HTTPException(status_code=500, detail="カテゴリ情報の保存中にエラーが発生しました。")
 
     # 5. タグの処理
     if content.tags:
         for tag_name in content.tags:
-            if tag_name and tag_name.strip(): # 空や空白のみのタグは無視
+            if tag_name and tag_name.strip():
                 db_tag = ContentTag(
                     content_id=db_content.id,
-                    tag_name=tag_name.strip() # 前後の空白を削除
+                    tag_name=tag_name.strip()
                 )
                 db.add(db_tag)
         try:
-            db.flush() # タグ関連レコードの flush
+            await db.flush()
         except Exception as e:
-            db.rollback()
+            await db.rollback()
             print(f"データベース flush エラー (タグ追加時): {e}")
             raise HTTPException(status_code=500, detail="タグ情報の保存中にエラーが発生しました。")
 
-    # 6. created_by_id, author, difficulty は Content モデルに直接保存しない
-    #    必要であればここで監査ログ等への保存処理を行う
-
-    # 7. すべての変更をコミット
     try:
-        db.commit()
+        await db.commit()
     except Exception as e:
-        db.rollback() # エラーが発生したらロールバック
+        await db.rollback()
         print(f"データベースコミットエラー: {e}")
-        # commit エラーはより一般的なメッセージにするか、詳細をログに残す
         raise HTTPException(status_code=500, detail="コンテンツの保存中に最終エラーが発生しました。")
 
-    db.refresh(db_content) # リレーションを含めて最新の状態を読み込む
+    await db.refresh(db_content) 
+
     return db_content
 
-def get_content(db: Session, content_id: UUID) -> Optional[Content]:
-    return db.query(Content).filter(Content.id == content_id).first()
+async def get_content(db: AsyncSession, content_id: UUID) -> Optional[Content]:
+    # result = await db.execute(select(Content).filter(Content.id == content_id))
+    # Eager load category_relations and its nested category, and tags
+    result = await db.execute(
+        select(Content)
+        .options(
+            selectinload(Content.category_relations).selectinload(ContentCategoryRelation.category),
+            selectinload(Content.tags)
+        )
+        .filter(Content.id == content_id)
+    )
+    db_content = result.scalars().first()
+    if db_content: # ★ 古い category Enum のセットアップロジックを削除
+        # Pydanticモデルへの変換のために category 属性をセット
+        if db_content.category_relations and db_content.category_relations[0].category:
+            try:
+                # ContentCategoryInfo.from_orm を使用
+                db_content.category_info = ContentCategoryInfo.from_orm(db_content.category_relations[0].category)
+            except Exception as e:
+                # 変換エラーのログ出力など
+                print(f"Error converting category to ContentCategoryInfo: {e}")
+                db_content.category_info = None # エラー時は None にフォールバック
+        else:
+            # category_relations がない場合や、関連categoryがない場合はデフォルト値を設定
+            db_content.category_info = None 
+    return db_content
 
-def get_contents(
-    db: Session, 
+async def get_contents(
+    db: AsyncSession, 
     skip: int = 0, 
     limit: int = 100,
     content_type: Optional[str] = None
 ) -> List[Content]:
-    query = db.query(Content)
+    query = (
+        select(Content)
+        .options(
+            selectinload(Content.category_relations).selectinload(ContentCategoryRelation.category),
+            selectinload(Content.tags)
+        )
+    )
     if content_type:
         query = query.filter(Content.content_type == content_type)
-    return query.offset(skip).limit(limit).all()
+    
+    result = await db.execute(query.order_by(Content.created_at.desc()).offset(skip).limit(limit)) # created_at でソートする例
+    all_contents = result.scalars().all()
+    
+    # ★ 古い category Enum のセットアップロジックをループ内から削除
+    # for db_content_item in all_contents:
+    #     if db_content_item.category_relations and db_content_item.category_relations[0].category:
+    #         try:
+    #             db_content_item.category = ContentCategoryEnum(db_content_item.category_relations[0].category.name)
+    #         except ValueError:
+    #             print(f"警告: DBのカテゴリ名 '{db_content_item.category_relations[0].category.name}' を ContentCategoryEnumに変換できませんでした。")
+    #             db_content_item.category = ContentCategoryEnum.OTHER
+    #     else:
+    #         db_content_item.category = ContentCategoryEnum.OTHER
+            
+    return all_contents
 
-def update_content(
-    db: Session,
+async def update_content(
+    db: AsyncSession,
     content_id: UUID,
     content_update: ContentUpdate
 ) -> Optional[Content]:
-    db_content = get_content(db, content_id)
+    db_content = await db.get(Content, content_id)
     if db_content:
-        # 更新データから除外するフィールドリスト
-        exclude_fields = {'category', 'tags', 'author', 'difficulty', 'content_type'}
+        # 更新データから除外するフィールドリストに provider と provider_item_id を追加 (これらは個別処理するため)
+        exclude_fields = {'category_id', 'tags', 'author', 'difficulty', 'content_type', 'provider', 'provider_item_id'}
         update_data = content_update.model_dump(exclude_unset=True, exclude=exclude_fields)
 
         # 基本フィールドを更新
         for key, value in update_data.items():
             setattr(db_content, key, value)
 
-        # content_type が更新データに含まれていれば Enum メンバーで上書き
-        # Pydantic V2: Check if field was explicitly set using __fields_set__ or check against exclude_unset logic implicitly handled by model_dump
-        if content_update.content_type is not None and 'content_type' not in content_update.model_dump(exclude_unset=True, exclude=exclude_fields).keys() :
-             # Correction: Check if content_type was provided in the update request *before* excluding it.
-             # We access the original model before dump or check the __fields_set__ if available
-             # Simpler approach: check if it was provided in the original content_update object
-             original_update_dict = content_update.model_dump(exclude_unset=True)
-             if 'content_type' in original_update_dict:
-                  # DBのEnumラベルに合わせて大文字のnameを利用
-                  db_content.content_type = content_update.content_type.name
+        # content_type の更新
+        if content_update.content_type is not None and 'content_type' in content_update.model_fields_set:
+            db_content.content_type = content_update.content_type.name
 
-        # ★★★ duration の値をチェック・変換 (更新時) ★★★
-        if 'duration' in update_data and not isinstance(update_data['duration'], (int, type(None))):
+        # duration の更新
+        if 'duration' in content_update.model_fields_set and 'duration' in update_data:
+            duration_val = update_data['duration']
             try:
-                duration_val = update_data['duration']
-                # Check if duration was actually provided before setting it
-                if 'duration' in original_update_dict:
-                    db_content.duration = int(duration_val) if duration_val is not None and str(duration_val).strip() else None
+                db_content.duration = int(duration_val) if duration_val is not None and str(duration_val).strip() else None
             except (ValueError, TypeError):
                 print(f"警告: 更新時の duration の値 '{duration_val}' を整数に変換できませんでした。None として扱います。")
-                # Set to None only if it was part of the update request
-                if 'duration' in original_update_dict:
-                    db_content.duration = None
+                db_content.duration = None
+        elif 'duration' in content_update.model_fields_set and update_data.get('duration') is None:
+            # 明示的に null が渡された場合
+            db_content.duration = None
 
-        # TODO: category と tags の更新処理をここに追加
-        #       - 古い関連を削除し、新しい関連を追加するなど
+        # ★ provider と provider_item_id の更新処理を追加
+        if 'provider' in content_update.model_fields_set:
+            db_content.provider = content_update.provider
+        if 'provider_item_id' in content_update.model_fields_set:
+            db_content.provider_item_id = content_update.provider_item_id
+
+        # カテゴリの更新処理
+        # 1. 既存のカテゴリ関連を削除
+        await db.execute(delete(ContentCategoryRelation).where(ContentCategoryRelation.content_id == db_content.id))
+        try:
+            await db.flush()
+        except Exception as e:
+            await db.rollback()
+            print(f"データベース flush エラー (既存カテゴリ関連削除時): {e}")
+            raise HTTPException(status_code=500, detail="既存カテゴリ関連の削除中にエラーが発生しました。")
+
+        # 2. 新しいカテゴリIDが提供されていれば、新しい関連を作成
+        if 'category_id' in content_update.model_fields_set and content_update.category_id is not None:
+            new_relation = ContentCategoryRelation(
+                content_id=db_content.id,
+                category_id=content_update.category_id
+            )
+            db.add(new_relation)
+            try:
+                await db.flush()
+            except Exception as e:
+                await db.rollback()
+                print(f"データベース flush エラー (新規カテゴリ関連作成時): {e}")
+                raise HTTPException(status_code=500, detail="新規カテゴリ関連の作成中にエラーが発生しました。")
+        
+        # タグの更新処理
+        # 1. 既存のタグを削除
+        await db.execute(delete(ContentTag).where(ContentTag.content_id == db_content.id))
+        try:
+            await db.flush()
+        except Exception as e:
+            await db.rollback()
+            print(f"データベース flush エラー (既存タグ削除時): {e}")
+            raise HTTPException(status_code=500, detail="既存タグの削除中にエラーが発生しました。")
+
+        # 2. 新しいタグが提供されていれば追加
+        if 'tags' in content_update.model_fields_set and content_update.tags:
+            for tag_name in content_update.tags:
+                if tag_name and tag_name.strip():
+                    db_tag = ContentTag(content_id=db_content.id, tag_name=tag_name.strip())
+                    db.add(db_tag)
+            try:
+                await db.flush()
+            except Exception as e:
+                await db.rollback()
+                print(f"データベース flush エラー (新規タグ追加時): {e}")
+                raise HTTPException(status_code=500, detail="新規タグの追加中にエラーが発生しました。")
 
         try:
-            db.commit()
-            db.refresh(db_content)
+            await db.commit()
+            await db.refresh(db_content)
         except Exception as e:
-            db.rollback()
-            print(f"データベース更新エラー: {e}")
-            raise HTTPException(status_code=500, detail="コンテンツ更新中にエラーが発生しました。")
+            await db.rollback()
+            print(f"データベース更新コミットエラー: {e}")
+            raise HTTPException(status_code=500, detail="コンテンツ更新中に最終エラーが発生しました。")
     return db_content
 
-def delete_content(db: Session, content_id: UUID) -> bool:
-    db_content = get_content(db, content_id)
+async def delete_content(db: AsyncSession, content_id: UUID) -> bool:
+    db_content = await get_content(db, content_id)
     if db_content:
         # 関連レコード (tags, category_relations) の削除も考慮する必要がある
         # Cascade delete が設定されていれば自動で削除される場合もある
-        # 手動で削除する場合:
-        # db.query(ContentTag).filter(ContentTag.content_id == content_id).delete()
-        # db.query(ContentCategoryRelation).filter(ContentCategoryRelation.content_id == content_id).delete()
-        db.delete(db_content)
+        # 手動で削除する場合のコメントアウトは残しておいても良い
+        # await db.execute(delete(ContentTag).where(ContentTag.content_id == content_id))
+        # await db.execute(delete(ContentCategoryRelation).where(ContentCategoryRelation.content_id == content_id))
+        
+        await db.delete(db_content)
         try:
-            db.commit()
+            await db.commit()
             return True
         except Exception as e:
-            db.rollback()
-            print(f"データベース削除エラー: {e}")
-            raise HTTPException(status_code=500, detail="コンテンツ削除中にエラーが発生しました。")
+            await db.rollback()
+            # エラーメッセージにエラー内容を含めるのはデバッグに有用なので残す
+            print(f"データベース削除エラー: {e}") 
+            raise HTTPException(status_code=500, detail=f"コンテンツ削除中にエラーが発生しました。詳細: {str(e)}")
     return False 
+
+async def get_all_content_categories(db: AsyncSession) -> List[ContentCategory]:
+    result = await db.execute(select(ContentCategory).order_by(ContentCategory.display_order, ContentCategory.name))
+    return result.scalars().all() 

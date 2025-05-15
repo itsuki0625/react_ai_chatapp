@@ -1,6 +1,6 @@
-from pydantic import BaseModel, HttpUrl, Field, validator
+from pydantic import BaseModel, HttpUrl, Field, validator, computed_field
 from datetime import datetime
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from uuid import UUID
 from enum import Enum
 from .base import TimestampMixin
@@ -14,22 +14,12 @@ class ContentType(str, Enum):
     QUIZ = "quiz"
     EXTERNAL_LINK = "external_link"
 
-class ContentCategory(str, Enum):
-    SELF_ANALYSIS = "self_analysis"  # 自己分析
-    ADMISSIONS = "admissions"  # 入試対策
-    ACADEMIC = "academic"  # 学習一般
-    UNIVERSITY_INFO = "university_info"  # 大学情報
-    CAREER = "career"  # キャリア
-    OTHER = "other"  # その他
-
 class ContentBase(BaseModel):
     title: str
     description: Optional[str] = None
     url: str
     content_type: ContentType
     thumbnail_url: Optional[str] = None
-    category: ContentCategory
-    tags: Optional[List[str]] = Field(default_factory=list)
     duration: Optional[int] = None
     is_premium: bool = False
     author: Optional[str] = None
@@ -43,6 +33,10 @@ class ContentBase(BaseModel):
 
 class ContentCreate(ContentBase):
     created_by_id: UUID
+    tags: Optional[List[str]] = Field(default_factory=list)
+    category_id: Optional[UUID] = None
+    provider: Optional[str] = None
+    provider_item_id: Optional[str] = None
 
 class ContentUpdate(BaseModel):
     title: Optional[str] = None
@@ -50,25 +44,65 @@ class ContentUpdate(BaseModel):
     url: Optional[str] = None
     content_type: Optional[ContentType] = None
     thumbnail_url: Optional[str] = None
-    category: Optional[ContentCategory] = None
-    tags: Optional[List[str]] = None
+    category_id: Optional[UUID] = None
     duration: Optional[int] = None
     is_premium: Optional[bool] = None
     author: Optional[str] = None
     difficulty: Optional[int] = Field(None, ge=1, le=5)
+    provider: Optional[str] = None
+    provider_item_id: Optional[str] = None
+
+class ContentCategoryInfo(BaseModel):
+    id: UUID
+    name: str  # 英語の識別子
+    description: Optional[str] = None  # 日本語の表示名として利用
+    display_order: Optional[int] = None
+    icon_url: Optional[HttpUrl] = None
+    is_active: Optional[bool] = None
+
+    class Config:
+        from_attributes = True
+
+class ContentCategoryBase(BaseModel):
+    name: str = Field(..., min_length=1, description="カテゴリの英語識別子 (例: self_analysis)")
+    description: Optional[str] = Field(None, description="カテゴリの日本語名 (表示用)")
+    display_order: int = Field(0, description="表示順 (小さいほど先に表示)")
+    icon_url: Optional[HttpUrl] = Field(None, description="アイコン画像のURL")
+    is_active: bool = Field(True, description="有効フラグ")
+
+class ContentCategoryCreate(ContentCategoryBase):
+    pass
+
+class ContentCategoryUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1)
+    description: Optional[str] = None
+    display_order: Optional[int] = None
+    icon_url: Optional[HttpUrl] = None
+    is_active: Optional[bool] = None
 
 class ContentResponse(ContentBase, TimestampMixin):
     id: UUID
     average_rating: Optional[float] = None
     review_count: int = 0
     view_count: int = 0
-    created_by_id: UUID
+    created_by_id: Optional[UUID] = None
+    category_info: Optional[ContentCategoryInfo] = None
+    provider: Optional[str] = None
+    provider_item_id: Optional[str] = None
     
+    @computed_field
+    @property
+    def tags(self) -> List[str]:
+        orm_tags_value = self.__dict__.get('tags')
+        if isinstance(orm_tags_value, list):
+            return [tag.tag_name for tag in orm_tags_value if hasattr(tag, 'tag_name')]
+        return []
+
     class Config:
         from_attributes = True
 
 class ContentCategoryResponse(BaseModel):
-    category: ContentCategory
+    category: ContentType
     name: str
     description: Optional[str] = None
     content_count: int

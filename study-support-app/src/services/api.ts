@@ -1,6 +1,7 @@
 import { Content } from '@/types/content';
 import { getSession } from 'next-auth/react';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
+import { ContentCategoryInfo, ContentCategoryCreate, ContentCategoryUpdate } from '@/types/content';
 
 // ブラウザ環境かサーバー環境かによって適切なAPIのベースURLを取得
 export const getApiBaseUrl = () => {
@@ -139,6 +140,134 @@ export const contentAPI = {
       }
     } catch (error) {
       console.error(`コンテンツID: ${id} の削除に失敗しました:`, error);
+      throw error;
+    }
+  },
+
+  getAllContentCategories: async (params?: { skip?: number; limit?: number; is_active?: boolean }): Promise<ContentCategoryInfo[]> => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.skip !== undefined) queryParams.append('skip', String(params.skip));
+      if (params?.limit !== undefined) queryParams.append('limit', String(params.limit));
+      if (params?.is_active !== undefined) queryParams.append('is_active', String(params.is_active));
+      const queryString = queryParams.toString();
+      
+      const response = await fetchWithAuth(
+        `${getApiBaseUrl()}/api/v1/content-categories/${queryString ? '?' + queryString : ''}`
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      if (!Array.isArray(data)) {
+        console.error('Invalid data format received for content categories (admin)', data);
+        throw new Error('Invalid data format received for content categories (admin)');
+      }
+      return data as ContentCategoryInfo[];
+    } catch (error) {
+      console.error('コンテンツカテゴリー(管理用)の取得に失敗しました:', error);
+      throw error;
+    }
+  },
+
+  getContentCategoryById: async (id: string): Promise<ContentCategoryInfo> => {
+    try {
+      const response = await fetchWithAuth(
+        `${getApiBaseUrl()}/api/v1/content-categories/${id}`
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+      return await response.json() as ContentCategoryInfo;
+    } catch (error) {
+      console.error(`コンテンツカテゴリーID: ${id} の取得に失敗しました:`, error);
+      throw error;
+    }
+  },
+
+  createContentCategory: async (categoryData: ContentCategoryCreate): Promise<ContentCategoryInfo> => {
+    try {
+      const response = await fetchWithAuth(
+        `${getApiBaseUrl()}/api/v1/content-categories/`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(categoryData),
+        }
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+      return await response.json() as ContentCategoryInfo;
+    } catch (error) {
+      console.error('コンテンツカテゴリーの作成に失敗しました:', error);
+      throw error;
+    }
+  },
+
+  updateContentCategory: async (id: string, categoryData: ContentCategoryUpdate): Promise<ContentCategoryInfo> => {
+    try {
+      const response = await fetchWithAuth(
+        `${getApiBaseUrl()}/api/v1/content-categories/${id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(categoryData),
+        }
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+      return await response.json() as ContentCategoryInfo;
+    } catch (error) {
+      console.error(`コンテンツカテゴリーID: ${id} の更新に失敗しました:`, error);
+      throw error;
+    }
+  },
+
+  deleteContentCategory: async (id: string): Promise<void> => {
+    try {
+      const response = await fetchWithAuth(
+        `${getApiBaseUrl()}/api/v1/content-categories/${id}`,
+        {
+          method: 'DELETE',
+        }
+      );
+      if (!response.ok && response.status !== 204) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+    } catch (error) {
+      console.error(`コンテンツカテゴリーID: ${id} の削除に失敗しました:`, error);
+      throw error;
+    }
+  },
+
+  getContentCategories: async (): Promise<ContentCategoryInfo[]> => {
+    try {
+      const response = await fetchWithAuth(
+        `${getApiBaseUrl()}/api/v1/contents/categories/`
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      if (!Array.isArray(data)) {
+        console.error('Invalid data format received for content categories', data);
+        throw new Error('Invalid data format received for content categories');
+      }
+      return data as ContentCategoryInfo[];
+    } catch (error) {
+      console.error('コンテンツカテゴリーの取得に失敗しました:', error);
       throw error;
     }
   },
