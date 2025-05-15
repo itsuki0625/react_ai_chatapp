@@ -31,13 +31,19 @@ const ContentList: React.FC<ContentListProps> = ({ contents, onContentClick }) =
           onClick={() => onContentClick(content)}
         >
           <div className="aspect-video relative bg-gray-100">
-            <Image
-              src={content.thumbnail_url || '/placeholder.png'}
-              alt={content.title}
-              className="object-cover"
-              fill
-              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-            />
+            {content.thumbnail_url ? (
+              <Image
+                src={`/api/image-proxy?url=${encodeURIComponent(content.thumbnail_url)}`}
+                alt={content.title}
+                className="object-cover"
+                fill
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <FileText className="w-16 h-16 text-gray-300" /> {/* Placeholder icon */}
+              </div>
+            )}
           </div>
           <div className="p-4">
             <div className="flex items-center gap-2 mb-2">
