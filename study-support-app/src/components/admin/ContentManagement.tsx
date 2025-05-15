@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { useSession } from "next-auth/react";
 import { 
@@ -129,7 +129,7 @@ export const ContentManagement = () => {
     }
   };
 
-  const fetchContents = async () => {
+  const fetchContents = useCallback(async () => {
     try {
       const data = await contentAPI.getContents();
       setContents(data as Content[]);
@@ -137,9 +137,9 @@ export const ContentManagement = () => {
       console.error('Failed to fetch contents:', error);
       setContents([]);
     }
-  };
+  }, []);
 
-  const fetchCategoriesForContentForm = async () => {
+  const fetchCategoriesForContentForm = useCallback(async () => {
     try {
       const categories = await contentAPI.getContentCategories();
       setDbCategoriesForContentForm(categories);
@@ -147,21 +147,21 @@ export const ContentManagement = () => {
       console.error('Failed to fetch categories for content form:', error);
       setDbCategoriesForContentForm([]);
     }
-  };
+  }, []);
 
-  const fetchAdminCategories = async () => {
+  const fetchAdminCategories = useCallback(async () => {
     setIsLoading(true);
     try {
-      const categories = await contentAPI.getAllContentCategories({is_active: undefined});
-      setAdminCategories(categories);
+      const data = await contentAPI.getAllContentCategories(); 
+      setAdminCategories(data);
     } catch (error) {
-      console.error('Failed to fetch admin categories:', error);
+      console.error('Error fetching admin categories:', error);
+      enqueueSnackbar(`カテゴリー情報の取得中にエラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`, { variant: 'error' });
       setAdminCategories([]);
-      enqueueSnackbar('カテゴリ一覧の取得に失敗しました', { variant: 'error' });
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [enqueueSnackbar]);
 
   const handleContentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -360,7 +360,7 @@ export const ContentManagement = () => {
     } else if (activeTab === 'categories') {
       fetchAdminCategories();
     }
-  }, [activeTab]);
+  }, [activeTab, fetchContents, fetchCategoriesForContentForm, fetchAdminCategories]);
 
   return (
     <div className="bg-white rounded-lg shadow">

@@ -124,7 +124,7 @@ const SettingsPage = () => {
     } else {
         setPreviewUrl(user?.profile_image_url ?? null);
     }
-  }, [selectedFile, user?.profile_image_url]);
+  }, [selectedFile, user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
