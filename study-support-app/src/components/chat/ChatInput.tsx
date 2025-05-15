@@ -16,14 +16,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading =
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { hasPermission, isLoading: isAuthLoading } = useAuthHelpers();
-  const { isConnected, viewingSessionStatus } = useChat();
+  const { isWebSocketConnected, viewingSessionStatus } = useChat();
 
   // Check for message sending permission
   const canSendMessage = hasPermission('chat_message_send');
-  const isDisabled = !isConnected || isLoading || isAuthLoading || !canSendMessage || viewingSessionStatus === 'ARCHIVED';
+  const isDisabled = !isWebSocketConnected || isLoading || isAuthLoading || !canSendMessage || viewingSessionStatus === 'ARCHIVED';
   
   const getPlaceholder = () => {
-    if (!isConnected) return "接続していません...";
+    if (!isWebSocketConnected) return "接続していません...";
     if (!canSendMessage) return "メッセージを送信する権限がありません";
     if (viewingSessionStatus === 'ARCHIVED') return "アーカイブされたチャットです (読み取り専用)";
     return "メッセージを入力... (Shift+Enterで改行)";
