@@ -82,9 +82,15 @@ async def login(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="ユーザー情報の取得に失敗しました。",
             )
+        logger.info(f"User authenticated and re-fetched: {user.id if user else 'USER_NOT_FOUND_POST_AUTH'}")
 
         # 成功記録
-        await crud_user.record_login_attempt(db=db, user_id=user.id, success=True)
+        try:
+            logger.info(f"Calling record_login_attempt for user_id: {user.id}")
+            await crud_user.record_login_attempt(db=db, user_id=user.id, success=True)
+            logger.info(f"Successfully called record_login_attempt for user_id: {user.id}")
+        except Exception as e_record_login:
+            logger.error(f"Error calling record_login_attempt for user_id: {user.id}: {e_record_login}", exc_info=True)
         
         # リクエストヘッダーの確認
         logger.debug(f"リクエストヘッダー: {{request.headers}}")
