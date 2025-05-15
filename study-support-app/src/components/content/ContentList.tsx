@@ -50,9 +50,9 @@ const ContentList: React.FC<ContentListProps> = ({ contents, onContentClick }) =
               {content.description}
             </p>
             <div className="flex flex-wrap gap-2">
-              {content.category && (
-                <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
-                  {content.category}
+              {content.category_info && (
+                <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                  {content.category_info.description || content.category_info.name}
                 </span>
               )}
               {content.tags && content.tags.map((tag: string) => (
