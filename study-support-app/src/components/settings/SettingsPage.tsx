@@ -124,6 +124,7 @@ const SettingsPage = () => {
     } else {
         setPreviewUrl(user?.profile_image_url ?? null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFile, user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
