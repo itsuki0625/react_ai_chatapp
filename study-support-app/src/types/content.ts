@@ -77,7 +77,7 @@ export interface ContentCategoryBase {
   is_active?: boolean;
 }
 
-export interface ContentCategoryCreate extends ContentCategoryBase {}
+export type ContentCategoryCreate = ContentCategoryBase;
 
 export interface ContentCategoryUpdate {
   name?: string;

@@ -112,7 +112,7 @@ const SettingsPage = () => {
       }
     };
     loadUserSettings();
-  }, [status, userId, userName, userEmail, setUser, user, isAuthLoading, isSubLoading]); // Use extracted values in dependency array
+  }, [status, userId, userName, userEmail, setUser, user, isAuthLoading, isSubLoading, session]); // Use extracted values in dependency array
 
   useEffect(() => {
     if (selectedFile) {
@@ -124,7 +124,7 @@ const SettingsPage = () => {
     } else {
         setPreviewUrl(user?.profile_image_url ?? null);
     }
-  }, [selectedFile, user?.profile_image_url]);
+  }, [selectedFile, user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
