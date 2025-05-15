@@ -114,6 +114,7 @@ const SettingsPage = () => {
     loadUserSettings();
   }, [status, userId, userName, userEmail, setUser, user, isAuthLoading, isSubLoading]); // Use extracted values in dependency array
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (selectedFile) {
         const reader = new FileReader();
@@ -124,7 +125,6 @@ const SettingsPage = () => {
     } else {
         setPreviewUrl(user?.profile_image_url ?? null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFile, user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
