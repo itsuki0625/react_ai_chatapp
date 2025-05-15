@@ -11,12 +11,22 @@ import {
   FileText, 
   Presentation,
   LayoutGrid,
-  List
+  List,
+  Settings,
+  BookOpen
 } from 'lucide-react';
-import { Content, FormContentType, BackendContentType, ContentCategory } from '@/types/content';
+import { 
+  Content, 
+  FormContentType, 
+  BackendContentType, 
+  ContentCategoryInfo, 
+  ContentCategoryCreate,
+  ContentCategoryUpdate
+} from '@/types/content';
 import { contentAPI } from '@/services/api';
 import { Dialog } from '@/components/common/Dialog';
 import { getSlideProviderInfo } from '@/lib/slide';
+import { useSnackbar } from 'notistack';
 
 interface ContentFormData {
   title: string;
@@ -24,43 +34,100 @@ interface ContentFormData {
   url: string;
   content_type: FormContentType;
   thumbnail_url?: string;
-  category?: string;
+  category_id?: string;
   tags?: string;
   provider?: 'google' | 'slideshare' | 'speakerdeck';
   presenter_notes?: string[];
+  duration?: string;
+  is_premium?: boolean;
+  author?: string;
+  difficulty?: string;
+  provider_item_id?: string;
 }
 
-const initialFormData: ContentFormData = {
+const initialContentFormData: ContentFormData = {
   title: '',
   description: '',
   url: '',
   content_type: 'VIDEO',
   thumbnail_url: '',
-  category: '',
+  category_id: '',
   tags: '',
+  duration: '',
+  difficulty: '',
+  is_premium: false,
+  author: '',
+  provider_item_id: '',
 };
 
-const categoryMap: { [key: string]: string } = {
-  "自己分析": "self_analysis",
-  "入試情報": "admissions",
-  "学術・教養": "academic",
-  "大学情報": "university_info",
-  "キャリア": "career",
-  "その他": "other",
+interface CategoryFormData {
+  id?: string;
+  name: string;
+  description: string;
+  display_order: number;
+  icon_url?: string;
+  is_active: boolean;
+}
+
+const initialCategoryFormData: CategoryFormData = {
+  name: '',
+  description: '',
+  display_order: 0,
+  icon_url: '',
+  is_active: true,
 };
 
-const reverseCategoryMap: { [key: string]: string } = Object.fromEntries(
-  Object.entries(categoryMap).map(([key, value]) => [value, key])
-);
+const parseOptionalInt = (value?: string): number | undefined => {
+  if (value === undefined || value === null || String(value).trim() === '') {
+    return undefined;
+  }
+  const num = parseInt(String(value), 10);
+  return isNaN(num) ? undefined : num;
+};
 
 export const ContentManagement = () => {
   const { data: session } = useSession();
   const [contents, setContents] = useState<Content[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState<ContentFormData>(initialFormData);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showContentForm, setShowContentForm] = useState(false);
+  const [contentFormData, setContentFormData] = useState<ContentFormData>(initialContentFormData);
+  const [editingContentId, setEditingContentId] = useState<string | null>(null);
+  const [contentViewMode, setContentViewMode] = useState<'grid' | 'list'>('grid');
+  const [dbCategoriesForContentForm, setDbCategoriesForContentForm] = useState<ContentCategoryInfo[]>([]);
+  const [adminCategories, setAdminCategories] = useState<ContentCategoryInfo[]>([]);
+  const [showCategoryForm, setShowCategoryForm] = useState(false);
+  const [categoryFormData, setCategoryFormData] = useState<CategoryFormData>(initialCategoryFormData);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'contents' | 'categories'>('contents');
   const [isLoading, setIsLoading] = useState(false);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const { enqueueSnackbar } = useSnackbar();
+
+  const handleGenerateThumbnailFromGoogleDrive = () => {
+    if (contentFormData.thumbnail_url) {
+      const shareUrl = contentFormData.thumbnail_url;
+      const fileIdRegex1 = /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)\/view/;
+      const fileIdRegex2 = /drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/;
+      
+      let fileId = null;
+      const match1 = shareUrl.match(fileIdRegex1);
+      if (match1 && match1[1]) {
+        fileId = match1[1];
+      } else {
+        const match2 = shareUrl.match(fileIdRegex2);
+        if (match2 && match2[1]) {
+          fileId = match2[1];
+        }
+      }
+
+      if (fileId) {
+        const thumbnailUrl = `https://drive.google.com/uc?export=view&id=${fileId}`;
+        setContentFormData(prev => ({ ...prev, thumbnail_url: thumbnailUrl }));
+      } else {
+        alert("入力されたURLは有効なGoogle Drive共有リンクの形式ではないか、URLが空です。");
+      }
+    } else {
+      alert("Google Drive共有リンクをサムネイルURL欄に入力してください。");
+    }
+  };
 
   const fetchContents = async () => {
     try {
@@ -72,7 +139,31 @@ export const ContentManagement = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const fetchCategoriesForContentForm = async () => {
+    try {
+      const categories = await contentAPI.getContentCategories();
+      setDbCategoriesForContentForm(categories);
+    } catch (error) {
+      console.error('Failed to fetch categories for content form:', error);
+      setDbCategoriesForContentForm([]);
+    }
+  };
+
+  const fetchAdminCategories = async () => {
+    setIsLoading(true);
+    try {
+      const categories = await contentAPI.getAllContentCategories({is_active: undefined});
+      setAdminCategories(categories);
+    } catch (error) {
+      console.error('Failed to fetch admin categories:', error);
+      setAdminCategories([]);
+      enqueueSnackbar('カテゴリ一覧の取得に失敗しました', { variant: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleContentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
@@ -84,57 +175,92 @@ export const ContentManagement = () => {
     }
 
     const payload = {
-      ...formData,
-      content_type: formData.content_type.toLowerCase() as BackendContentType,
-      category: (categoryMap[formData.category || ''] || 'other') as ContentCategory,
-      tags: formData.tags ? formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag) : [],
+      ...contentFormData,
+      content_type: contentFormData.content_type.toLowerCase() as BackendContentType,
+      tags: contentFormData.tags ? contentFormData.tags.split(',').map(tag => tag.trim()).filter(tag => tag) : [],
       created_by_id: session.user.id as string,
+      duration: parseOptionalInt(contentFormData.duration),
+      difficulty: parseOptionalInt(contentFormData.difficulty),
+      is_premium: contentFormData.is_premium || false,
+      provider: contentFormData.provider,
+      provider_item_id: contentFormData.provider_item_id,
     };
 
-    const { ...submitData } = payload;
+    const submitData = {
+      ...payload,
+      category_id: payload.category_id === '' ? undefined : payload.category_id,
+    };
 
     try {
-      if (editingId) {
-        const updatePayload = { ...submitData };
-        await contentAPI.updateContent(editingId, updatePayload);
+      if (editingContentId) {
+        await contentAPI.updateContent(editingContentId, submitData as Partial<Content>);
       } else {
-        await contentAPI.createContent(submitData);
+        await contentAPI.createContent(submitData as Omit<Content, 'id' | 'created_at' | 'updated_at'>);
       }
-      setShowForm(false);
-      setFormData(initialFormData);
-      setEditingId(null);
+      setShowContentForm(false);
+      setContentFormData(initialContentFormData);
+      setEditingContentId(null);
       fetchContents();
+      enqueueSnackbar(editingContentId ? 'コンテンツを更新しました' : 'コンテンツを作成しました', { variant: 'success' });
     } catch (error) {
       console.error('Failed to save content:', error);
-      alert(`コンテンツの保存に失敗しました。
-${error instanceof Error ? error.message : '不明なエラー'}`);
+      enqueueSnackbar(`コンテンツの保存に失敗しました。${error instanceof Error ? error.message : '不明なエラー'}`, { variant: 'error' });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleEdit = (content: Content) => {
-    setFormData({
-      title: content.title,
-      description: content.description || '',
-      url: content.url,
-      content_type: content.content_type.toUpperCase() as FormContentType,
-      thumbnail_url: content.thumbnail_url || '',
-      category: reverseCategoryMap[content.category || ''] || '',
-      tags: Array.isArray(content.tags) ? content.tags.join(', ') : '',
-    });
-    setEditingId(content.id);
-    setShowForm(true);
+  const handleContentEdit = async (id: string) => {
+    try {
+      setIsLoading(true);
+      const content = await contentAPI.getContent(id);
+      console.log('Fetched content for editing:', content);
+      if (content) {
+        let formProvider: 'google' | 'slideshare' | 'speakerdeck' | undefined = undefined;
+        if (content.provider && ['google', 'slideshare', 'speakerdeck'].includes(content.provider)) {
+          formProvider = content.provider as 'google' | 'slideshare' | 'speakerdeck';
+        }
+
+        setContentFormData({
+          title: content.title,
+          description: content.description || '',
+          url: content.url,
+          content_type: content.content_type.toUpperCase() as FormContentType, 
+          thumbnail_url: content.thumbnail_url || '',
+          category_id: content.category_info ? content.category_info.id : '',
+          tags: content.tags ? content.tags.join(', ') : '', 
+          duration: content.duration !== null && content.duration !== undefined ? String(content.duration) : '',
+          is_premium: content.is_premium || false,
+          author: content.author || '',
+          difficulty: content.difficulty !== null && content.difficulty !== undefined ? String(content.difficulty) : '',
+          provider: formProvider,
+          provider_item_id: content.provider_item_id || '',
+        });
+        setEditingContentId(id);
+        setShowContentForm(true);
+      } else {
+        enqueueSnackbar('コンテンツの読み込みに失敗しました。', { variant: 'error' });
+      }
+    } catch (error) {
+      console.error("Failed to fetch content for editing:", error);
+      enqueueSnackbar('編集のためにコンテンツを読み込めませんでした。', { variant: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleContentDelete = async (id: string) => {
     if (!confirm('このコンテンツを削除してもよろしいですか？')) return;
-
+    setIsLoading(true);
     try {
       await contentAPI.deleteContent(id);
       fetchContents();
+      enqueueSnackbar('コンテンツを削除しました', { variant: 'success' });
     } catch (error) {
       console.error('Failed to delete content:', error);
+      enqueueSnackbar('コンテンツの削除に失敗しました', { variant: 'error' });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -146,215 +272,394 @@ ${error instanceof Error ? error.message : '不明なエラー'}`);
         return <Presentation className="h-5 w-5" />;
       case 'PDF':
         return <FileText className="h-5 w-5" />;
+      default:
+        return null;
     }
   };
 
-  const handleUrlChange = (url: string) => {
-    setFormData(prev => {
+  const handleContentUrlChange = (url: string) => {
+    setContentFormData(prev => {
       const newData = { ...prev, url };
-      
       if (prev.content_type === 'SLIDE' && prev.provider) {
         const { thumbnailUrl } = getSlideProviderInfo(url, prev.provider);
         if (thumbnailUrl) {
           newData.thumbnail_url = thumbnailUrl;
         }
       }
-      
       return newData;
     });
   };
 
+  const handleCategorySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+
+    const submitData: ContentCategoryCreate | ContentCategoryUpdate = {
+      name: categoryFormData.name,
+      description: categoryFormData.description || null,
+      display_order: Number(categoryFormData.display_order),
+      icon_url: categoryFormData.icon_url || null,
+      is_active: categoryFormData.is_active,
+    };
+    const { name, ...updatePayload } = submitData;
+
+    try {
+      if (editingCategoryId) {
+        await contentAPI.updateContentCategory(editingCategoryId, updatePayload as ContentCategoryUpdate);
+        enqueueSnackbar('カテゴリーを更新しました', { variant: 'success' });
+      } else {
+        await contentAPI.createContentCategory(submitData as ContentCategoryCreate);
+        enqueueSnackbar('カテゴリーを作成しました', { variant: 'success' });
+      }
+      setShowCategoryForm(false);
+      setCategoryFormData(initialCategoryFormData);
+      setEditingCategoryId(null);
+      fetchAdminCategories();
+    } catch (error) {
+      console.error('Failed to save category:', error);
+      enqueueSnackbar(`カテゴリーの保存に失敗しました。${error instanceof Error ? error.message : '不明なエラー'}`, { variant: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEditCategory = (category: ContentCategoryInfo) => {
+    setEditingCategoryId(category.id);
+    setCategoryFormData({
+      id: category.id,
+      name: category.name,
+      description: category.description || '',
+      display_order: category.display_order ?? 0,
+      icon_url: category.icon_url || '',
+      is_active: category.is_active ?? true,
+    });
+    setShowCategoryForm(true);
+  };
+
+  const handleDeleteCategory = async (categoryId: string) => {
+    if (!confirm(`このカテゴリーを削除してもよろしいですか？\n関連するコンテンツがある場合、カテゴリーの関連付けが解除されます。(コンテンツ自体は削除されません)`)) {
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await contentAPI.deleteContentCategory(categoryId);
+      enqueueSnackbar('カテゴリーを削除しました', { variant: 'success' });
+      fetchAdminCategories(); // 一覧を再取得
+    } catch (error) {
+      console.error('Failed to delete category:', error);
+      enqueueSnackbar(`カテゴリーの削除に失敗しました。${error instanceof Error ? error.message : '不明なエラー'}`, { variant: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetchContents();
-  }, []);
+    if (activeTab === 'contents') {
+      fetchContents();
+      fetchCategoriesForContentForm();
+    } else if (activeTab === 'categories') {
+      fetchAdminCategories();
+    }
+  }, [activeTab]);
 
   return (
     <div className="bg-white rounded-lg shadow">
       <div className="px-6 py-4 border-b border-gray-200">
-        <div className="flex justify-between items-center">
-          <h2 className="text-lg font-medium text-gray-900">コンテンツ管理</h2>
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center bg-gray-100 rounded-lg p-1">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`p-1 rounded ${
-                  viewMode === 'grid' 
-                    ? 'bg-white shadow text-blue-600' 
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-                title="グリッド表示"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`p-1 rounded ${
-                  viewMode === 'list' 
-                    ? 'bg-white shadow text-blue-600' 
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-                title="リスト表示"
-              >
-                <List className="h-4 w-4" />
-              </button>
-            </div>
-            <button
-              onClick={() => {
-                setFormData(initialFormData);
-                setEditingId(null);
-                setShowForm(true);
-              }}
-              className="flex items-center px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              新規作成
-            </button>
-          </div>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold text-gray-900">学習コンテンツ管理</h2>
+        </div>
+        <div className="flex border-b">
+          <button
+            onClick={() => setActiveTab('contents')}
+            className={`flex items-center px-4 py-3 text-sm font-medium focus:outline-none 
+              ${
+                activeTab === 'contents'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+          >
+            <BookOpen className="h-5 w-5 mr-2" />
+            コンテンツ
+          </button>
+          <button
+            onClick={() => setActiveTab('categories')}
+            className={`flex items-center px-4 py-3 text-sm font-medium focus:outline-none 
+              ${
+                activeTab === 'categories'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+          >
+            <Settings className="h-5 w-5 mr-2" />
+            カテゴリー
+          </button>
         </div>
       </div>
 
-      <div className="p-6">
-        {viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {contents.map((content) => (
-              <div
-                key={content.id}
-                className="border rounded-lg p-3 hover:shadow-md transition-shadow flex flex-col"
-              >
-                <div className="aspect-video relative mb-2">
-                  <Image
-                    src={content.thumbnail_url || '/placeholder.png'}
-                    alt={content.title}
-                    layout="fill"
-                    objectFit="cover"
-                    className="rounded"
-                  />
-                  <div className="absolute top-2 right-2 flex space-x-1">
-                    <button
-                      onClick={() => handleEdit(content)}
-                      className="p-1 bg-white rounded-full shadow hover:bg-gray-100"
-                    >
-                      <Edit2 className="h-4 w-4 text-gray-600" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(content.id)}
-                      className="p-1 bg-white rounded-full shadow hover:bg-gray-100"
-                    >
-                      <Trash2 className="h-4 w-4 text-red-600" />
-                    </button>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 mb-1">
-                  {getContentTypeIcon(content.content_type.toUpperCase() as FormContentType)}
-                  <h3 className="font-medium text-gray-900 text-sm flex-grow line-clamp-1">{content.title}</h3>
-                </div>
-                {content.description && (
-                  <p className="text-xs text-gray-600 mb-2 line-clamp-2 flex-grow">
-                    {content.description}
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-1 mt-auto pt-1">
-                  {content.category && (
-                    <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                      {reverseCategoryMap[content.category] || content.category}
-                    </span>
-                  )}
-                  {Array.isArray(content.tags)
-                    ? content.tags.map((tag: string, index: number) => (
-                        <span key={index} className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
-                          {tag}
-                        </span>
-                      ))
-                    : null
-                  }
-                </div>
+      {activeTab === 'contents' && (
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-medium text-gray-900">コンテンツ一覧・編集</h3>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center bg-gray-100 rounded-lg p-1">
+                <button
+                  onClick={() => setContentViewMode('grid')}
+                  className={`p-1 rounded ${
+                    contentViewMode === 'grid' 
+                      ? 'bg-white shadow text-blue-600' 
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                  title="グリッド表示"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setContentViewMode('list')}
+                  className={`p-1 rounded ${
+                    contentViewMode === 'list' 
+                      ? 'bg-white shadow text-blue-600' 
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                  title="リスト表示"
+                >
+                  <List className="h-4 w-4" />
+                </button>
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-200">
-            {contents.map((content) => (
-              <div
-                key={content.id}
-                className="py-3 flex items-center hover:bg-gray-50"
+              <button
+                onClick={() => {
+                  setContentFormData(initialContentFormData);
+                  setEditingContentId(null);
+                  setShowContentForm(true);
+                }}
+                className="flex items-center px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700"
               >
-                <div className="flex-shrink-0 w-16 h-10 mr-4">
-                  <Image
-                    src={content.thumbnail_url || '/placeholder.png'}
-                    alt={content.title}
-                    layout="fill"
-                    objectFit="cover"
-                    className="rounded"
-                  />
-                </div>
-                <div className="flex-grow min-w-0 mr-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    {getContentTypeIcon(content.content_type.toUpperCase() as FormContentType)}
-                    <h3 className="font-medium text-gray-900 truncate">
-                      {content.title}
-                    </h3>
-                  </div>
-                  {content.description && (
-                    <p className="text-sm text-gray-600 line-clamp-1">
-                      {content.description}
-                    </p>
-                  )}
-                </div>
-                <div className="flex-shrink-0 w-32 mr-4">
-                  {content.category && (
-                    <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                      {reverseCategoryMap[content.category] || content.category}
-                    </span>
-                  )}
-                </div>
-                <div className="flex-shrink-0 w-48 mr-4 flex flex-wrap gap-1">
-                  {Array.isArray(content.tags)
-                    ? content.tags.slice(0, 3).map((tag: string, index: number) => (
-                        <span key={index} className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
-                          {tag}
-                        </span>
-                      ))
-                    : null
-                  }
-                  {Array.isArray(content.tags) && content.tags.length > 3 && (
-                    <span className="text-xs text-gray-500">...</span>
-                  )}
-                </div>
-                <div className="flex-shrink-0 flex space-x-2">
-                  <button
-                    onClick={() => handleEdit(content)}
-                    className="p-1 text-gray-500 hover:text-gray-700"
-                  >
-                    <Edit2 className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(content.id)}
-                    className="p-1 text-red-500 hover:text-red-700"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
+                <Plus className="h-4 w-4 mr-2" />
+                新規コンテンツ作成
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+          {isLoading && <p>コンテンツを読み込み中...</p>}
+          {!isLoading && contents.length === 0 && <p>登録されているコンテンツはありません。</p>}
+          {!isLoading && contents.length > 0 && (
+            <> 
+              {contentViewMode === 'grid' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {contents.map((content) => (
+                    <div
+                      key={content.id}
+                      className="border rounded-lg p-3 hover:shadow-md transition-shadow flex flex-col"
+                    >
+                      <div className="aspect-video relative mb-2">
+                        <Image
+                          src={content.thumbnail_url || '/placeholder.png'}
+                          alt={content.title}
+                          fill
+                          style={{ objectFit: 'cover' }}
+                          className="rounded"
+                        />
+                        <div className="absolute top-2 right-2 flex space-x-1">
+                          <button
+                            onClick={() => handleContentEdit(content.id)}
+                            className="p-1 bg-white rounded-full shadow hover:bg-gray-100"
+                          >
+                            <Edit2 className="h-4 w-4 text-gray-600" />
+                          </button>
+                          <button
+                            onClick={() => handleContentDelete(content.id)}
+                            className="p-1 bg-white rounded-full shadow hover:bg-gray-100"
+                          >
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 mb-1">
+                        {getContentTypeIcon(content.content_type.toUpperCase() as FormContentType)}
+                        <h3 className="font-medium text-gray-900 text-sm flex-grow line-clamp-1">{content.title}</h3>
+                      </div>
+                      {content.description && (
+                        <p className="text-xs text-gray-600 mb-2 line-clamp-2 flex-grow">
+                          {content.description}
+                        </p>
+                      )}
+                      <div className="flex flex-wrap gap-1 mt-auto pt-1">
+                        {content.category_info && (
+                          <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                            {content.category_info.description || content.category_info.name}
+                          </span>
+                        )}
+                        {Array.isArray(content.tags)
+                          ? content.tags.map((tag: string, index: number) => (
+                              <span key={index} className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
+                                {tag}
+                              </span>
+                            ))
+                          : null
+                        }
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-200">
+                  {contents.map((content) => (
+                    <div
+                      key={content.id}
+                      className="py-3 flex items-center hover:bg-gray-50"
+                    >
+                      <div className="flex-shrink-0 w-16 h-10 relative mr-4">
+                        <Image
+                          src={content.thumbnail_url || '/placeholder.png'}
+                          alt={content.title}
+                          fill
+                          style={{ objectFit: 'cover' }}
+                          className="rounded"
+                        />
+                      </div>
+                      <div className="flex-grow min-w-0 mr-4">
+                        <div className="flex items-center gap-2 mb-1">
+                          {getContentTypeIcon(content.content_type.toUpperCase() as FormContentType)}
+                          <h3 className="font-medium text-gray-900 truncate">
+                            {content.title}
+                          </h3>
+                        </div>
+                        {content.description && (
+                          <p className="text-sm text-gray-600 line-clamp-1">
+                            {content.description}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex-shrink-0 w-32 mr-4">
+                        {content.category_info && (
+                          <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                            {content.category_info.description || content.category_info.name}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex-shrink-0 w-48 mr-4 flex flex-wrap gap-1">
+                        {Array.isArray(content.tags)
+                          ? content.tags.slice(0, 3).map((tag: string, index: number) => (
+                              <span key={index} className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
+                                {tag}
+                              </span>
+                            ))
+                          : null
+                        }
+                        {Array.isArray(content.tags) && content.tags.length > 3 && (
+                          <span className="text-xs text-gray-500">...</span>
+                        )}
+                      </div>
+                      <div className="flex-shrink-0 flex space-x-2">
+                        <button
+                          onClick={() => handleContentEdit(content.id)}
+                          className="p-1 text-gray-500 hover:text-gray-700"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleContentDelete(content.id)}
+                          className="p-1 text-red-500 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
-      <Dialog open={showForm} onClose={() => setShowForm(false)}>
+      {activeTab === 'categories' && (
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-medium text-gray-900">カテゴリー設定</h3>
+            <button
+              onClick={() => {
+                setCategoryFormData(initialCategoryFormData);
+                setEditingCategoryId(null);
+                setShowCategoryForm(true);
+              }}
+              className="flex items-center px-4 py-2 text-sm text-white bg-green-600 rounded-md hover:bg-green-700"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              新規カテゴリー作成
+            </button>
+          </div>
+          {isLoading && activeTab === 'categories' && <p>カテゴリー情報を読み込み中...</p>}
+          {!isLoading && adminCategories.length === 0 && activeTab === 'categories' && <p>登録されているカテゴリーはありません。</p>}
+          {!isLoading && adminCategories.length > 0 && activeTab === 'categories' && (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">日本語名</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">英語名(識別子)</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">表示順</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">有効</th>
+                    <th scope="col" className="relative px-6 py-3">
+                      <span className="sr-only">操作</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {adminCategories.map((category) => (
+                    <tr key={category.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{category.description || '-'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{category.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{category.display_order ?? '-'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {category.is_active ? (
+                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                            有効
+                          </span>
+                        ) : (
+                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                            無効
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                        <button 
+                          onClick={() => handleEditCategory(category)} 
+                          className="text-indigo-600 hover:text-indigo-900"
+                          title="編集"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteCategory(category.id)} 
+                          className="text-red-600 hover:text-red-900"
+                          title="削除"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      <Dialog open={showContentForm} onClose={() => setShowContentForm(false)}>
         <div className="p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">
-            {editingId ? 'コンテンツを編集' : '新規コンテンツ'}
+            {editingContentId ? 'コンテンツを編集' : '新規コンテンツ'}
           </h3>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleContentSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 タイトル
               </label>
               <input
                 type="text"
-                value={formData.title}
+                value={contentFormData.title}
                 onChange={(e) =>
-                  setFormData({ ...formData, title: e.target.value })
+                  setContentFormData({ ...contentFormData, title: e.target.value })
                 }
                 required
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
@@ -366,9 +671,9 @@ ${error instanceof Error ? error.message : '不明なエラー'}`);
                 説明
               </label>
               <textarea
-                value={formData.description}
+                value={contentFormData.description}
                 onChange={(e) =>
-                  setFormData({ ...formData, description: e.target.value })
+                  setContentFormData({ ...contentFormData, description: e.target.value })
                 }
                 rows={3}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
@@ -381,8 +686,8 @@ ${error instanceof Error ? error.message : '不明なエラー'}`);
               </label>
               <input
                 type="url"
-                value={formData.url}
-                onChange={(e) => handleUrlChange(e.target.value)}
+                value={contentFormData.url}
+                onChange={(e) => handleContentUrlChange(e.target.value)}
                 required
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
               />
@@ -393,10 +698,10 @@ ${error instanceof Error ? error.message : '不明なエラー'}`);
                 コンテンツタイプ
               </label>
               <select
-                value={formData.content_type}
+                value={contentFormData.content_type}
                 onChange={(e) =>
-                  setFormData({
-                    ...formData,
+                  setContentFormData({
+                    ...contentFormData,
                     content_type: e.target.value as FormContentType,
                   })
                 }
@@ -413,24 +718,34 @@ ${error instanceof Error ? error.message : '不明なエラー'}`);
               <label className="block text-sm font-medium text-gray-700">
                 サムネイルURL
               </label>
-              <input
-                type="url"
-                value={formData.thumbnail_url}
-                onChange={(e) =>
-                  setFormData({ ...formData, thumbnail_url: e.target.value })
-                }
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              />
-              {formData.thumbnail_url && (
+              <div className="mt-1 flex rounded-md shadow-sm">
+                <input
+                  type="text"
+                  name="thumbnail_url"
+                  id="thumbnail_url"
+                  className="focus:ring-indigo-500 focus:border-indigo-500 flex-1 block w-full rounded-none rounded-l-md sm:text-sm border-gray-300"
+                  value={contentFormData.thumbnail_url || ''}
+                  onChange={(e) => setContentFormData({ ...contentFormData, thumbnail_url: e.target.value })}
+                  placeholder="https://example.com/image.jpg または Google Drive共有リンク"
+                />
+                <button
+                  type="button"
+                  onClick={handleGenerateThumbnailFromGoogleDrive}
+                  className="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 bg-gray-50 text-gray-500 hover:bg-gray-100 rounded-r-md text-sm"
+                  title="Google Drive共有リンクから変換"
+                >
+                  変換
+                </button>
+              </div>
+              {contentFormData.thumbnail_url && contentFormData.thumbnail_url.startsWith('https://drive.google.com/uc?export=view&id=') && (
                 <div className="mt-2">
-                  <p className="text-xs text-gray-500 mb-1">プレビュー:</p>
-                  <Image
-                    src={formData.thumbnail_url}
-                    alt="サムネイルプレビュー"
-                    width={160}
-                    height={90}
-                    objectFit="cover"
-                    className="rounded border"
+                  <Image 
+                    src={contentFormData.thumbnail_url} 
+                    alt="Thumbnail Preview" 
+                    width={160} 
+                    height={90} 
+                    style={{ objectFit: 'cover' }}
+                    onError={() => console.warn("サムネイル画像の読み込みに失敗しました。URLを確認してください。")} 
                   />
                 </div>
               )}
@@ -440,14 +755,20 @@ ${error instanceof Error ? error.message : '不明なエラー'}`);
               <label className="block text-sm font-medium text-gray-700">
                 カテゴリー
               </label>
-              <input
-                type="text"
-                value={formData.category}
+              <select
+                value={contentFormData.category_id || ''}
                 onChange={(e) =>
-                  setFormData({ ...formData, category: e.target.value })
+                  setContentFormData({ ...contentFormData, category_id: e.target.value })
                 }
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              />
+              >
+                <option value="">カテゴリーを選択してください</option>
+                {dbCategoriesForContentForm.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.description || category.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -456,34 +777,33 @@ ${error instanceof Error ? error.message : '不明なエラー'}`);
               </label>
               <input
                 type="text"
-                value={formData.tags}
+                value={contentFormData.tags}
                 onChange={(e) =>
-                  setFormData({ ...formData, tags: e.target.value })
+                  setContentFormData({ ...contentFormData, tags: e.target.value })
                 }
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
               />
             </div>
 
-            {formData.content_type === 'SLIDE' && (
+            {contentFormData.content_type === 'SLIDE' && (
               <>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
                     プロバイダー
                   </label>
                   <select
-                    value={formData.provider}
+                    value={contentFormData.provider}
                     onChange={(e) => {
                       const provider = e.target.value as 'google' | 'slideshare' | 'speakerdeck';
-                      setFormData(prev => {
+                      setContentFormData(prev => {
                         const { thumbnailUrl } = getSlideProviderInfo(prev.url, provider);
                         return {
                           ...prev,
                           provider,
-                          thumbnail_url: thumbnailUrl || prev.thumbnail_url
+                          thumbnail_url: (provider !== 'google' && thumbnailUrl) ? thumbnailUrl : prev.thumbnail_url
                         };
                       });
                     }}
-                    required
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                   >
                     <option value="">プロバイダーを選択</option>
@@ -498,10 +818,10 @@ ${error instanceof Error ? error.message : '不明なエラー'}`);
                     発表者ノート（1行1スライド）
                   </label>
                   <textarea
-                    value={formData.presenter_notes?.join('\n')}
+                    value={contentFormData.presenter_notes?.join('\n')}
                     onChange={(e) =>
-                      setFormData({
-                        ...formData,
+                      setContentFormData({
+                        ...contentFormData,
                         presenter_notes: e.target.value.split('\n'),
                       })
                     }
@@ -513,10 +833,27 @@ ${error instanceof Error ? error.message : '不明なエラー'}`);
               </>
             )}
 
+            <div>
+              <label htmlFor="provider_item_id" className="block text-sm font-medium text-gray-700">
+                プロバイダーアイテムID (任意)
+              </label>
+              <input
+                type="text"
+                name="provider_item_id"
+                id="provider_item_id"
+                value={contentFormData.provider_item_id || ''}
+                onChange={(e) =>
+                  setContentFormData({ ...contentFormData, provider_item_id: e.target.value })
+                }
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                placeholder="例: Google SlidesのファイルIDなど"
+              />
+            </div>
+
             <div className="flex justify-end space-x-3 mt-6">
               <button
                 type="button"
-                onClick={() => setShowForm(false)}
+                onClick={() => setShowContentForm(false)}
                 className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
               >
                 キャンセル
@@ -526,7 +863,115 @@ ${error instanceof Error ? error.message : '不明なエラー'}`);
                 disabled={isLoading}
                 className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
               >
-                {isLoading ? '保存中...' : '保存'}
+                {isLoading && editingContentId === null ? '作成中...' : isLoading && editingContentId !== null ? '更新中...' : editingContentId ? '更新' : '作成'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </Dialog>
+
+      <Dialog open={showCategoryForm} onClose={() => setShowCategoryForm(false)}>
+        <div className="p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">
+            {editingCategoryId ? 'カテゴリーを編集' : '新規カテゴリー'}
+          </h3>
+          <form onSubmit={handleCategorySubmit} className="space-y-4">
+            <div>
+              <label htmlFor="categoryName" className="block text-sm font-medium text-gray-700">
+                英語名 (必須・重複不可・変更不可)
+              </label>
+              <input
+                id="categoryName"
+                type="text"
+                value={categoryFormData.name}
+                onChange={(e) =>
+                  setCategoryFormData({ ...categoryFormData, name: e.target.value })
+                }
+                required
+                disabled={!!editingCategoryId}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="categoryDescription" className="block text-sm font-medium text-gray-700">
+                日本語名 (表示名)
+              </label>
+              <input
+                id="categoryDescription"
+                type="text"
+                value={categoryFormData.description}
+                onChange={(e) =>
+                  setCategoryFormData({ ...categoryFormData, description: e.target.value })
+                }
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="categoryDisplayOrder" className="block text-sm font-medium text-gray-700">
+                表示順 (必須・数値)
+              </label>
+              <input
+                id="categoryDisplayOrder"
+                type="number"
+                value={categoryFormData.display_order}
+                onChange={(e) =>
+                  setCategoryFormData({ ...categoryFormData, display_order: parseInt(e.target.value, 10) || 0 })
+                }
+                required
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="categoryIconUrl" className="block text-sm font-medium text-gray-700">
+                アイコンURL (任意)
+              </label>
+              <input
+                id="categoryIconUrl"
+                type="url"
+                value={categoryFormData.icon_url || ''}
+                onChange={(e) =>
+                  setCategoryFormData({ ...categoryFormData, icon_url: e.target.value })
+                }
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+
+            <div className="flex items-center">
+              <input
+                id="categoryIsActive"
+                type="checkbox"
+                checked={categoryFormData.is_active}
+                onChange={(e) =>
+                  setCategoryFormData({ ...categoryFormData, is_active: e.target.checked })
+                }
+                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <label htmlFor="categoryIsActive" className="ml-2 block text-sm text-gray-900">
+                有効にする
+              </label>
+            </div>
+
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCategoryForm(false);
+                  setCategoryFormData(initialCategoryFormData);
+                  setEditingCategoryId(null);
+                }}
+                className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+              >
+                キャンセル
+              </button>
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+              >
+                {isLoading && editingCategoryId === null ? '作成中...' : isLoading && editingCategoryId !== null ? '更新中...' : editingCategoryId ? '更新' : '作成'}
               </button>
             </div>
           </form>

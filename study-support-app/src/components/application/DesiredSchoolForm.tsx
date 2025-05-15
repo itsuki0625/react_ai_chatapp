@@ -2,23 +2,23 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/common/Button';
-import { API_BASE_URL } from '@/lib/config';
+import { universityApi, admissionApi } from '@/lib/api-client';
 
-interface University {
+interface UniversityFromAPI {
   id: string;
   name: string;
-  departments: {
+  departments?: {
     id: string;
     name: string;
   }[];
 }
 
-interface AdmissionMethod {
+interface AdmissionMethodFromAPI {
   id: string;
   name: string;
+  university_id: string;
 }
 
-// Define ApplicationFormData type here
 interface ApplicationFormData {
   university_id: string;
   department_id: string;
@@ -28,7 +28,7 @@ interface ApplicationFormData {
 }
 
 interface DesiredSchoolFormProps {
-  onSubmit: (data: ApplicationFormData) => void; // Use ApplicationFormData type
+  onSubmit: (data: ApplicationFormData) => void;
   onCancel: () => void;
   initialData?: {
     id?: string;
@@ -40,21 +40,17 @@ interface DesiredSchoolFormProps {
   };
 }
 
-const getToken = () => {
-    return localStorage.getItem('token');
-  };
-
 export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
   onSubmit,
   onCancel,
   initialData
 }) => {
-  const [universities, setUniversities] = useState<University[]>([]);
-  const [admissionMethods, setAdmissionMethods] = useState<AdmissionMethod[]>([]);
+  const [universities, setUniversities] = useState<UniversityFromAPI[]>([]);
+  const [admissionMethods, setAdmissionMethods] = useState<AdmissionMethodFromAPI[]>([]);
   const [selectedUniversity, setSelectedUniversity] = useState<string>(
     initialData?.university_id || ''
   );
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<ApplicationFormData>({
     university_id: initialData?.university_id || '',
     department_id: initialData?.department_id || '',
     admission_method_id: initialData?.admission_method_id || '',
@@ -66,12 +62,33 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
   useEffect(() => {
     const fetchData = async () => {
       try {
-        await Promise.all([
-          fetchUniversities(),
-          fetchAdmissionMethods()
+        setError('');
+        const [uniResponse, admResponse] = await Promise.all([
+          universityApi.getUniversities(),
+          admissionApi.getAllAdmissionMethods()
         ]);
-      } catch (error) {
-        console.error('Error fetching initial data:', error);
+
+        if (uniResponse.data && uniResponse.data.data) {
+          setUniversities(uniResponse.data.data);
+        } else {
+          console.error('Failed to fetch universities or data is not in expected format', uniResponse);
+        }
+
+        if (admResponse.data && admResponse.data.data) {
+          setAdmissionMethods(admResponse.data.data);
+        } else {
+          console.error('Failed to fetch admission methods or data is not in expected format', admResponse);
+        }
+
+      } catch (err: any) {
+        console.error('Error fetching initial data:', err);
+        let detailedError = '初期データの読み込みに失敗しました。';
+        if (err.response?.data?.detail) {
+            detailedError += ` ${err.response.data.detail}`;
+        } else if (err.message) {
+            detailedError += ` ${err.message}`;
+        }
+        setError(detailedError);
       }
     };
 
@@ -90,52 +107,6 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
       setSelectedUniversity(initialData.university_id);
     }
   }, [initialData]);
-
-  const fetchUniversities = async () => {
-    try {
-      const token = getToken();
-      const response = await fetch(`${API_BASE_URL}/api/v1/universities/`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'include',
-      });
-      if (!response.ok) throw new Error('Failed to fetch universities');
-      const data = await response.json();
-      setUniversities(data);
-    } catch (error) {
-      console.error('Error fetching universities:', error);
-    }
-  };
-
-  const fetchAdmissionMethods = async () => {
-    try {
-      const token = getToken();
-      const response = await fetch(`${API_BASE_URL}/api/v1/admission/`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(
-          errorData?.detail || 
-          `入試方式の取得に失敗しました。(ステータス: ${response.status})`
-        );
-      }
-
-      const data = await response.json();
-      console.log('Admission methods:', data);
-      setAdmissionMethods(data);
-      setError('');
-    } catch (error) {
-      console.error('Error fetching admission methods:', error);
-      setError(error instanceof Error ? error.message : '入試方式の取得中にエラーが発生しました。');
-    }
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,7 +129,6 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
     }
   };
 
-  // 志望順位の選択肢を生成（1位から10位まで）
   const priorityOptions = Array.from({ length: 10 }, (_, i) => ({
     value: i + 1,
     label: `第${i + 1}志望`
@@ -197,11 +167,12 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
           required
         >
           <option value="">選択してください</option>
-          {universities
-            .find(u => u.id === selectedUniversity)
-            ?.departments.map(dept => (
+          {
+            (universities.find(u => u.id === selectedUniversity)?.departments || [])
+            .map(dept => (
               <option key={dept.id} value={dept.id}>{dept.name}</option>
-            ))}
+            ))
+          }
         </select>
       </div>
 

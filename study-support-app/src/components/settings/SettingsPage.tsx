@@ -45,15 +45,21 @@ const SettingsPage = () => {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Extract necessary values from session to stabilize dependencies
+  const userId = session?.user?.id;
+  const userName = session?.user?.name;
+  const userEmail = session?.user?.email;
+  // Add any other session properties used in the effect if necessary
+
   useEffect(() => {
     const loadUserSettings = async () => {
-      if (status === 'authenticated' && session?.user?.id) {
+      if (status === 'authenticated' && userId) { // Use extracted userId
         try {
           const settingsData = await fetchUserSettings();
           const mappedSettings: Omit<UserSettings, 'subscription'> = {
-            full_name: String(settingsData.full_name || session.user.name || ''),
-            name: String(settingsData.name || settingsData.full_name || session.user.name || ''),
-            email: String(settingsData.email || session.user.email || ''),
+            full_name: String(settingsData.full_name || userName || ''), // Use extracted userName
+            name: String(settingsData.name || settingsData.full_name || userName || ''), // Use extracted userName
+            email: String(settingsData.email || userEmail || ''), // Use extracted userEmail
             profile_image_url: settingsData.profile_image_url ?? null,
             emailNotifications: settingsData.emailNotifications ?? true,
             browserNotifications: settingsData.browserNotifications ?? false,
@@ -63,10 +69,16 @@ const SettingsPage = () => {
 
           const userProfileImageKey = settingsData.profile_image_url ?? null;
 
-          if (!user || user.id !== session.user.id) {
+          // When initializing/updating Zustand user state, be mindful of object references
+          // If session.user itself is a new object reference on each render, this could still cause issues
+          // if the setUser call triggers a change that re-runs this effect due to 'user' in deps.
+          if (!user || user.id !== userId) { // Use extracted userId
             console.log("Initializing/Updating Zustand user state...");
             const userDataForStore = {
-              ...(session?.user ?? {}),
+              ...(session?.user ?? {}), // This might still use a potentially unstable session.user reference
+              id: userId, // Explicitly use stable values
+              name: userName,
+              email: userEmail,
               profile_image_url: userProfileImageKey
             };
             setUser(userDataForStore as any);
@@ -79,15 +91,16 @@ const SettingsPage = () => {
           console.error('ユーザー設定の取得エラー:', error);
           toast.error('ユーザー設定の取得に失敗しました。');
           setUserSettings({
-            full_name: String(session?.user?.name || 'ユーザー'),
-            name: String(session?.user?.name || 'ユーザー'),
-            email: String(session?.user?.email || ''),
+            full_name: String(userName || 'ユーザー'), // Use extracted userName
+            name: String(userName || 'ユーザー'), // Use extracted userName
+            email: String(userEmail || ''), // Use extracted userEmail
             profile_image_url: null,
             emailNotifications: true,
             browserNotifications: false,
             theme: 'light',
           });
           setPreviewUrl(null);
+          // Be cautious here: if session.user reference is unstable, this could contribute to a loop.
           setUser(session?.user as any);
         } finally {
           setIsLoading(isAuthLoading || (status === 'authenticated' && isSubLoading));
@@ -99,7 +112,7 @@ const SettingsPage = () => {
       }
     };
     loadUserSettings();
-  }, [status, session, setUser, user, isAuthLoading, isSubLoading]);
+  }, [status, userId, userName, userEmail, setUser, user, isAuthLoading, isSubLoading]); // Use extracted values in dependency array
 
   useEffect(() => {
     if (selectedFile) {

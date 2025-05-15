@@ -114,19 +114,17 @@ apiClient.interceptors.response.use(
 // };
 
 // API リクエスト/レスポンスデータ型
+// This ApplicationData is used for the createApplication payload.
+// It should match the backend's ApplicationCreate schema.
 interface ApplicationData {
-  id?: string;
-  name: string;
-  university: string;
-  department?: string;
-  course?: string;
-  deadline?: string;
-  status?: string;
+  university_id: string; // UUID as string
+  department_id: string; // UUID as string
+  admission_method_id: string; // UUID as string
+  priority: number;
   notes?: string;
-  documents?: DocumentData[];
-  schedules?: ScheduleData[];
-  priority?: number;
-  [key: string]: unknown;
+  // Fields like name, university (name), department (name) are typically part of the response,
+  // or resolved by the backend, not sent in the create payload if IDs are used.
+  // Other fields like id, course, deadline, status, documents, schedules are also not expected for creation.
 }
 
 interface DocumentData {
@@ -353,28 +351,50 @@ const chatApiBase = {
 // ここでは chatApiBase を chatApi としてエクスポートすると仮定する (既存の構造による)
 export const chatApi = chatApiBase;
 
-interface University {
+// Department 型を先に定義 (University が参照するため)
+interface Department { // Corresponds to DepartmentResponse from backend schema
   id: string;
   name: string;
-  location?: string;
-  type?: string;
-  ranking?: number;
+  university_id: string; 
+  faculty_name?: string; 
+  description?: string; 
+  [key: string]: unknown; 
+}
+
+interface University { // Corresponds to UniversityResponse from backend schema
+  id: string;
+  name: string;
+  location?: string; 
+  type?: string; 
+  ranking?: number; 
+  departments?: Department[]; // Added based on backend schema UniversityResponse
+  prefecture?: string; 
+  address?: string;    
+  website_url?: string;
+  description?: string;
+  is_national?: boolean;
+  logo_url?: string;   
   [key: string]: unknown;
 }
 
-interface Department {
+interface AdmissionMethod { // Corresponds to AdmissionMethodResponse from backend schema
   id: string;
   name: string;
-  university_id: string;
+  university_id: string; 
+  description?: string; 
+  category?: string;    
   [key: string]: unknown;
 }
 
-interface AdmissionMethod {
-  id: string;
-  name: string;
-  university_id: string;
-  [key: string]: unknown;
-}
+// ★★★ 新しく追加するAPIグループ ★★★
+export const admissionApi = {
+  getAllAdmissionMethods: async () => {
+    // Assuming AdmissionMethod[] is the expected response type, similar to University[]
+    // The actual response type should be verified with backend for /api/v1/admission/
+    return apiClient.get<ApiResponse<AdmissionMethod[]>>('/api/v1/admission/');
+  },
+};
+// ★★★ 追加ここまで ★★★
 
 // 大学情報API
 export const universityApi = {
