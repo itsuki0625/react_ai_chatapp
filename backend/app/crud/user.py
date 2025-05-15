@@ -289,8 +289,7 @@ async def record_login_attempt(db: AsyncSession, user_id: UUID, success: bool) -
          return
     now = datetime.utcnow()
     if success:
-        if hasattr(login_info, 'last_login_at'):
-            login_info.last_login_at = now
+        login_info.last_login_at = now
         login_info.failed_login_attempts = 0
         login_info.locked_until = None
         login_info.account_lock_reason = None
