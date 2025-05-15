@@ -11,14 +11,14 @@ function AppChatProvider({ children }: { children: React.ReactNode }) {
   
   const authToken = session?.user?.accessToken || null;
 
-  const tokenForChatProvider = status === 'loading' ? null : authToken;
+  // const tokenForChatProvider = status === 'loading' ? null : authToken;
 
   if (status === "loading") {
-    console.log("Auth session loading, ChatProvider will init with null token.");
+    console.log("Auth session loading, ChatProvider will initialize based on its own session check.");
   }
 
   return (
-    <ChatProvider initialAuthToken={tokenForChatProvider}>
+    <ChatProvider>
       {children}
     </ChatProvider>
   );
