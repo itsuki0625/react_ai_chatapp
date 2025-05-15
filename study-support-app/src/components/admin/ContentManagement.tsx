@@ -455,6 +455,7 @@ export const ContentManagement = () => {
                           alt={content.title}
                           fill
                           style={{ objectFit: 'cover' }}
+                          unoptimized={true}
                           className="rounded"
                         />
                         <div className="absolute top-2 right-2 flex space-x-1">
@@ -512,6 +513,7 @@ export const ContentManagement = () => {
                           alt={content.title}
                           fill
                           style={{ objectFit: 'cover' }}
+                          unoptimized={true}
                           className="rounded"
                         />
                       </div>
@@ -746,6 +748,7 @@ export const ContentManagement = () => {
                     height={90} 
                     style={{ objectFit: 'cover' }}
                     onError={() => console.warn("サムネイル画像の読み込みに失敗しました。URLを確認してください。")} 
+                    unoptimized={true}
                   />
                 </div>
               )}
