@@ -450,14 +450,20 @@ export const ContentManagement = () => {
                       className="border rounded-lg p-3 hover:shadow-md transition-shadow flex flex-col"
                     >
                       <div className="aspect-video relative mb-2">
-                        <Image
-                          src={content.thumbnail_url || '/placeholder.png'}
+                        {content.thumbnail_url && (
+                          <Image
+                          src={`/api/image-proxy?url=${encodeURIComponent(content.thumbnail_url)}`}
                           alt={content.title}
                           fill
                           style={{ objectFit: 'cover' }}
-                          unoptimized={true}
                           className="rounded"
                         />
+                        )}
+                        {!content.thumbnail_url && (
+                          <div className="w-full h-full bg-gray-200 flex items-center justify-center rounded">
+                            <span className="text-gray-500">No Image</span>
+                          </div>
+                        )}
                         <div className="absolute top-2 right-2 flex space-x-1">
                           <button
                             onClick={() => handleContentEdit(content.id)}
@@ -508,14 +514,20 @@ export const ContentManagement = () => {
                       className="py-3 flex items-center hover:bg-gray-50"
                     >
                       <div className="flex-shrink-0 w-16 h-10 relative mr-4">
-                        <Image
-                          src={content.thumbnail_url || '/placeholder.png'}
+                        {content.thumbnail_url && (
+                          <Image
+                          src={`/api/image-proxy?url=${encodeURIComponent(content.thumbnail_url)}`}
                           alt={content.title}
                           fill
                           style={{ objectFit: 'cover' }}
-                          unoptimized={true}
                           className="rounded"
                         />
+                        )}
+                        {!content.thumbnail_url && (
+                          <div className="w-full h-full bg-gray-200 flex items-center justify-center rounded">
+                            <span className="text-xs text-gray-500">No Img</span>
+                          </div>
+                        )}
                       </div>
                       <div className="flex-grow min-w-0 mr-4">
                         <div className="flex items-center gap-2 mb-1">
@@ -742,13 +754,12 @@ export const ContentManagement = () => {
               {contentFormData.thumbnail_url && contentFormData.thumbnail_url.startsWith('https://drive.google.com/uc?export=view&id=') && (
                 <div className="mt-2">
                   <Image 
-                    src={contentFormData.thumbnail_url} 
+                    src={`/api/image-proxy?url=${encodeURIComponent(contentFormData.thumbnail_url)}`}
                     alt="Thumbnail Preview" 
                     width={160} 
                     height={90} 
                     style={{ objectFit: 'cover' }}
                     onError={() => console.warn("サムネイル画像の読み込みに失敗しました。URLを確認してください。")} 
-                    unoptimized={true}
                   />
                 </div>
               )}
