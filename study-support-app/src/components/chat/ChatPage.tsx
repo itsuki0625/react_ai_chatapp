@@ -19,7 +19,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
 
   const {
     isLoading: chatIsLoading,
-    isConnected,
+    isWebSocketConnected: isConnected,
     sendMessage: sendChatMessage,
     changeChatType,
     currentChatType: contextChatType,
