@@ -7,6 +7,7 @@ from app.database.database import SessionLocal, get_async_db
 from app.models.user import User, UserRole, Role, RolePermission, Permission
 from app.crud import user as crud_user
 import logging
+from app.core.security import decode_token_to_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -134,4 +135,94 @@ def require_permission(*required_permissions: str) -> Callable[[User], Awaitable
         return current_user # 権限チェックが通ったらユーザーオブジェクトを返す
 
     return dependency # 内部関数を返す
+
+async def check_permissions_for_user(user: User, required_permissions: tuple[str, ...]) -> bool:
+    """
+    指定されたユーザーが必要な権限を持っているかを確認します。
+    管理者ロールを持つユーザーは常に True を返します。
+    """
+    # 管理者ロールチェック
+    is_admin = False
+    if user.user_roles:
+        for user_role_assoc in user.user_roles:
+            role: Role = user_role_assoc.role
+            if role and role.name == '管理者': # ロール名で判定
+                is_admin = True
+                break
+    
+    if is_admin:
+        logger.debug(f"User {user.email} is an administrator. Granting permission for: {required_permissions}")
+        return True
+
+    # ユーザーに紐づく権限を取得
+    user_permissions_set: Set[str] = set()
+    if user.user_roles:
+        for user_role_assoc in user.user_roles:
+            role: Role = user_role_assoc.role
+            if role and role.permissions: # role.permissions が RolePermission のリストではなく Permission のリストを直接持つことを期待
+                for perm in role.permissions:
+                    if isinstance(perm, Permission) and hasattr(perm, 'name'):
+                        user_permissions_set.add(perm.name)
+                    else:
+                        # role.permissions が RolePermission オブジェクトのリストである場合、
+                        # perm.permission.name のようにアクセスする必要があるかもしれない。
+                        # これは User モデルと Role モデルのリレーション定義による。
+                        # 既存の require_permission では role.permissions が Permission オブジェクトのリストを指しているように見える。
+                        logger.warning(f"Unexpected item or structure in role.permissions for user {user.email}: {perm}")
+
+
+    # 必要な権限がすべてユーザーの権限に含まれているかチェック
+    missing_permissions = set(required_permissions) - user_permissions_set
+    if missing_permissions:
+        logger.warning(f"User {user.email} lacks required permissions for WebSocket: {missing_permissions}")
+        return False
+
+    logger.debug(f"User {user.email} has required permissions for WebSocket: {required_permissions}")
+    return True
+
+async def get_current_user_from_token(
+    token: str | None, db: AsyncSession # Removed Depends(get_async_db) as db is passed directly
+) -> User:
+    """
+    提供されたアクセストークンから現在のユーザーを取得します。
+    トークンが無効な場合やユーザーが見つからない場合はHTTPExceptionを発生させます。
+    """
+    if not token:
+        logger.warning("Authentication token not provided for WebSocket.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated (token missing)",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id_str = decode_token_to_user_id(token) # この関数は例外をスローする可能性がある
+    
+    # decode_token_to_user_id が None を返さない設計になっているが、念のためチェック
+    if user_id_str is None: 
+        logger.error("decode_token_to_user_id returned None unexpectedly.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials (user_id missing after decode)",
+        )
+
+    try:
+        user_uuid = uuid.UUID(user_id_str)
+        logger.debug(f"Attempting to fetch user with UUID: {user_uuid}")
+    except ValueError:
+        logger.warning(f"Invalid UUID format for user_id from token: {user_id_str}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user identifier format in token",
+        )
+
+    db_user = await crud_user.get_user(db, user_id=user_uuid)
+    if db_user is None:
+        logger.warning(f"User not found in DB for UUID: {user_uuid} (from token)")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found for the provided token",
+        )
+    
+    logger.info(f"Successfully authenticated user {db_user.email} (ID: {db_user.id}) from token for WebSocket.")
+    return db_user
  

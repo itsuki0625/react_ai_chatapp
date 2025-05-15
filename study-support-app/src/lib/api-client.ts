@@ -1,6 +1,8 @@
 import axios, { AxiosRequestHeaders } from 'axios';
 import { API_BASE_URL } from '@/lib/config';
 import { getSession } from 'next-auth/react'; // ★★★ 変更: コメントアウト解除 ★★★
+import { ChatSession as ChatSessionType, ChatSubmitRequest, ChatTypeValue } from "@/types/chat";
+import { AxiosResponse } from "axios";
 
 // 各種レスポンス型を定義
 type ApiResponse<T> = {
@@ -112,19 +114,17 @@ apiClient.interceptors.response.use(
 // };
 
 // API リクエスト/レスポンスデータ型
+// This ApplicationData is used for the createApplication payload.
+// It should match the backend's ApplicationCreate schema.
 interface ApplicationData {
-  id?: string;
-  name: string;
-  university: string;
-  department?: string;
-  course?: string;
-  deadline?: string;
-  status?: string;
+  university_id: string; // UUID as string
+  department_id: string; // UUID as string
+  admission_method_id: string; // UUID as string
+  priority: number;
   notes?: string;
-  documents?: DocumentData[];
-  schedules?: ScheduleData[];
-  priority?: number;
-  [key: string]: unknown;
+  // Fields like name, university (name), department (name) are typically part of the response,
+  // or resolved by the backend, not sent in the create payload if IDs are used.
+  // Other fields like id, course, deadline, status, documents, schedules are also not expected for creation.
 }
 
 interface DocumentData {
@@ -200,83 +200,83 @@ export const dashboardApi = {
 // 志望校管理API
 export const applicationApi = {
   getApplications: async () => {
-    return apiClient.get('/api/v1/applications');
+    return apiClient.get('/api/v1/applications/');
   },
   getApplication: async (id: string) => {
-    return apiClient.get(`/api/v1/applications/${id}`);
+    return apiClient.get(`/api/v1/applications/${id}/`);
   },
   createApplication: async (data: ApplicationData) => {
-    return apiClient.post('/api/v1/applications', data);
+    return apiClient.post('/api/v1/applications/', data);
   },
   updateApplication: async (id: string, data: ApplicationData) => {
-    return apiClient.put(`/api/v1/applications/${id}`, data);
+    return apiClient.put(`/api/v1/applications/${id}/`, data);
   },
   deleteApplication: async (id: string) => {
-    return apiClient.delete(`/api/v1/applications/${id}`);
+    return apiClient.delete(`/api/v1/applications/${id}/`);
   },
   addDocument: async (applicationId: string, data: DocumentData) => {
-    return apiClient.post(`/api/v1/applications/${applicationId}/documents`, data);
+    return apiClient.post(`/api/v1/applications/${applicationId}/documents/`, data);
   },
   updateDocument: async (applicationId: string, documentId: string, data: DocumentData) => {
-    return apiClient.put(`/api/v1/applications/${applicationId}/documents/${documentId}`, data);
+    return apiClient.put(`/api/v1/applications/${applicationId}/documents/${documentId}/`, data);
   },
   deleteDocument: async (applicationId: string, documentId: string) => {
-    return apiClient.delete(`/api/v1/applications/${applicationId}/documents/${documentId}`);
+    return apiClient.delete(`/api/v1/applications/${applicationId}/documents/${documentId}/`);
   },
   addSchedule: async (applicationId: string, data: ScheduleData) => {
-    return apiClient.post(`/api/v1/applications/${applicationId}/schedules`, data);
+    return apiClient.post(`/api/v1/applications/${applicationId}/schedules/`, data);
   },
   updateSchedule: async (applicationId: string, scheduleId: string, data: ScheduleData) => {
-    return apiClient.put(`/api/v1/applications/${applicationId}/schedules/${scheduleId}`, data);
+    return apiClient.put(`/api/v1/applications/${applicationId}/schedules/${scheduleId}/`, data);
   },
   deleteSchedule: async (applicationId: string, scheduleId: string) => {
-    return apiClient.delete(`/api/v1/applications/${applicationId}/schedules/${scheduleId}`);
+    return apiClient.delete(`/api/v1/applications/${applicationId}/schedules/${scheduleId}/`);
   },
   reorderApplications: async (data: { application_order: Record<string, number> }) => {
-    return apiClient.put('/api/v1/applications/reorder', data);
+    return apiClient.put('/api/v1/applications/reorder/', data);
   },
   getStatistics: async () => {
-    return apiClient.get('/api/v1/applications/statistics');
+    return apiClient.get('/api/v1/applications/statistics/');
   },
   getDeadlines: async () => {
-    return apiClient.get('/api/v1/applications/deadlines');
+    return apiClient.get('/api/v1/applications/deadlines/');
   }
 };
 
 // 志望理由書管理API
 export const statementApi = {
   getStatements: async () => {
-    return apiClient.get('/api/v1/statements');
+    return apiClient.get('/api/v1/statements/');
   },
   getStatement: async (id: string) => {
-    return apiClient.get(`/api/v1/statements/${id}`);
+    return apiClient.get(`/api/v1/statements/${id}/`);
   },
   createStatement: async (data: StatementData) => {
-    return apiClient.post('/api/v1/statements', data);
+    return apiClient.post('/api/v1/statements/', data);
   },
   updateStatement: async (id: string, data: StatementData) => {
-    return apiClient.put(`/api/v1/statements/${id}`, data);
+    return apiClient.put(`/api/v1/statements/${id}/`, data);
   },
   deleteStatement: async (id: string) => {
-    return apiClient.delete(`/api/v1/statements/${id}`);
+    return apiClient.delete(`/api/v1/statements/${id}/`);
   },
   requestFeedback: async (id: string, data: { message?: string }) => {
-    return apiClient.post(`/api/v1/statements/${id}/feedback/request`, data);
+    return apiClient.post(`/api/v1/statements/${id}/feedback/request/`, data);
   },
   getFeedback: async (id: string) => {
-    return apiClient.get(`/api/v1/statements/${id}/feedback`);
+    return apiClient.get(`/api/v1/statements/${id}/feedback/`);
   },
   provideFeedback: async (id: string, data: { content: string }) => {
-    return apiClient.post(`/api/v1/statements/${id}/feedback`, data);
+    return apiClient.post(`/api/v1/statements/${id}/feedback/`, data);
   },
   improveWithAI: async (id: string) => {
-    return apiClient.post(`/api/v1/statements/${id}/ai-improve`, {});
+    return apiClient.post(`/api/v1/statements/${id}/ai-improve/`, {});
   },
   getTemplates: async () => {
-    return apiClient.get('/api/v1/statements/templates');
+    return apiClient.get('/api/v1/statements/templates/');
   },
   getExamples: async () => {
-    return apiClient.get('/api/v1/statements/examples');
+    return apiClient.get('/api/v1/statements/examples/');
   }
 };
 
@@ -296,87 +296,105 @@ interface ChatSession {
 }
 
 // チャットAPI
-export const chatApi = {
-  sendMessage: async (message: string) => {
-    return apiClient.post('/api/v1/chat', { message });
-  },
-  sendStreamMessage: async (message: string, sessionId?: string, sessionType?: string) => {
-    // Stream APIは fetch を直接使っているので Authorization ヘッダーを明示的に設定する必要あり
-    const session = await getSession() as SessionWithToken | null;
-    const accessToken = session?.accessToken || session?.user?.accessToken || '';
-    
-    // StreamChatMessage型を使用してリクエストボディを作成
-    const requestBody: StreamChatMessage = {
-      message,
-      session_id: sessionId,
-      session_type: sessionType
-    };
-    
-    return fetch(`${API_BASE_URL}/api/v1/chat/stream`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
-        'Accept': 'text/event-stream',
-      },
-      body: JSON.stringify(requestBody),
-      credentials: 'include'
+const chatApiBase = {
+  // チャットメッセージ送信 (ストリーミングなしの通常のPOSTリクエスト)
+  sendChatMessage: async (token: string, data: ChatSubmitRequest): Promise<AxiosResponse<any>> => {
+    return apiClient.post("/api/v1/chat/", data, {
+      headers: { Authorization: `Bearer ${token}` },
     });
   },
-  getSessions: async () => {
-    return apiClient.get<ApiResponse<ChatSession[]>>('/api/v1/chat/sessions');
+
+  // チャットセッションリスト取得 (アクティブなもの)
+  getActiveSessions: async (token: string, chatType: ChatTypeValue): Promise<AxiosResponse<ChatSessionType[]>> => {
+    return apiClient.get<ChatSessionType[]>("/api/v1/chat/sessions/", {
+      headers: { Authorization: `Bearer ${token}` },
+      params: { chat_type: chatType, status: 'ACTIVE' },
+    });
   },
-  getArchivedSessions: async () => {
-    return apiClient.get<ApiResponse<ChatSession[]>>('/api/v1/chat/sessions/archived');
+
+  // 特定のチャットセッションのメッセージ履歴取得
+  getSessionMessages: async (token: string, sessionId: string): Promise<AxiosResponse<any[]>> => { // any[] は ChatMessage[] になるべき
+    return apiClient.get<any[]>(`/api/v1/chat/sessions/${sessionId}/messages/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
   },
-  getSessionMessages: async (sessionId: string) => {
-    return apiClient.get(`/api/v1/chat/sessions/${sessionId}/messages`);
+
+  // チャットセッションをアーカイブする
+  archiveSession: async (token: string, sessionId: string): Promise<AxiosResponse<ChatSessionType>> => {
+    return apiClient.patch<ChatSessionType>(`/api/v1/chat/sessions/${sessionId}/archive/`, {}, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
   },
-  archiveSession: async (sessionId: string) => {
-    return apiClient.patch(`/api/v1/chat/sessions/${sessionId}/archive`, {});
+
+  // アーカイブ済みチャットセッションリスト取得
+  getArchivedSessions: async (token: string, chatType: ChatTypeValue): Promise<AxiosResponse<ChatSessionType[]>> => {
+    return apiClient.get<ChatSessionType[]>("/api/v1/chat/sessions/archived/", {
+      headers: { Authorization: `Bearer ${token}` },
+      params: { chat_type: chatType }, // chat_type でフィルタリング
+    });
   },
-  getChecklist: async (chatId: string) => {
-    return apiClient.get(`/api/v1/chat/${chatId}/checklist`);
+
+  // チャットセッションをアーカイブ解除する
+  unarchiveSession: async (token: string, sessionId: string): Promise<AxiosResponse<ChatSessionType>> => {
+    return apiClient.patch<ChatSessionType>(`/api/v1/chat/sessions/${sessionId}/unarchive/`, {}, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
   },
-  startSelfAnalysis: async (message: string) => {
-    return apiClient.post('/api/v1/chat/self-analysis', { message });
-  },
-  getSelfAnalysisReport: async () => {
-    return apiClient.get('/api/v1/chat/self-analysis/report');
-  },
-  startAdmissionChat: async (message: string) => {
-    return apiClient.post('/api/v1/chat/admission', { message });
-  },
-  startStudySupportChat: async (message: string) => {
-    return apiClient.post('/api/v1/chat/study-support', { message });
-  },
-  getChatAnalysis: async () => {
-    return apiClient.get('/api/v1/chat/analysis');
-  }
+
+  // 他のチャット関連API呼び出し関数があればここに追加
+  // 例: createNewSession, updateSessionTitle など
 };
 
-interface University {
+// 既存の chatApi のエクスポート方法に合わせて調整する
+// もし chatApi が apiClient をラップしたオブジェクトとしてエクスポートされているなら、そこにマージする
+// 例: export const chatApi = { ...apiClient, ...chatApiBase };
+// ここでは chatApiBase を chatApi としてエクスポートすると仮定する (既存の構造による)
+export const chatApi = chatApiBase;
+
+// Department 型を先に定義 (University が参照するため)
+interface Department { // Corresponds to DepartmentResponse from backend schema
   id: string;
   name: string;
-  location?: string;
-  type?: string;
-  ranking?: number;
+  university_id: string; 
+  faculty_name?: string; 
+  description?: string; 
+  [key: string]: unknown; 
+}
+
+interface University { // Corresponds to UniversityResponse from backend schema
+  id: string;
+  name: string;
+  location?: string; 
+  type?: string; 
+  ranking?: number; 
+  departments?: Department[]; // Added based on backend schema UniversityResponse
+  prefecture?: string; 
+  address?: string;    
+  website_url?: string;
+  description?: string;
+  is_national?: boolean;
+  logo_url?: string;   
   [key: string]: unknown;
 }
 
-interface Department {
+interface AdmissionMethod { // Corresponds to AdmissionMethodResponse from backend schema
   id: string;
   name: string;
-  university_id: string;
+  university_id: string; 
+  description?: string; 
+  category?: string;    
   [key: string]: unknown;
 }
 
-interface AdmissionMethod {
-  id: string;
-  name: string;
-  university_id: string;
-  [key: string]: unknown;
-}
+// ★★★ 新しく追加するAPIグループ ★★★
+export const admissionApi = {
+  getAllAdmissionMethods: async () => {
+    // Assuming AdmissionMethod[] is the expected response type, similar to University[]
+    // The actual response type should be verified with backend for /api/v1/admissions/
+    return apiClient.get<ApiResponse<AdmissionMethod[]>>('/api/v1/admissions/');
+  },
+};
+// ★★★ 追加ここまで ★★★
 
 // 大学情報API
 export const universityApi = {
@@ -437,36 +455,36 @@ interface Review {
 export const contentApi = {
   getContents: async (categoryId?: string) => {
     const url = categoryId 
-      ? `/api/v1/contents/categories/${categoryId}` 
-      : '/api/v1/contents';
+      ? `/api/v1/contents/categories/${categoryId}/` 
+      : '/api/v1/contents/';
     return apiClient.get<ApiResponse<Content[]>>(url);
   },
   getContent: async (id: string) => {
-    return apiClient.get<ApiResponse<Content>>(`/api/v1/contents/${id}`);
+    return apiClient.get<ApiResponse<Content>>(`/api/v1/contents/${id}/`);
   },
   getCategories: async () => {
-    return apiClient.get<ApiResponse<Category[]>>('/api/v1/contents/categories');
+    return apiClient.get<ApiResponse<Category[]>>('/api/v1/contents/categories/');
   },
   getFaqs: async () => {
-    return apiClient.get<ApiResponse<Faq[]>>('/api/v1/contents/faqs');
+    return apiClient.get<ApiResponse<Faq[]>>('/api/v1/contents/faqs/');
   },
   getFaq: async (id: string) => {
-    return apiClient.get<ApiResponse<Faq>>(`/api/v1/contents/faqs/${id}`);
+    return apiClient.get<ApiResponse<Faq>>(`/api/v1/contents/faqs/${id}/`);
   },
   recordView: async (contentId: string) => {
-    return apiClient.post(`/api/v1/contents/${contentId}/view`, {});
+    return apiClient.post(`/api/v1/contents/${contentId}/view/`, {});
   },
   getReviews: async (contentId: string) => {
-    return apiClient.get<ApiResponse<Review[]>>(`/api/v1/contents/${contentId}/reviews`);
+    return apiClient.get<ApiResponse<Review[]>>(`/api/v1/contents/${contentId}/reviews/`);
   },
   addReview: async (contentId: string, data: Review) => {
-    return apiClient.post<ApiResponse<Review>>(`/api/v1/contents/${contentId}/reviews`, data);
+    return apiClient.post<ApiResponse<Review>>(`/api/v1/contents/${contentId}/reviews/`, data);
   },
   getRecommended: async () => {
-    return apiClient.get<ApiResponse<Content[]>>('/api/v1/contents/recommended');
+    return apiClient.get<ApiResponse<Content[]>>('/api/v1/contents/recommended/');
   },
   getHistory: async () => {
-    return apiClient.get<ApiResponse<Content[]>>('/api/v1/contents/history');
+    return apiClient.get<ApiResponse<Content[]>>('/api/v1/contents/history/');
   }
 };
 
@@ -576,46 +594,46 @@ interface QuizResult {
 // クイズ・テストAPI
 export const quizApi = {
   getQuizzes: async () => {
-    return apiClient.get<ApiResponse<Quiz[]>>('/api/v1/quizzes');
+    return apiClient.get<ApiResponse<Quiz[]>>('/api/v1/quizzes/');
   },
   getQuiz: async (id: string) => {
-    return apiClient.get<ApiResponse<Quiz>>(`/api/v1/quizzes/${id}`);
+    return apiClient.get<ApiResponse<Quiz>>(`/api/v1/quizzes/${id}/`);
   },
   createQuiz: async (data: Quiz) => {
-    return apiClient.post<ApiResponse<Quiz>>('/api/v1/quizzes', data);
+    return apiClient.post<ApiResponse<Quiz>>('/api/v1/quizzes/', data);
   },
   updateQuiz: async (id: string, data: Quiz) => {
-    return apiClient.put<ApiResponse<Quiz>>(`/api/v1/quizzes/${id}`, data);
+    return apiClient.put<ApiResponse<Quiz>>(`/api/v1/quizzes/${id}/`, data);
   },
   deleteQuiz: async (id: string) => {
-    return apiClient.delete<ApiResponse<void>>(`/api/v1/quizzes/${id}`);
+    return apiClient.delete<ApiResponse<void>>(`/api/v1/quizzes/${id}/`);
   },
   addQuestion: async (quizId: string, data: QuizQuestion) => {
-    return apiClient.post<ApiResponse<QuizQuestion>>(`/api/v1/quizzes/${quizId}/questions`, data);
+    return apiClient.post<ApiResponse<QuizQuestion>>(`/api/v1/quizzes/${quizId}/questions/`, data);
   },
   updateQuestion: async (quizId: string, questionId: string, data: QuizQuestion) => {
-    return apiClient.put<ApiResponse<QuizQuestion>>(`/api/v1/quizzes/${quizId}/questions/${questionId}`, data);
+    return apiClient.put<ApiResponse<QuizQuestion>>(`/api/v1/quizzes/${quizId}/questions/${questionId}/`, data);
   },
   deleteQuestion: async (quizId: string, questionId: string) => {
-    return apiClient.delete<ApiResponse<void>>(`/api/v1/quizzes/${quizId}/questions/${questionId}`);
+    return apiClient.delete<ApiResponse<void>>(`/api/v1/quizzes/${quizId}/questions/${questionId}/`);
   },
   startAttempt: async (quizId: string) => {
-    return apiClient.post<ApiResponse<{ attemptId: string }>>(`/api/v1/quizzes/${quizId}/attempt`, {});
+    return apiClient.post<ApiResponse<{ attemptId: string }>>(`/api/v1/quizzes/${quizId}/attempt/`, {});
   },
   submitAnswers: async (quizId: string, data: { answers: QuizAnswer[] }) => {
-    return apiClient.post<ApiResponse<QuizResult>>(`/api/v1/quizzes/${quizId}/submit`, data);
+    return apiClient.post<ApiResponse<QuizResult>>(`/api/v1/quizzes/${quizId}/submit/`, data);
   },
   getResults: async (quizId: string) => {
-    return apiClient.get<ApiResponse<QuizResult[]>>(`/api/v1/quizzes/${quizId}/results`);
+    return apiClient.get<ApiResponse<QuizResult[]>>(`/api/v1/quizzes/${quizId}/results/`);
   },
   getRecommended: async () => {
-    return apiClient.get<ApiResponse<Quiz[]>>('/api/v1/quizzes/recommended');
+    return apiClient.get<ApiResponse<Quiz[]>>('/api/v1/quizzes/recommended/');
   },
   getHistory: async () => {
-    return apiClient.get<ApiResponse<QuizResult[]>>('/api/v1/quizzes/history');
+    return apiClient.get<ApiResponse<QuizResult[]>>('/api/v1/quizzes/history/');
   },
   getAnalysis: async () => {
-    return apiClient.get<ApiResponse<{ strengths: string[]; weaknesses: string[] }>>('/api/v1/quizzes/analysis');
+    return apiClient.get<ApiResponse<{ strengths: string[]; weaknesses: string[] }>>('/api/v1/quizzes/analysis/');
   }
 };
 

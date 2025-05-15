@@ -1,202 +1,200 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, SendHorizontal } from 'lucide-react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import ChatSidebar from '@/components/chat/ChatSidebar';
 import ChatWindow from '@/components/chat/ChatWindow';
-import { ChecklistEvaluation } from './ChecklistEvaluation';
-import {
-    sendMessageStream,
-} from '@/services/chatService';
-import { ChatMessage, ChatType } from '@/types/chat';
-import { useAuthHelpers } from '@/lib/authUtils';
-import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
-import { useRouter } from 'next/navigation';
+import { ChatInput } from '@/components/chat/ChatInput';
+import { ChatTypeValue, ChatTypeEnum } from '@/types/chat';
+import { useRouter, usePathname } from 'next/navigation';
+import { useChat } from '@/store/chat/ChatContext';
 
-const ChatPage: React.FC = () => {
-  const queryClient = useQueryClient();
+interface ChatPageProps {
+  initialChatType?: ChatTypeValue;
+  initialSessionId?: string;
+}
+
+const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }) => {
   const router = useRouter();
-  const [newMessage, setNewMessage] = useState('');
+  const pathname = usePathname();
+
+  const {
+    isLoading: chatIsLoading,
+    isWebSocketConnected: isConnected,
+    sendMessage: sendChatMessage,
+    changeChatType,
+    currentChatType: contextChatType,
+    sessionId: contextSessionId,
+    sessions,
+    archivedSessions,
+    viewingSessionStatus,
+    justStartedNewChat,
+    dispatch,
+  } = useChat();
+
   const checklistRef = useRef<{ triggerUpdate: () => void }>(null);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | undefined>(undefined);
-  const { hasPermission, isLoading: isAuthLoading } = useAuthHelpers();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const chatType = ChatType.STUDY_SUPPORT; // このチャットページのタイプを指定
+  const prevContextSessionIdRef = useRef<string | null | undefined>(contextSessionId);
 
-  const canSendMessage = hasPermission('chat_message_send');
-
-  // ChatWindow でセッションが作成されたときに呼び出されるコールバック
-  const handleSessionCreated = (sessionId: string) => {
-    setSelectedSessionId(sessionId);
-    // 新しいセッションIDがURLに反映されるよう更新
-    if (sessionId) {
-      router.push(`/chat/${chatType}/${sessionId}`);
+  // Derived state from URL
+  const getChatInfoFromPath = useCallback(() => {
+    const pathSegments = pathname.split('/').filter(Boolean);
+    const chatSegmentIndex = pathSegments.findIndex(segment => segment === 'chat');
+    
+    // Ensure chatSegmentIndex is found and there's a segment after 'chat' for type
+    let typeFromUrl = undefined;
+    if (chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 1) {
+      const rawType = pathSegments[chatSegmentIndex + 1];
+      // URLの形式（ハイフン）をEnum値（アンダースコア）に変換
+      typeFromUrl = rawType.replace('-', '_').toUpperCase() as ChatTypeValue;
+      console.log('[DEBUG] Path parsing:', rawType, '->', typeFromUrl);
     }
-  };
+    
+    // Ensure there's a segment after type for session ID
+    const sessionIdFromUrl = chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 2 ? pathSegments[chatSegmentIndex + 2] : undefined;
+    
+    return { typeFromUrl, sessionIdFromUrl };
+  }, [pathname]);
 
-  // サイドバーでセッションを選択したときのハンドラ
   useEffect(() => {
-    // 初期ロード時やURLからセッションIDを取得する処理などを実装できる
-    // 現在は主にChatWindowとChatSidebarのために定義
-  }, []);
+    const { typeFromUrl, sessionIdFromUrl } = getChatInfoFromPath();
+    const previousContextSessionId = prevContextSessionIdRef.current;
 
-  // メッセージ送信 Mutation は ChatWindow 内部に移動する可能性が高いが、一旦残す
-  const sendMessageMutation = useMutation<void, Error, { sessionId: string; message: string }>({
-    mutationFn: async ({ sessionId, message }) => {
-      // Optimistic update: Add user message immediately
-      const optimisticMessage: ChatMessage = {
-        id: `temp-user-${Date.now()}`,
-        session_id: sessionId,
-        content: message,
-        sender_type: 'USER',
-        created_at: new Date().toISOString(),
-      };
-      queryClient.setQueryData<ChatMessage[]>(['chatMessages', sessionId], (old) =>
-        old ? [...old, optimisticMessage] : [optimisticMessage]
-      );
+    console.log(`[DEBUG ChatPage UnifiedEffect] Start. Path: ${pathname}, PrevCtxSessID: ${previousContextSessionId}, Ctx: CType=${contextChatType} CSessID=${contextSessionId} JustNew=${justStartedNewChat}, URL: UType=${typeFromUrl} USessID=${sessionIdFromUrl}`);
 
-      // Optimistic update: Add AI placeholder message
-      const aiPlaceholder: ChatMessage = {
-        id: `temp-ai-${Date.now()}`,
-        session_id: sessionId,
-        content: '', // Initially empty
-        sender_type: 'AI',
-        created_at: new Date().toISOString(),
-        isLoading: true, // Indicate loading
-      };
-      queryClient.setQueryData<ChatMessage[]>(['chatMessages', sessionId], (old) =>
-        old ? [...old, aiPlaceholder] : [aiPlaceholder]
-      );
-
-      let streamedContent = '';
-      try {
-        // Call the streaming API function
-        await sendMessageStream(sessionId, message, (chunk: string) => {
-          streamedContent += chunk;
-          // Update the placeholder message with the streamed content
-          queryClient.setQueryData<ChatMessage[]>(['chatMessages', sessionId], (old) =>
-            old?.map(msg =>
-              msg.id === aiPlaceholder.id ? { ...msg, content: streamedContent } : msg
-            )
-          );
-        });
-        // Update the placeholder message once streaming is complete
-        queryClient.setQueryData<ChatMessage[]>(['chatMessages', sessionId], (old) =>
-          old?.map(msg =>
-            msg.id === aiPlaceholder.id ? { ...msg, isLoading: false } : msg
-          )
-        );
-        // Trigger checklist update if necessary
-        checklistRef.current?.triggerUpdate();
-      } catch (error) {
-        console.error("Streaming failed:", error);
-        // Update placeholder message to show error
-        queryClient.setQueryData<ChatMessage[]>(['chatMessages', sessionId], (old) =>
-          old?.map(msg =>
-            msg.id === aiPlaceholder.id ? { ...msg, content: "AI応答の取得中にエラーが発生しました。", isLoading: false, isError: true } : msg
-          )
-        );
-        throw error; // Re-throw error to be caught by mutation's onError
-      }
-    },
-    onError: (error, variables) => {
-      console.error("Send message error:", error);
-      alert(`メッセージ送信エラー: ${error.message}`);
-      // Remove optimistic messages on error
-      queryClient.setQueryData<ChatMessage[]>(['chatMessages', variables.sessionId], (old) =>
-        old?.filter(msg => !msg.id?.startsWith('temp-'))
-      );
-    },
-    // onSettledでは未使用の引数を削除
-    onSettled: () => {
-      // Invalidate session list to potentially update titles or order
-      queryClient.invalidateQueries({ queryKey: ['chatSessions'] });
+    // Priority 1: New Chat URL Update
+    if (contextChatType && contextSessionId && !sessionIdFromUrl && 
+        (previousContextSessionId === null || previousContextSessionId === undefined)) {
+      const newChatPath = `/chat/${contextChatType.toLowerCase()}/${contextSessionId}`;
+      console.log(`[DEBUG ChatPage UnifiedEffect Priority 1] ContextSessionId changed from ${previousContextSessionId} to ${contextSessionId}. URL has no session. Updating URL to: ${newChatPath}`);
+      router.replace(newChatPath);
+      // prevContextSessionIdRef.current is updated at the end of the effect
+      return; 
     }
-  });
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim() || sendMessageMutation.isPending || isAuthLoading || !canSendMessage) return;
-
-    if (selectedSessionId) {
-      sendMessageMutation.mutate({ sessionId: selectedSessionId, message: newMessage });
-      setNewMessage('');
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto'; // Reset textarea height
-      }
-    } else {
-       // セッション未選択時の処理 - 新規作成は ChatWindow に任せる想定
-       console.log("No session selected, sending message to ChatWindow for new session creation potentially.");
-       // ここで直接アラートを出すか、ChatWindowに処理を委譲するかは設計次第
-       // alert('チャットセッションを選択してください。');
+    // Priority 2: Synchronize Context from URL and other cases
+    if (typeFromUrl && typeFromUrl !== contextChatType) {
+      console.log(`[DEBUG ChatPage UnifiedEffect] URL chat type (${typeFromUrl}) differs from context (${contextChatType}). Changing context chat type.`);
+      changeChatType(typeFromUrl);
+      // prevContextSessionIdRef.current is updated at the end
+      return;
     }
-  };
 
-  const isLoadingMessages = false; // 仮置き (ChatWindowから取得する)
+    if (typeFromUrl && typeFromUrl === contextChatType) {
+      if (sessionIdFromUrl && sessionIdFromUrl !== contextSessionId) {
+        const foundSession = sessions.find(s => s.id === sessionIdFromUrl) || archivedSessions.find(s => s.id === sessionIdFromUrl);
+        const sessionStatus = foundSession?.status;
+        console.log(`[DEBUG ChatPage UnifiedEffect] URL session ID (${sessionIdFromUrl}) differs from context (${contextSessionId}). Setting context session ID. Status: ${sessionStatus}`);
+        dispatch({ type: 'SET_SESSION_ID', payload: { id: sessionIdFromUrl, status: sessionStatus } });
+        // prevContextSessionIdRef.current is updated at the end
+        return;
+      } else if (!sessionIdFromUrl && contextSessionId && !justStartedNewChat) {
+        if (previousContextSessionId !== null && previousContextSessionId !== undefined) {
+            console.log(`[DEBUG ChatPage UnifiedEffect] URL has no session, context has ${contextSessionId} (was ${previousContextSessionId}). Clearing context session.`);
+            dispatch({ type: 'SET_SESSION_ID', payload: { id: null, status: null } });
+            // prevContextSessionIdRef.current is updated at the end
+            return;
+        } else {
+            console.log(`[DEBUG ChatPage UnifiedEffect] URL has no session, context has ${contextSessionId}, prev was ${previousContextSessionId}. Not clearing, likely new session flow or waiting for URL update.`);
+        }
+      } else if (sessionIdFromUrl && !contextSessionId && !justStartedNewChat && typeFromUrl === contextChatType) {
+        const foundSession = sessions.find(s => s.id === sessionIdFromUrl) || archivedSessions.find(s => s.id === sessionIdFromUrl);
+        const sessionStatus = foundSession?.status;
+        console.log(`[DEBUG ChatPage UnifiedEffect] URL has session ${sessionIdFromUrl}, context has no session (not new chat). Setting context session ID. Status: ${sessionStatus}`);
+        dispatch({ type: 'SET_SESSION_ID', payload: { id: sessionIdFromUrl, status: sessionStatus } });
+        // prevContextSessionIdRef.current is updated at the end
+        return;
+      }
+    }
+    
+    if (!typeFromUrl && initialChatType && initialChatType !== contextChatType && !contextChatType) {
+        console.log(`[DEBUG ChatPage UnifiedEffect] No URL type, initialChatType (${initialChatType}) provided. Setting context chat type.`);
+        changeChatType(initialChatType);
+        // prevContextSessionIdRef.current is updated at the end
+        return;
+    }
+    
+    if (justStartedNewChat && typeFromUrl && !sessionIdFromUrl && !contextSessionId) {
+        console.log(`[DEBUG ChatPage UnifiedEffect] New chat state: URL is /chat/${typeFromUrl}, context session is null. Waiting for backend session ID.`);
+    }
+
+    console.log(`[DEBUG ChatPage UnifiedEffect] End. Path: ${pathname}, PrevCtxSessID: ${previousContextSessionId}, Ctx: CType=${contextChatType} CSessID=${contextSessionId} JustNew=${justStartedNewChat}, URL: UType=${typeFromUrl} USessID=${sessionIdFromUrl}`);
+    
+    prevContextSessionIdRef.current = contextSessionId;
+
+  }, [
+    pathname, 
+    contextChatType, 
+    contextSessionId, 
+    justStartedNewChat, 
+    initialChatType,
+    sessions, 
+    archivedSessions, 
+    changeChatType, 
+    dispatch, 
+    router,
+    getChatInfoFromPath
+  ]);
+  
+  const activeChatType = contextChatType;
 
   return (
-    <div className="flex h-full">
-      {/* ChatSidebar にセッション選択ハンドラを渡す */}
-      <ChatSidebar
-        chatType={chatType}
-        currentSessionId={selectedSessionId}
-      />
-      <div className="flex-1 flex flex-col border-l">
-        {/* ChatWindow は sessionId を受け取り、内部でメッセージ取得と表示を行う */}
-        <ChatWindow
-            chatType={chatType}
-            sessionId={selectedSessionId} // Pass selectedSessionId
-            key={selectedSessionId} // Session ID 変更時にコンポーネントを再マウントして内部状態をリセット
-            onNewSessionCreated={handleSessionCreated} // handleSessionCreatedを使用
-        />
-
-        {/* メッセージ入力欄は selectedSessionId がある場合のみ表示する、または ChatWindow内に移動する */}
-        {/* selectedSessionId && ( */}
-          <footer className="flex-none bg-white border-t border-gray-200 px-4 py-4">
-            <form onSubmit={handleSendMessage} className="flex space-x-4 items-start">
-              <Textarea
-                ref={textareaRef}
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                placeholder={canSendMessage ? "メッセージを入力... (Shift+Enterで改行)" : "メッセージを送信する権限がありません"}
-                rows={1}
-                className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[40px] max-h-[200px] overflow-y-auto disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={isLoadingMessages || sendMessageMutation.isPending || isAuthLoading || !canSendMessage || !selectedSessionId /* セッション未選択時も無効化 */}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage(e);
-                  }
-                }}
-              />
-              <Button
-                type="submit"
-                disabled={!newMessage.trim() || isLoadingMessages || sendMessageMutation.isPending || isAuthLoading || !canSendMessage || !selectedSessionId /* セッション未選択時も無効化 */}
-                className="h-[40px] w-[40px] flex-shrink-0 flex items-center justify-center bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:bg-blue-400"
-                size="icon"
-              >
-                {sendMessageMutation.isPending ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <SendHorizontal className="h-5 w-5" />
-                )}
-              </Button>
-            </form>
-          </footer>
-        {/* ) */}
-      </div>
-      {/* Checklist Evaluation Panel */}
-      {selectedSessionId && (
-        <div className="w-80 border-l bg-gray-50 p-4 overflow-y-auto">
-          <ChecklistEvaluation
-            ref={checklistRef}
-            chatId={selectedSessionId} // Use selectedSessionId
-            sessionType={ChatType.GENERAL} // Update to use GENERAL from the ChatType enum
-          />
+    <div className="flex h-full w-full overflow-hidden bg-slate-50 rounded-lg shadow-sm border border-slate-200">
+      <ChatSidebar />
+      <div className="flex-1 flex flex-col h-full border-l border-slate-200">
+        <div className="bg-white py-4 px-6 border-b border-slate-200 hidden sm:block shadow-sm sticky top-0 z-10">
+          <div className="max-w-4xl mx-auto">
+            <h1 className="text-lg font-semibold text-slate-800">
+              {contextChatType === ChatTypeEnum.SELF_ANALYSIS ? '自己分析AI' :
+               contextChatType === ChatTypeEnum.ADMISSION ? '総合型選抜AI' :
+               contextChatType === ChatTypeEnum.STUDY_SUPPORT ? '学習サポートAI' :
+               contextChatType === ChatTypeEnum.FAQ ? 'FAQヘルプAI' : 'AIチャット'}
+            </h1>
+            <p className="text-sm text-slate-500">
+              {contextChatType === ChatTypeEnum.SELF_ANALYSIS ? '自己分析を深め、自分の強みを見つけましょう' :
+               contextChatType === ChatTypeEnum.ADMISSION ? '総合型選抜に関する相談や志望理由書の添削を行います' :
+               contextChatType === ChatTypeEnum.STUDY_SUPPORT ? '学習に関する質問や課題の解決をサポートします' :
+               contextChatType === ChatTypeEnum.FAQ ? 'よくある質問に回答します' : 'AIとチャットして情報を得ましょう'}
+            </p>
+          </div>
         </div>
-      )}
+        <div className="flex-1 overflow-hidden relative">
+          <ChatWindow />
+          <div className="absolute bottom-0 left-0 right-0 z-10">
+            <div className="px-4 py-3 bg-white border-t border-slate-200 shadow-lg">
+              <ChatInput 
+                onSendMessage={sendChatMessage} 
+                isLoading={chatIsLoading} 
+              />
+              
+              {/* 接続状態とチャットタイプ情報 */}
+              <div className="flex justify-between items-center mt-2 px-1 text-xs text-slate-500 max-w-4xl mx-auto">
+                <div className="flex items-center">
+                  {isConnected ? (
+                    <span className="flex items-center text-green-600">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-500 mr-1.5 animate-pulse"></span>
+                      接続中
+                    </span>
+                  ) : (
+                    <span className="flex items-center text-red-600">
+                      <span className="h-1.5 w-1.5 rounded-full bg-red-500 mr-1.5"></span>
+                      未接続
+                    </span>
+                  )}
+                </div>
+                
+                {/* チャットタイプ表示 */}
+                {activeChatType && (
+                  <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
+                    {activeChatType === ChatTypeEnum.STUDY_SUPPORT ? '学習支援' :
+                     activeChatType === ChatTypeEnum.SELF_ANALYSIS ? '自己分析' :
+                     activeChatType === ChatTypeEnum.ADMISSION ? '総合型選抜' : 
+                     activeChatType === ChatTypeEnum.FAQ ? 'FAQ' : activeChatType}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

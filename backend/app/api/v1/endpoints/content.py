@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from app.api.deps import get_current_user, get_async_db, require_permission
-from app.schemas.content import ContentCreate, ContentUpdate, ContentResponse
+from app.schemas.content import ContentCreate, ContentUpdate, ContentResponse, ContentCategoryInfo
 from app.crud import content as crud_content
 from app.models.user import User
 import uuid
@@ -104,4 +104,15 @@ async def delete_content_by_id(
         logger.error(f"Error deleting content {content_id}: {e}", exc_info=True)
         if db.in_transaction():
             await db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="コンテンツ削除エラー") 
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="コンテンツ削除エラー")
+
+@router.get("/categories/", response_model=List[ContentCategoryInfo], tags=["content"])
+async def read_content_categories_from_contents_router(
+    db: AsyncSession = Depends(get_async_db),
+    # current_user: User = Depends(require_permission('content_read')) # カテゴリーは一般公開情報として権限不要にするか、別途検討
+):
+    """
+    全てのコンテンツカテゴリーを取得します。
+    """
+    categories = await crud_content.get_all_content_categories(db)
+    return categories 

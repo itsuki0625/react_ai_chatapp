@@ -4,7 +4,7 @@ import { PersonalStatementResponse } from '@/types/personal_statement';
 // import { PersonalStatementCreate, PersonalStatementUpdate } from '@/types/personal_statement';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5050';
-const STATEMENTS_API_URL = `${API_BASE_URL}/api/v1/statements`;
+const STATEMENTS_API_URL = `${API_BASE_URL}/api/v1/statements/`;
 
 // GET /statements/
 export const getStatements = async (): Promise<PersonalStatementResponse[]> => {
@@ -22,7 +22,7 @@ export const getStatements = async (): Promise<PersonalStatementResponse[]> => {
 
 // DELETE /statements/{statement_id}
 export const deleteStatement = async (id: string): Promise<void> => {
-    const url = `${STATEMENTS_API_URL}/${id}`;
+    const url = `${STATEMENTS_API_URL}${id}/`;
     console.log(`Deleting statement at: ${url}`);
     const response = await fetchWithAuth(url, {
         method: 'DELETE',

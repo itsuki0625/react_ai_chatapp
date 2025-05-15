@@ -3,11 +3,14 @@
 import { forwardRef, useEffect, useImperativeHandle, useState, useCallback } from 'react';
 import { AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 import { API_BASE_URL } from '@/lib/config';
+import { useChat } from '@/store/chat/ChatContext';
 
 interface ChecklistItem {
   item: string;
   status: string;
   feedback?: string;
+  summary?: string;
+  next_question?: string;
 }
 
 interface ChecklistData {
@@ -21,57 +24,87 @@ interface Props {
   sessionType?: string;
 }
 
-const getToken = () => {
-  return localStorage.getItem('token');
-};
-
 export const ChecklistEvaluation = forwardRef<{ triggerUpdate: () => void }, Props>(
-  ({ chatId, sessionType = 'CONSULTATION' }, ref) => {
-    const [checklistData, setChecklistData] = useState<ChecklistData | null>(null);
+  ({ chatId, sessionType = 'SELF_ANALYSIS' }, ref) => {
+    const [checklistItems, setChecklistItems] = useState<ChecklistItem[] | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const { authToken } = useChat();
 
     const fetchChecklist = useCallback(async () => {
-      if (!chatId) return;
+      if (!chatId || !authToken) {
+        if (!authToken) {
+            console.warn("Checklist: Auth token not available.");
+            setError("認証されていません。チェックリストを取得できません。");
+        }
+        if (!chatId) {
+            console.warn("Checklist: ChatId not available.");
+            setChecklistItems(null);
+        }
+        return;
+      }
+      setError(null);
+      setChecklistItems(null);
+      console.log(`Checklist: Fetching for chatId: ${chatId}, sessionType: ${sessionType}, token: ${authToken ? 'present' : 'absent'}`);
 
       try {
         const response = await fetch(
           `${API_BASE_URL}/api/v1/chat/${chatId}/checklist?session_type=${sessionType}`,
           {
             headers: {
-              'Authorization': `Bearer ${getToken()}`
+              'Authorization': `Bearer ${authToken}`,
             },
-            credentials: 'include',
           }
         );
         
         if (!response.ok) {
-          if (response.status === 404) {
-            setError('チェックリストがまだ作成されていません');
-            return;
+          let errorDetail = 'Failed to fetch checklist';
+          try {
+            const errorData = await response.json();
+            errorDetail = errorData.detail || errorDetail;
+          } catch (e) {
+            errorDetail = await response.text() || errorDetail;
           }
-          throw new Error('Failed to fetch checklist');
+
+          if (response.status === 401) {
+            setError('チェックリストの取得権限がありません。再ログインしてください。');
+          } else if (response.status === 404) {
+            setChecklistItems([]);
+          } else {
+            setError(`チェックリストの取得に失敗しました: ${errorDetail}`);
+          }
+          console.error('Checklist fetch error:', response.status, errorDetail);
+          return;
         }
         
-        const data = await response.json();
-        setChecklistData(data);
+        const data: any[] = await response.json();
+        const formattedData: ChecklistItem[] = data.map(apiItem => ({
+            item: apiItem.checklist_item,
+            status: apiItem.is_completed ? "完了" : "未完了",
+        }));
+        setChecklistItems(formattedData);
       } catch (error) {
-        setError('チェックリストの取得に失敗しました');
-        console.error('Checklist fetch error:', error);
+        const errorMessage = error instanceof Error ? error.message : 'チェックリストの取得中に予期せぬエラーが発生しました';
+        setError(errorMessage);
+        console.error('Checklist fetch processing error:', error);
       }
-    }, [chatId, sessionType]);
+    }, [chatId, sessionType, authToken]);
 
     useImperativeHandle(ref, () => ({
       triggerUpdate: () => {
+        console.log("Checklist: triggerUpdate called, will fetch in 5s if still mounted and conditions met.");
         setTimeout(fetchChecklist, 5000);
       }
     }));
 
-    // 初回マウント時のみfetchを実行
     useEffect(() => {
-      if (chatId) {
+      if (chatId && authToken) {
+        console.log("Checklist: Initial fetch due to chatId or authToken change.");
         fetchChecklist();
+      } else {
+        setChecklistItems(null);
+        if (!authToken) setError("認証情報がありません。");
       }
-    }, [chatId, fetchChecklist]); // chatIdとfetchChecklistを依存配列に追加
+    }, [chatId, authToken, fetchChecklist]);
 
     if (error) {
       return (
@@ -92,7 +125,7 @@ export const ChecklistEvaluation = forwardRef<{ triggerUpdate: () => void }, Pro
       );
     }
 
-    if (!checklistData) {
+    if (!checklistItems) {
       return (
         <div className="p-4 bg-gray-50 rounded-lg animate-pulse">
           <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
@@ -110,7 +143,7 @@ export const ChecklistEvaluation = forwardRef<{ triggerUpdate: () => void }, Pro
         <h3 className="text-lg font-medium mb-4">チェックリスト評価</h3>
         
         <div className="space-y-4 mb-6">
-          {checklistData?.checklist_items.map((item, index) => (
+          {checklistItems.map((item, index) => (
             <div key={index} className="border rounded-lg p-4">
               <div className="flex items-start gap-3">
                 {item.status === "完了" ? (
@@ -146,19 +179,14 @@ export const ChecklistEvaluation = forwardRef<{ triggerUpdate: () => void }, Pro
         <div className="border-t pt-4">
           <div className="flex items-center gap-2 mb-2">
             <p className="font-medium">総合評価:</p>
-            <span className={`px-2 py-1 rounded-full text-sm ${
-              checklistData.completion_status === "完了" 
-                ? "bg-green-100 text-green-800"
-                : "bg-yellow-100 text-yellow-800"
-            }`}>
-              {checklistData.completion_status}
-            </span>
+            {checklistItems && checklistItems.every(item => item.status === "完了") ? (
+              <span className="px-2 py-1 rounded-full text-sm bg-green-100 text-green-800">完了</span>
+            ) : checklistItems && checklistItems.length > 0 ? (
+              <span className="px-2 py-1 rounded-full text-sm bg-yellow-100 text-yellow-800">進行中</span>
+            ) : (
+              <span className="px-2 py-1 rounded-full text-sm bg-gray-100 text-gray-800">N/A</span>
+            )}
           </div>
-          {checklistData.general_feedback && (
-            <p className="text-sm text-gray-700">
-              {checklistData.general_feedback}
-            </p>
-          )}
         </div>
       </div>
     );

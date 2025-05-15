@@ -42,7 +42,7 @@ from .admission import (
 )
 from .content import (
     ContentBase, ContentCreate, ContentUpdate, ContentResponse,
-    ContentType, ContentCategory, ContentCategoryResponse,
+    ContentType, ContentCategoryResponse, ContentCategoryInfo,
     ReviewBase, ReviewCreate, ReviewResponse,
     ContentViewCreate, ContentViewResponse, ContentRecommendationResponse,
     FAQBase, FAQCreate, FAQResponse
@@ -120,7 +120,7 @@ __all__ = [
     "AdmissionExampleResponse", "AdmissionMethodDetailResponse", "DepartmentDetailResponse",
     # Content
     "ContentBase", "ContentCreate", "ContentUpdate", "ContentResponse",
-    "ContentType", "ContentCategory", "ContentCategoryResponse",
+    "ContentType", "ContentCategoryResponse", "ContentCategoryInfo",
     "ReviewBase", "ReviewCreate", "ReviewResponse",
     "ContentViewCreate", "ContentViewResponse", "ContentRecommendationResponse",
     "FAQBase", "FAQCreate", "FAQResponse",

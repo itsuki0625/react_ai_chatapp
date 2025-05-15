@@ -159,29 +159,22 @@ export default function ApplicationPage() {
 
   const fetchApplications = async () => {
     try {
-      const response = await apiClient.get<Application[]>('/applications/');
+      const response = await apiClient.get<Application[]>('/api/v1/applications/');
       setApplications(response.data);
+      setIsLoading(false);
     } catch (error) {
       setError('志望校情報の取得に失敗しました');
       console.error('Error fetching applications:', error);
+      setIsLoading(false);
       throw error;
     }
   };
 
   const handleCreateApplication = async (formData: ApplicationFormData) => { 
     try {
-      const token = getToken();
-      const response = await fetch(`${API_BASE_URL}/api/v1/applications/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'include',
-        body: JSON.stringify(formData)
-      });
-
-      if (!response.ok) {
+      const response = await apiClient.post('/api/v1/applications/', formData);
+      
+      if (response.status !== 201 && response.status !== 200) {
         throw new Error('Failed to create application');
       }
 
@@ -195,16 +188,9 @@ export default function ApplicationPage() {
 
   const handleDeleteApplication = async (id: string) => {
     try {
-      const token = getToken();
-      const response = await fetch(`${API_BASE_URL}/api/v1/applications/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
+      const response = await apiClient.delete(`/api/v1/applications/${id}/`);
+      
+      if (response.status !== 204 && response.status !== 200) {
         throw new Error('Failed to delete application');
       }
 
@@ -217,18 +203,9 @@ export default function ApplicationPage() {
 
   const handleEditApplication = async (id: string, formData: ApplicationFormData) => { 
     try {
-      const token = getToken();
-      const response = await fetch(`${API_BASE_URL}/api/v1/applications/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'include',
-        body: JSON.stringify(formData)
-      });
-
-      if (!response.ok) {
+      const response = await apiClient.put(`/api/v1/applications/${id}/`, formData);
+      
+      if (response.status !== 200) {
         throw new Error('Failed to update application');
       }
 

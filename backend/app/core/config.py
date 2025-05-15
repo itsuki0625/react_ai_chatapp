@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     # JWT設定
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 15分から24時間(1440分)に変更
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30    # 30日
+    JWT_ALGORITHM: str = "HS512" # JWTアルゴリズムを追加
     
     # メール設定
     SMTP_SERVER: str = os.getenv("SMTP_SERVER", "smtp.example.com")

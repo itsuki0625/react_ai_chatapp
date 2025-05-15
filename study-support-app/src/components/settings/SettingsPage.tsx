@@ -45,15 +45,26 @@ const SettingsPage = () => {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Extract necessary values from session to stabilize dependencies
+  const userId = session?.user?.id;
+  const userName = session?.user?.name;
+  const userEmail = session?.user?.email;
+  // Add any other session properties used in the effect if necessary
+
   useEffect(() => {
-    const loadUserSettings = async () => {
-      if (status === 'authenticated' && session?.user?.id) {
+    const loadUserSettingsInternal = async () => {
+      if (status === 'loading' || (status === 'authenticated' && (isAuthLoading || isSubLoading))) {
+        setIsLoading(true);
+      }
+
+      if (status === 'authenticated' && userId) {
+        setIsLoading(true); // Ensure loading is true for this fetch operation
         try {
           const settingsData = await fetchUserSettings();
           const mappedSettings: Omit<UserSettings, 'subscription'> = {
-            full_name: String(settingsData.full_name || session.user.name || ''),
-            name: String(settingsData.name || settingsData.full_name || session.user.name || ''),
-            email: String(settingsData.email || session.user.email || ''),
+            full_name: String(settingsData.full_name || userName || ''),
+            name: String(settingsData.name || settingsData.full_name || userName || ''),
+            email: String(settingsData.email || userEmail || ''),
             profile_image_url: settingsData.profile_image_url ?? null,
             emailNotifications: settingsData.emailNotifications ?? true,
             browserNotifications: settingsData.browserNotifications ?? false,
@@ -63,43 +74,62 @@ const SettingsPage = () => {
 
           const userProfileImageKey = settingsData.profile_image_url ?? null;
 
-          if (!user || user.id !== session.user.id) {
-            console.log("Initializing/Updating Zustand user state...");
+          const currentUserInStore = useUserStore.getState().user;
+
+          if (!currentUserInStore || currentUserInStore.id !== userId || currentUserInStore.profile_image_url !== userProfileImageKey /* Add more critical field comparisons if needed */) {
+            console.log("Initializing/Updating Zustand user state based on fetched data or userID change...");
+            const currentSessionUser = session?.user ?? {};
             const userDataForStore = {
-              ...(session?.user ?? {}),
-              profile_image_url: userProfileImageKey
+              ...currentSessionUser, // Base with session user data
+              id: userId, // Ensure correct ID from session
+              name: settingsData.name || settingsData.full_name || userName, // Prioritize fetched/settings data
+              email: settingsData.email || userEmail, // Prioritize fetched/settings data
+              profile_image_url: userProfileImageKey, // Fetched data
+              // Preserve other fields from session.user like role, if not in settingsData
+              role: (currentSessionUser as any)?.role,
             };
-            setUser(userDataForStore as any);
-            setPreviewUrl(userProfileImageKey);
-          } else {
-            setPreviewUrl(user.profile_image_url ?? null);
+            setUser(userDataForStore as any); // Update Zustand store
           }
+          setPreviewUrl(userProfileImageKey);
 
         } catch (error) {
           console.error('ユーザー設定の取得エラー:', error);
           toast.error('ユーザー設定の取得に失敗しました。');
+          // Fallback settings on error
           setUserSettings({
-            full_name: String(session?.user?.name || 'ユーザー'),
-            name: String(session?.user?.name || 'ユーザー'),
-            email: String(session?.user?.email || ''),
+            full_name: String(userName || 'ユーザー'),
+            name: String(userName || 'ユーザー'),
+            email: String(userEmail || ''),
             profile_image_url: null,
             emailNotifications: true,
             browserNotifications: false,
             theme: 'light',
           });
           setPreviewUrl(null);
-          setUser(session?.user as any);
         } finally {
-          setIsLoading(isAuthLoading || (status === 'authenticated' && isSubLoading));
+          // After this fetch, re-evaluate loading based on other ongoing loading states
+          if (status === 'authenticated') {
+            setIsLoading(isAuthLoading || isSubLoading);
+          } else {
+            setIsLoading(false); // If no longer authenticated, not loading
+          }
         }
       } else if (status === 'unauthenticated') {
         setUserSettings(null);
         setPreviewUrl(null);
         setUser(null);
+        setIsLoading(false);
+      } else if (status === 'loading') {
+        // If only session status is loading and other blocks didn't handle
+        setIsLoading(true);
       }
     };
-    loadUserSettings();
-  }, [status, session, setUser, user, isAuthLoading, isSubLoading]);
+
+    loadUserSettingsInternal();
+  // Removed 'user' from dependencies.
+  // setUserSettings is included because loadUserSettingsInternal calls it.
+  // session is kept as per original; if issues persist, its direct usage or frequent reference changes could be reviewed.
+  }, [status, userId, userName, userEmail, setUser, setUserSettings, isAuthLoading, isSubLoading]);
 
   useEffect(() => {
     if (selectedFile) {
@@ -111,7 +141,7 @@ const SettingsPage = () => {
     } else {
         setPreviewUrl(user?.profile_image_url ?? null);
     }
-  }, [selectedFile, user?.profile_image_url]);
+  }, [selectedFile, user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;

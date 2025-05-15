@@ -27,6 +27,17 @@ const StatementListPage: React.FC = () => {
         retry: false,
     });
 
+    const deleteMutation = useMutation<void, Error, string>({ 
+        mutationFn: deleteStatement, 
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['statements'] });
+            alert('志望理由書を削除しました。');
+        },
+        onError: (error) => {
+            alert(`削除に失敗しました: ${error.message}`);
+        }
+    });
+
     useEffect(() => {
         const handleAuthError = async () => {
             toast.error('認証エラーが発生しました。ログインページに遷移します。');
@@ -44,16 +55,13 @@ const StatementListPage: React.FC = () => {
         }
     }, [error, router]);
 
-    const deleteMutation = useMutation<void, Error, string>({ 
-        mutationFn: deleteStatement, 
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['statements'] });
-            alert('志望理由書を削除しました。');
-        },
-        onError: (error) => {
-            alert(`削除に失敗しました: ${error.message}`);
-        }
-    });
+    if (process.env.NODE_ENV === 'production') {
+        return (
+            <div className="flex h-full w-full items-center justify-center">
+                <p className="text-xl">開発中です。公開までお待ちください。</p>
+            </div>
+        );
+    }
 
     const handleDelete = (id: string) => {
         if (confirm('この志望理由書を削除してもよろしいですか？')) {

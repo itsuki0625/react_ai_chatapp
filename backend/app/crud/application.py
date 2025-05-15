@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from app.models.desired_school import DesiredSchool, DesiredDepartment
 from app.models.document import Document, DocumentSubmission
 from app.models.schedule import ScheduleEvent, EventCompletion
@@ -53,8 +53,25 @@ async def create_application(
     )
     db.add(db_department)
     await db.commit()
-    await db.refresh(db_school)
-    return db_school
+
+    # 作成した DesiredSchool オブジェクトを、関連情報を読み込んだ上で再取得する
+    stmt = (
+        select(DesiredSchool)
+        .where(DesiredSchool.id == db_school.id)
+        .options(
+            selectinload(DesiredSchool.university),
+            selectinload(DesiredSchool.desired_departments).selectinload(DesiredDepartment.department),
+            selectinload(DesiredSchool.desired_departments).selectinload(DesiredDepartment.admission_method)
+        )
+    )
+    result = await db.execute(stmt)
+    loaded_school = result.scalar_one_or_none()
+
+    if loaded_school is None:
+        # 通常ここには来ないはずだが、念のためエラーハンドリング
+        raise HTTPException(status_code=500, detail="Failed to load created application with relations.")
+
+    return loaded_school
 
 async def get_application(
     db: AsyncSession,

@@ -5,23 +5,33 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { SendHorizontal, Loader2 } from 'lucide-react';
 import { useAuthHelpers } from '@/lib/authUtils';
+import { useChat } from '@/store/chat/ChatContext';
 
 interface ChatInputProps {
   onSendMessage: (message: string) => void;
-  isLoading?: boolean; // Parent component can indicate loading state (e.g., during message submission)
+  isLoading?: boolean; // 外部から渡されるローディング状態
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading = false }) => {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { hasPermission, isLoading: isAuthLoading } = useAuthHelpers();
+  const { isWebSocketConnected, viewingSessionStatus } = useChat();
 
   // Check for message sending permission
   const canSendMessage = hasPermission('chat_message_send');
+  const isDisabled = !isWebSocketConnected || isLoading || isAuthLoading || !canSendMessage || viewingSessionStatus === 'ARCHIVED';
+  
+  const getPlaceholder = () => {
+    if (!isWebSocketConnected) return "接続していません...";
+    if (!canSendMessage) return "メッセージを送信する権限がありません";
+    if (viewingSessionStatus === 'ARCHIVED') return "アーカイブされたチャットです (読み取り専用)";
+    return "メッセージを入力... (Shift+Enterで改行)";
+  };
 
   const handleInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(event.target.value);
-    // Auto-resize textarea height (optional)
+    // Auto-resize textarea height
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
@@ -29,15 +39,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading =
   };
 
   const handleSend = useCallback(() => {
-    // Send only if not loading, has permission, and message is not empty
-    if (message.trim() && !isLoading && canSendMessage) {
+    // Send only if not disabled and message is not empty
+    if (message.trim() && !isDisabled) {
       onSendMessage(message.trim());
       setMessage(''); // Clear input
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto'; // Reset height
       }
     }
-  }, [message, isLoading, onSendMessage, canSendMessage]);
+  }, [message, isDisabled, onSendMessage]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Send on Enter (but not Shift+Enter)
@@ -48,31 +58,33 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading =
   };
 
   return (
-    <div className="flex items-end space-x-2 p-4 border-t bg-background">
-      <Textarea
-        ref={textareaRef}
-        value={message}
-        onChange={handleInputChange}
-        onKeyDown={handleKeyDown}
-        placeholder={canSendMessage ? "メッセージを入力... (Shift+Enterで改行)" : "メッセージを送信する権限がありません"} // Placeholder reflects permission
-        rows={1}
-        className="flex-1 resize-none max-h-40 overflow-y-auto rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-        disabled={isLoading || isAuthLoading || !canSendMessage} // Disable if loading, auth loading, or no permission
-      />
-      <Button 
-        type="button" 
-        onClick={handleSend} 
-        disabled={isLoading || isAuthLoading || !canSendMessage || !message.trim()} // Disable button based on same conditions + empty message
-        size="icon"
-        className="flex-shrink-0"
-        aria-label="メッセージを送信"
-      >
-        {isLoading ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
-        ) : (
-          <SendHorizontal className="h-5 w-5" />
-        )}
-      </Button>
+    <div className="w-full max-w-4xl mx-auto">
+      <div className="flex items-end space-x-2">
+        <Textarea
+          ref={textareaRef}
+          value={message}
+          onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
+          placeholder={getPlaceholder()}
+          rows={1}
+          className="flex-1 resize-none max-h-40 overflow-y-auto rounded-full border border-slate-200 bg-white px-3 py-3 text-sm ring-offset-background placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 shadow-sm min-h-[48px]"
+          disabled={isDisabled}
+        />
+        <Button 
+          type="button" 
+          onClick={handleSend} 
+          disabled={isDisabled || !message.trim()}
+          size="icon"
+          className="flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white shadow-sm h-10 w-10 rounded-full"
+          aria-label="メッセージを送信"
+        >
+          {isLoading ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : (
+            <SendHorizontal className="h-5 w-5" />
+          )}
+        </Button>
+      </div>
     </div>
   );
 }; 

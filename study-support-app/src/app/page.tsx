@@ -1,10 +1,11 @@
 import Link from 'next/link';
+import Image from 'next/image';
 
 export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
       <div className="flex items-center gap-2 mb-6">
-        <img src="/logo_with_icon.svg" alt="SmartAO" className="h-12 sm:h-16 w-auto" />
+        <Image src="/logo_with_icon.svg" alt="SmartAO" width={64} height={64} className="h-12 sm:h-16 w-auto" />
       </div>
 
       <div className="bg-white shadow-md rounded-lg p-8 w-full max-w-md">

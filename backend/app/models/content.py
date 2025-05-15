@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 from .base import Base, TimestampMixin
 from .enums import ContentType, DeviceType
+# from .user import User # Userモデルをインポートするためにコメントアウトを解除、循環参照に注意
 
 class Content(Base, TimestampMixin):
     __tablename__ = 'contents'
@@ -22,12 +23,18 @@ class Content(Base, TimestampMixin):
     thumbnail_url = Column(String)
     duration = Column(Integer)  # 再生時間（秒）
     is_premium = Column(Boolean, default=False)
+    created_by_id = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=True) # nullable=False が適切かもしれないが、既存データとの兼ね合いでTrueにしておく
+
+    # ★ プロバイダー情報を追加
+    provider = Column(String, nullable=True) # 例: "google", "slideshare", "speakerdeck"
+    provider_item_id = Column(String, nullable=True) # プロバイダー固有のID
 
     # Relationships
-    tags = relationship("ContentTag", back_populates="content")
-    category_relations = relationship("ContentCategoryRelation", back_populates="content")
-    view_history = relationship("ContentViewHistory", back_populates="content")
-    ratings = relationship("ContentRating", back_populates="content")
+    created_by = relationship("User", lazy="selectin") # lazy="selectin" を追加
+    tags = relationship("ContentTag", back_populates="content", lazy="selectin", cascade="all, delete-orphan")
+    category_relations = relationship("ContentCategoryRelation", back_populates="content", lazy="selectin", cascade="all, delete-orphan")
+    view_history = relationship("ContentViewHistory", back_populates="content", cascade="all, delete-orphan")
+    ratings = relationship("ContentRating", back_populates="content", cascade="all, delete-orphan")
 
 class ContentTag(Base):
     __tablename__ = 'content_tags'
