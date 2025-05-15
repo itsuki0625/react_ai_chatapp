@@ -68,14 +68,14 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
           admissionApi.getAllAdmissionMethods()
         ]);
 
-        if (uniResponse.data && uniResponse.data.data) {
-          setUniversities(uniResponse.data.data);
+        if (uniResponse.data) {
+          setUniversities(uniResponse.data as any);
         } else {
           console.error('Failed to fetch universities or data is not in expected format', uniResponse);
         }
 
-        if (admResponse.data && admResponse.data.data) {
-          setAdmissionMethods(admResponse.data.data);
+        if (admResponse.data) {
+          setAdmissionMethods(admResponse.data as any);
         } else {
           console.error('Failed to fetch admission methods or data is not in expected format', admResponse);
         }

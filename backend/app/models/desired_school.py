@@ -14,7 +14,11 @@ class DesiredSchool(Base, TimestampMixin):
     # Relationships
     user = relationship("User", back_populates="desired_schools")
     university = relationship("University", back_populates="desired_schools")
-    desired_departments = relationship("DesiredDepartment", back_populates="desired_school")
+    desired_departments = relationship(
+        "DesiredDepartment", 
+        back_populates="desired_school",
+        cascade="all, delete-orphan"
+    )
 
 class DesiredDepartment(Base, TimestampMixin):
     __tablename__ = 'desired_departments'

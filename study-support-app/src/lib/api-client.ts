@@ -390,8 +390,8 @@ interface AdmissionMethod { // Corresponds to AdmissionMethodResponse from backe
 export const admissionApi = {
   getAllAdmissionMethods: async () => {
     // Assuming AdmissionMethod[] is the expected response type, similar to University[]
-    // The actual response type should be verified with backend for /api/v1/admission/
-    return apiClient.get<ApiResponse<AdmissionMethod[]>>('/api/v1/admission/');
+    // The actual response type should be verified with backend for /api/v1/admissions/
+    return apiClient.get<ApiResponse<AdmissionMethod[]>>('/api/v1/admissions/');
   },
 };
 // ★★★ 追加ここまで ★★★
