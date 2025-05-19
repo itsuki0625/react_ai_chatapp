@@ -61,6 +61,12 @@ export interface UserSettings {
   browserNotifications: boolean;
   theme: string; // e.g., 'light' | 'dark'
   subscription?: SubscriptionInfo | null; // Make subscription optional and potentially null
+  // 通知設定の追加
+  systemNotifications?: boolean;
+  chatNotifications?: boolean;
+  documentNotifications?: boolean;
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
 }
 
 export interface SubscriptionInfo {

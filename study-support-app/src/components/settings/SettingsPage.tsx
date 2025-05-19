@@ -7,12 +7,12 @@ import { toast } from 'react-hot-toast';
 import { useSession } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { Badge } from "@/components/ui/badge";
-import { UserSettings } from '@/types/user';
+import { UserSettings, User as UserType } from '@/types/user';
 import { SubscriptionInfo } from '@/types/user';
 import { Subscription } from '@/types/subscription';
 import { useAuthHelpers } from "@/lib/authUtils";
 import { Label } from "@/components/ui/label";
-import { fetchUserSettings } from '@/services/userService';
+import { fetchUserSettings, updateUserSettings } from '@/services/userService';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { uploadUserIcon, deleteUserIcon } from '@/services/userService';
@@ -164,13 +164,37 @@ const SettingsPage = () => {
     try {
       setSaving(true);
       const requestData = {
-        full_name: userSettings.name,
-        email_notifications: userSettings.emailNotifications,
-        browser_notifications: userSettings.browserNotifications,
-        theme: userSettings.theme
+        name: userSettings.name, 
+        emailNotifications: userSettings.emailNotifications,
+        browserNotifications: userSettings.browserNotifications,
+        theme: userSettings.theme,
       };
       console.log('設定更新データ:', requestData);
-      toast.success('設定を更新しました（API仮）');
+      const updatedSettings = await updateUserSettings(requestData as Partial<UserSettings>);
+
+      const currentUserFromStore = useUserStore.getState().user;
+      if (currentUserFromStore) {
+        const userToUpdate: UserType = { 
+          ...currentUserFromStore, 
+          name: updatedSettings.name || updatedSettings.full_name || currentUserFromStore.name,
+          profile_image_url: updatedSettings.profile_image_url !== undefined
+            ? updatedSettings.profile_image_url
+            : currentUserFromStore.profile_image_url,
+        };
+        setUser(userToUpdate);
+      }
+
+      setUserSettings({
+          full_name: updatedSettings.full_name || userSettings?.full_name || '',
+          name: updatedSettings.name || userSettings?.name || '',
+          email: userSettings?.email || '', 
+          profile_image_url: updatedSettings.profile_image_url !== undefined ? updatedSettings.profile_image_url : userSettings?.profile_image_url,
+          emailNotifications: updatedSettings.emailNotifications,
+          browserNotifications: updatedSettings.browserNotifications,
+          theme: updatedSettings.theme,
+      });
+
+      toast.success('設定を更新しました。');
     } catch (error) {
       console.error('設定更新エラー:', error);
       toast.error(`設定の更新に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -441,30 +465,107 @@ const SettingsPage = () => {
                 <Bell className="h-5 w-5 text-gray-400 mr-2" />
                 <h2 className="text-lg font-medium text-gray-900">通知設定</h2>
             </div>
-            <div className="p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                    <Label htmlFor="emailNotifications">メール通知</Label>
-                    <Input
-                        type="checkbox"
-                        name="emailNotifications"
-                        id="emailNotifications"
-                        checked={userSettings?.emailNotifications ?? true}
-                        onChange={handleChange}
-                        className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        disabled={saving}
-                    />
+            <div className="p-6 space-y-6">
+                <div className="space-y-4">
+                    <h3 className="text-sm font-medium text-gray-900">通知の種類</h3>
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <Label htmlFor="systemNotifications">システム通知</Label>
+                            <Input
+                                type="checkbox"
+                                name="systemNotifications"
+                                id="systemNotifications"
+                                checked={userSettings?.systemNotifications ?? true}
+                                onChange={handleChange}
+                                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                disabled={saving}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <Label htmlFor="chatNotifications">チャットメッセージ</Label>
+                            <Input
+                                type="checkbox"
+                                name="chatNotifications"
+                                id="chatNotifications"
+                                checked={userSettings?.chatNotifications ?? true}
+                                onChange={handleChange}
+                                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                disabled={saving}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <Label htmlFor="documentNotifications">ドキュメント期限</Label>
+                            <Input
+                                type="checkbox"
+                                name="documentNotifications"
+                                id="documentNotifications"
+                                checked={userSettings?.documentNotifications ?? true}
+                                onChange={handleChange}
+                                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                disabled={saving}
+                            />
+                        </div>
+                    </div>
                 </div>
-                 <div className="flex items-center justify-between">
-                    <Label htmlFor="browserNotifications">ブラウザ通知</Label>
-                     <Input
-                        type="checkbox"
-                        name="browserNotifications"
-                        id="browserNotifications"
-                        checked={userSettings?.browserNotifications ?? false}
-                        onChange={handleChange}
-                        className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        disabled={saving}
-                    />
+
+                <div className="space-y-4">
+                    <h3 className="text-sm font-medium text-gray-900">通知方法</h3>
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <Label htmlFor="emailNotifications">メール通知</Label>
+                            <Input
+                                type="checkbox"
+                                name="emailNotifications"
+                                id="emailNotifications"
+                                checked={userSettings?.emailNotifications ?? true}
+                                onChange={handleChange}
+                                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                disabled={saving}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <Label htmlFor="browserNotifications">ブラウザ通知</Label>
+                            <Input
+                                type="checkbox"
+                                name="browserNotifications"
+                                id="browserNotifications"
+                                checked={userSettings?.browserNotifications ?? false}
+                                onChange={handleChange}
+                                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                disabled={saving}
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="space-y-4">
+                    <h3 className="text-sm font-medium text-gray-900">静かな時間帯</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <Label htmlFor="quietHoursStart">開始時間</Label>
+                            <Input
+                                type="time"
+                                name="quietHoursStart"
+                                id="quietHoursStart"
+                                value={userSettings?.quietHoursStart || ''}
+                                onChange={handleChange}
+                                className="mt-1"
+                                disabled={saving}
+                            />
+                        </div>
+                        <div>
+                            <Label htmlFor="quietHoursEnd">終了時間</Label>
+                            <Input
+                                type="time"
+                                name="quietHoursEnd"
+                                id="quietHoursEnd"
+                                value={userSettings?.quietHoursEnd || ''}
+                                onChange={handleChange}
+                                className="mt-1"
+                                disabled={saving}
+                            />
+                        </div>
+                    </div>
                 </div>
             </div>
           </section>

@@ -30,6 +30,7 @@ from app.models.subscription import Subscription
 from app.schemas.subscription import SubscriptionResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from app.models.notification_setting import NotificationSetting
 
 router = APIRouter()
 
@@ -387,8 +388,29 @@ async def get_user_settings(
     """
     現在のユーザーの設定情報とサブスクリプション情報を取得
     """
-    logger.info(f"ユーザー設定取得リクエスト 開始: {current_user.email}") # Log start
+    logger.info(f"ユーザー設定取得リクエスト 開始: {current_user.email}")
     try:
+        # 通知設定を取得
+        stmt = select(NotificationSetting).filter(NotificationSetting.user_id == current_user.id)
+        result = await db.execute(stmt)
+        notification_settings = result.scalars().all()
+
+        # 通知設定をマッピング
+        notification_map = {
+            "SYSTEM_ANNOUNCEMENT": {"enabled": True, "quiet_hours": None},
+            "CHAT_MESSAGE": {"enabled": True, "quiet_hours": None},
+            "DOCUMENT_DEADLINE": {"enabled": True, "quiet_hours": None}
+        }
+
+        for setting in notification_settings:
+            notification_map[setting.notification_type] = {
+                "enabled": setting.email_enabled or setting.push_enabled or setting.in_app_enabled,
+                "quiet_hours": {
+                    "start": setting.quiet_hours_start.strftime("%H:%M") if setting.quiet_hours_start else None,
+                    "end": setting.quiet_hours_end.strftime("%H:%M") if setting.quiet_hours_end else None
+                } if setting.quiet_hours_start or setting.quiet_hours_end else None
+            }
+
         # Fetch subscription
         logger.info("Subscription 取得開始")
         stmt = select(Subscription).filter(Subscription.user_id == current_user.id, Subscription.is_active == True)
@@ -396,27 +418,31 @@ async def get_user_settings(
         subscription = result.scalars().first()
         logger.info(f"Subscription 取得完了: {subscription.id if subscription else 'None'}")
 
-        # Prepare response data (without from_orm first to isolate)
+        # Prepare response data
         logger.info("レスポンスデータ準備開始")
         sub_data = None
         if subscription:
-             try:
-                 # Attempt from_orm conversion and dict creation
-                 sub_response_obj = SubscriptionResponse.from_orm(subscription)
-                 logger.info(f"SubscriptionResponse.from_orm 成功")
-                 sub_data = sub_response_obj.dict()
-                 logger.info(f"Subscription データ変換 (.dict()) 完了")
-             except Exception as conversion_error:
-                 logger.error(f"SubscriptionResponse 変換エラー: {str(conversion_error)}", exc_info=True)
-                 raise HTTPException(status_code=500, detail="Subscription data conversion failed.")
+            try:
+                sub_response_obj = SubscriptionResponse.from_orm(subscription)
+                logger.info(f"SubscriptionResponse.from_orm 成功")
+                sub_data = sub_response_obj.dict()
+                logger.info(f"Subscription データ変換 (.dict()) 完了")
+            except Exception as conversion_error:
+                logger.error(f"SubscriptionResponse 変換エラー: {str(conversion_error)}", exc_info=True)
+                raise HTTPException(status_code=500, detail="Subscription data conversion failed.")
 
         settings_response_data = {
             "email": current_user.email,
             "full_name": current_user.full_name,
             "profile_image_url": current_user.profile_image_url,
-            "email_notifications": True, # Placeholder
-            "browser_notifications": False, # Placeholder
-            "theme": "light", # Placeholder
+            "email_notifications": any(setting.email_enabled for setting in notification_settings),
+            "browser_notifications": any(setting.push_enabled for setting in notification_settings),
+            "system_notifications": notification_map["SYSTEM_ANNOUNCEMENT"]["enabled"],
+            "chat_notifications": notification_map["CHAT_MESSAGE"]["enabled"],
+            "document_notifications": notification_map["DOCUMENT_DEADLINE"]["enabled"],
+            "quiet_hours_start": notification_map["SYSTEM_ANNOUNCEMENT"]["quiet_hours"]["start"] if notification_map["SYSTEM_ANNOUNCEMENT"]["quiet_hours"] else None,
+            "quiet_hours_end": notification_map["SYSTEM_ANNOUNCEMENT"]["quiet_hours"]["end"] if notification_map["SYSTEM_ANNOUNCEMENT"]["quiet_hours"] else None,
+            "theme": current_user.theme or "light",
             "subscription": sub_data
         }
         logger.info("レスポンス基本データ準備完了")
@@ -429,21 +455,13 @@ async def get_user_settings(
     except AttributeError as ae:
         logger.error(f"属性エラー発生: {str(ae)}", exc_info=True)
         if "'AsyncSession' object has no attribute 'query'" in str(ae):
-             logger.error("--> 同期クエリが呼び出された可能性が高いです。コードを確認してください。")
+            logger.error("--> 同期クエリが呼び出された可能性が高いです。コードを確認してください。")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="ユーザー設定の取得中に属性エラーが発生しました。"
         )
     except Exception as e:
         logger.error(f"その他のユーザー設定取得エラー: {str(e)}", exc_info=True)
-        # Check if rollback is needed (only if db interaction happened before error)
-        # This check might be overly cautious depending on where the error occurred.
-        # if db.in_transaction():
-        #     try:
-        #         await db.rollback()
-        #         logger.info("トランザクションをロールバックしました。")
-        #     except Exception as rb_exc:
-        #         logger.error(f"ロールバック中にエラー: {rb_exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="ユーザー設定の取得中に予期せぬエラーが発生しました。"
@@ -469,28 +487,86 @@ async def update_user_settings(
             )
         
         # 名前の更新
-        if "full_name" in settings_data:
-            user.full_name = settings_data["full_name"]
+        if "name" in settings_data:
+            user.name = settings_data["name"]
         
-        # ★ grade の更新を追加 ★
-        if "grade" in settings_data:
-            user.grade = settings_data["grade"]
+        # 通知設定の更新
+        notification_types = {
+            "systemNotifications": "SYSTEM_ANNOUNCEMENT",
+            "chatNotifications": "CHAT_MESSAGE",
+            "documentNotifications": "DOCUMENT_DEADLINE"
+        }
+
+        for setting_key, notification_type in notification_types.items():
+            if setting_key in settings_data:
+                # 通知設定テーブルから該当する設定を取得または作成
+                stmt = select(NotificationSetting).filter(
+                    NotificationSetting.user_id == user.id,
+                    NotificationSetting.notification_type == notification_type
+                )
+                result = await db.execute(stmt)
+                notification_setting = result.scalars().first()
+                
+                if not notification_setting:
+                    notification_setting = NotificationSetting(
+                        id=uuid.uuid4(),
+                        user_id=user.id,
+                        notification_type=notification_type,
+                        email_enabled=settings_data.get("emailNotifications", True),
+                        push_enabled=settings_data.get("browserNotifications", False),
+                        in_app_enabled=True
+                    )
+                    db.add(notification_setting)
+                else:
+                    notification_setting.email_enabled = settings_data.get("emailNotifications", True)
+                    notification_setting.push_enabled = settings_data.get("browserNotifications", False)
+                    notification_setting.in_app_enabled = True
+
+        # 静かな時間帯の設定
+        if "quietHoursStart" in settings_data or "quietHoursEnd" in settings_data:
+            # システム通知の設定を取得または作成
+            stmt = select(NotificationSetting).filter(
+                NotificationSetting.user_id == user.id,
+                NotificationSetting.notification_type == "SYSTEM_ANNOUNCEMENT"
+            )
+            result = await db.execute(stmt)
+            notification_setting = result.scalars().first()
+            
+            if not notification_setting:
+                notification_setting = NotificationSetting(
+                    id=uuid.uuid4(),
+                    user_id=user.id,
+                    notification_type="SYSTEM_ANNOUNCEMENT",
+                    email_enabled=settings_data.get("emailNotifications", True),
+                    push_enabled=settings_data.get("browserNotifications", False),
+                    in_app_enabled=True
+                )
+                db.add(notification_setting)
+            
+            if "quietHoursStart" in settings_data:
+                notification_setting.quiet_hours_start = datetime.strptime(settings_data["quietHoursStart"], "%H:%M").time()
+            if "quietHoursEnd" in settings_data:
+                notification_setting.quiet_hours_end = datetime.strptime(settings_data["quietHoursEnd"], "%H:%M").time()
         
-        # ★ prefecture の更新を追加 ★
-        if "prefecture" in settings_data:
-            user.prefecture = settings_data["prefecture"]
-        
-        # TODO: 他の設定（通知設定など）は別テーブルで管理することを検討
+        # テーマの更新
+        if "theme" in settings_data:
+            user.theme = settings_data["theme"]
         
         await db.commit()
         
-        # レスポンスに更新後の情報を反映（任意）
+        # レスポンスに更新後の情報を反映
         return {
             "message": "設定を更新しました",
             "email": user.email,
-            "full_name": user.full_name,
-            "grade": user.grade, # レスポンスに追加
-            "prefecture": user.prefecture # レスポンスに追加
+            "name": user.name,
+            "emailNotifications": settings_data.get("emailNotifications", True),
+            "browserNotifications": settings_data.get("browserNotifications", False),
+            "systemNotifications": settings_data.get("systemNotifications", True),
+            "chatNotifications": settings_data.get("chatNotifications", True),
+            "documentNotifications": settings_data.get("documentNotifications", True),
+            "quietHoursStart": settings_data.get("quietHoursStart"),
+            "quietHoursEnd": settings_data.get("quietHoursEnd"),
+            "theme": settings_data.get("theme", "light")
         }
     except Exception as e:
         await db.rollback()

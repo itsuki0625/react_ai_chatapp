@@ -1,5 +1,6 @@
 import enum
 from sqlalchemy import Enum as SQLAlchemyEnum
+from enum import Enum as PyEnum
 
 class MessageSender(str, enum.Enum):
     USER = "user"
@@ -68,14 +69,14 @@ class DeviceType(enum.Enum):
     TV = "tv"
     OTHER = "other"
 
-class NotificationType(enum.Enum):
-    CHAT_MESSAGE = "chat_message"
-    DOCUMENT_DEADLINE = "document_deadline"
-    EVENT_REMINDER = "event_reminder"
-    SUBSCRIPTION_RENEWAL = "subscription_renewal"
-    FEEDBACK_RECEIVED = "feedback_received"
-    SYSTEM_ANNOUNCEMENT = "system_announcement"
-    BROADCAST_MESSAGE = "broadcast_message"
+class NotificationType(PyEnum):
+    SYSTEM_ANNOUNCEMENT = "SYSTEM_ANNOUNCEMENT"
+    CHAT_MESSAGE = "CHAT_MESSAGE"
+    DOCUMENT_DEADLINE = "DOCUMENT_DEADLINE"
+    EVENT_REMINDER = "EVENT_REMINDER"
+    SUBSCRIPTION_RENEWAL = "SUBSCRIPTION_RENEWAL"
+    FEEDBACK_RECEIVED = "FEEDBACK_RECEIVED"
+    BROADCAST_MESSAGE = "BROADCAST_MESSAGE"
 
 class NotificationPriority(enum.Enum):
     LOW = "low"

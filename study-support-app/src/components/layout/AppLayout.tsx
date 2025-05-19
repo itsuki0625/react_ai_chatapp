@@ -1,96 +1,15 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
-import {
-  Menu,
-  X,
-  Home,
-  MessageSquare,
-  FileText,
-  User,
-  Settings,
-  SquarePlay,
-  CircleHelp,
-  BrainCircuit,
-  GraduationCap,
-  BookOpen,
-  Users,
-  DollarSign
-} from 'lucide-react';
-
-interface NavItem {
-  name: string;
-  href: string;
-  icon: React.ElementType;
-  children?: NavItem[];
-  expanded?: boolean;
-}
-
-const studentNavigation: NavItem[] = [
-  { name: 'ダッシュボード', href: '/dashboard', icon: Home },
-  {
-    name: 'AIチャット',
-    href: '/chat',
-    icon: BrainCircuit,
-    expanded: false,
-    children: [
-      { name: '自己分析AI', href: '/chat/self-analysis', icon: MessageSquare },
-      { name: '総合型選抜AI', href: '/chat/admission', icon: GraduationCap },
-      { name: '学習支援AI', href: '/chat/study-support', icon: BookOpen },
-      { name: 'FAQチャット', href: '/chat/faq', icon: CircleHelp },
-    ] 
-  },
-  { name: 'コミュニケーション', href: '/communication', icon: Users },
-  { name: '志望校管理', href: '/application', icon: User },
-  { name: '志望理由書', href: '/statement', icon: FileText },
-  { name: 'コンテンツ', href: '/contents', icon: SquarePlay },
-  { name: '設定', href: '/settings', icon: Settings },
-  { name: 'プラン', href: '/subscription', icon: DollarSign },
-];
-
-const adminNavigation: NavItem[] = [
-  { name: '管理ダッシュボード', href: '/admin/dashboard', icon: Home },
-  { name: 'ユーザー管理', href: '/admin/users', icon: Users },
-  { name: 'コンテンツ管理', href: '/admin/content', icon: SquarePlay },
-  { name: 'サブスクリプション管理', href: '/admin/subscription', icon: DollarSign },
-  { name: '設定', href: '/settings', icon: Settings },
-];
+import { Menu, X } from 'lucide-react';
+import { Navigation } from './Navigation';
 
 export const AppLayout = ({ children }: { children: React.ReactNode }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { data: session, status } = useSession();
-  const [currentNavItems, setCurrentNavItems] = useState<NavItem[]>(studentNavigation);
-  const pathname = usePathname();
-
-  useEffect(() => {
-    if (status === 'authenticated') {
-      if (session?.user?.isAdmin) {
-        setCurrentNavItems(adminNavigation);
-      } else {
-        setCurrentNavItems(studentNavigation);
-      }
-    } else if (status === 'unauthenticated') {
-      setCurrentNavItems([]);
-    }
-  }, [session, status]);
-
-  const [navItemsState, setNavItemsState] = useState<NavItem[]>([]);
-
-  useEffect(() => {
-    setNavItemsState(currentNavItems.map(item => ({ ...item, expanded: item.expanded ?? false })));
-  }, [currentNavItems]);
-
-  const toggleExpand = (index: number) => {
-    setNavItemsState(prevItems =>
-      prevItems.map((item, i) =>
-        i === index ? { ...item, expanded: !item.expanded } : item
-      )
-    );
-  };
+  const { status } = useSession();
 
   if (status === 'loading') {
     return <div className="flex justify-center items-center min-h-screen">Loading...</div>;
@@ -115,13 +34,13 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
         <div className="p-6">
           <div className="flex items-center justify-between">
             <Link href="/dashboard">
-                <Image
-                  src="/logo.svg"
-                  alt="SmartAO Logo"
-                  width={120}
-                  height={32}
-                  priority
-                />
+              <Image
+                src="/logo.svg"
+                alt="SmartAO Logo"
+                width={120}
+                height={32}
+                priority
+              />
             </Link>
             <button
               className="lg:hidden p-2"
@@ -132,93 +51,11 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
           </div>
         </div>
 
-        <nav className="px-4 space-y-1">
-          {navItemsState.map((item, index) => {
-            const isActive = pathname === item.href ||
-                           (item.children && item.children.some(child => pathname?.startsWith(child.href)));
-            const Icon = item.icon;
-
-            return (
-              <div key={item.name}>
-                {item.children ? (
-                  <>
-                    <button
-                      onClick={() => toggleExpand(index)}
-                      className={`
-                        w-full flex items-center justify-between px-4 py-2 text-sm font-medium rounded-md
-                        ${isActive
-                          ? 'bg-blue-50 text-blue-700'
-                          : 'text-slate-700 hover:bg-slate-50'
-                        }
-                      `}
-                    >
-                      <div className="flex items-center">
-                        <Icon className="mr-3 h-5 w-5" />
-                        {item.name}
-                      </div>
-                      <svg
-                        className={`w-5 h-5 transform transition-transform ${item.expanded ? 'rotate-90' : ''}`}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-
-                    <div
-                      className={`overflow-hidden transition-all duration-300 ease-in-out ${item.expanded ? 'max-h-96' : 'max-h-0'}`}
-                    >
-                      <div className="pl-8 mt-1 space-y-1 py-1">
-                        {item.children.map(child => {
-                          const isChildActive = pathname === child.href;
-                          const ChildIcon = child.icon;
-
-                          return (
-                            <Link
-                              key={child.name}
-                              href={child.href}
-                              onClick={() => setSidebarOpen(false)}
-                              className={`
-                                flex items-center px-4 py-2 text-sm font-medium rounded-md
-                                ${isChildActive
-                                  ? 'bg-blue-50 text-blue-700'
-                                  : 'text-slate-700 hover:bg-slate-50'
-                                }
-                              `}
-                            >
-                              <ChildIcon className="mr-3 h-4 w-4" />
-                              {child.name}
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <Link
-                    href={item.href}
-                    onClick={() => setSidebarOpen(false)}
-                    className={`
-                      flex items-center px-4 py-2 text-sm font-medium rounded-md
-                      ${isActive
-                        ? 'bg-blue-50 text-blue-700'
-                        : 'text-slate-700 hover:bg-slate-50'
-                      }
-                    `}
-                  >
-                    <Icon className="mr-3 h-5 w-5" />
-                    {item.name}
-                  </Link>
-                )}
-              </div>
-            );
-          })}
-        </nav>
+        <Navigation />
       </div>
 
       <main className="lg:pl-64 h-screen flex flex-col">
-        <div className="py-6 px-4 sm:px-6 lg:px-8 flex-1 overflow-hidden h-full">
+        <div className="py-6 px-4 sm:px-6 lg:px-8 flex-1 overflow-y-auto">
           {children}
         </div>
       </main>
