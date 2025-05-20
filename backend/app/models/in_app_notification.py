@@ -2,7 +2,8 @@ from sqlalchemy import Column, String, DateTime, ForeignKey, JSON, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
-from app.db.base_class import Base
+# from app.db.base_class import Base
+from .base import Base
 from app.models.enums import NotificationType
 
 class InAppNotification(Base):
@@ -13,7 +14,7 @@ class InAppNotification(Base):
     notification_type = Column(String(50), nullable=False)
     title = Column(String(200), nullable=False)
     message = Column(String(1000), nullable=False)
-    metadata = Column(JSON, nullable=True)
+    data = Column(JSON, nullable=True)
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -2,7 +2,8 @@ from sqlalchemy import Column, String, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
-from app.db.base_class import Base
+# from app.db.base_class import Base
+from .base import Base
 
 class PushSubscription(Base):
     __tablename__ = "push_subscriptions"

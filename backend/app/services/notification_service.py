@@ -13,7 +13,6 @@ from app.models.in_app_notification import InAppNotification
 from sqlalchemy.orm import Session
 from app.models.push_subscription import PushSubscription
 from app.schemas.notification import NotificationCreate
-from app.services.email_service import send_notification_email
 
 logger = logging.getLogger(__name__)
 
