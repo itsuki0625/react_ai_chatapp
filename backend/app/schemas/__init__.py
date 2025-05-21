@@ -81,6 +81,14 @@ from .ai_generate import (
     AIGenerateQuizRequest, AIGenerateResponse
 )
 
+from .notification_setting import (
+    NotificationSetting,
+    NotificationSettingCreate,
+    NotificationSettingUpdate,
+    NotificationSettingUser,
+    NotificationSettingList,
+)
+
 __all__ = [
     # Base
     "BaseResponse", "TimestampMixin",
@@ -152,4 +160,11 @@ __all__ = [
     # AI Generate
     "AIGenerateStudyPlanRequest", "AIGenerateContentRequest", 
     "AIGenerateQuizRequest", "AIGenerateResponse",
+
+    # Notification Settings
+    "NotificationSetting",
+    "NotificationSettingCreate",
+    "NotificationSettingUpdate",
+    "NotificationSettingUser",
+    "NotificationSettingList",
 ] 

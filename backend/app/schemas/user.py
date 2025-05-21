@@ -257,12 +257,14 @@ class UserSettingsResponse(BaseModel):
     email: EmailStr
     full_name: str
     profile_image_url: Optional[str] = None
-    # ★ 必要であればここにも grade, prefecture を追加する
-    # grade: Optional[str] = None
-    # prefecture: Optional[str] = None
     email_notifications: bool = True
     browser_notifications: bool = False
+    system_notifications: bool = True
+    chat_notifications: bool = True
+    document_notifications: bool = True
+    quiet_hours_start: Optional[str] = None
+    quiet_hours_end: Optional[str] = None
     theme: str = "light"
-    subscription: Optional[SubscriptionResponse] = None # ★ サブスクリプション情報を追加
+    subscription: Optional[SubscriptionResponse] = None
 
     model_config = ConfigDict(from_attributes=True) 

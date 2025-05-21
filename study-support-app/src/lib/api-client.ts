@@ -667,4 +667,61 @@ export const authApi = {
   },
 
   // 他の認証関連API（パスワード変更、2FAなど）も追加
+};
+
+// バックエンドの schemas.NotificationSettingUser と NotificationSettingList に対応する型定義
+// (これはAPIレスポンスの型なので、必要に応じて src/types/ ディレクトリなどに別途定義しても良い)
+interface NotificationSettingUser {
+  id: string;
+  user_id: string;
+  notification_type: string; // NotificationType enum (string)
+  email_enabled: boolean;
+  push_enabled: boolean;
+  in_app_enabled: boolean;
+  quiet_hours_start?: string | null; // ISO datetime string or null
+  quiet_hours_end?: string | null;   // ISO datetime string or null
+  created_at: string; // ISO datetime string
+  updated_at: string; // ISO datetime string
+  user?: { // 簡易的なユーザー情報
+    id: string;
+    email: string;
+    full_name?: string | null;
+  };
+}
+
+interface NotificationSettingList {
+  total: number;
+  items: NotificationSettingUser[];
+}
+
+// バックエンドの schemas.NotificationSettingUpdate に対応する型定義
+interface NotificationSettingUpdateData {
+  email_enabled?: boolean;
+  push_enabled?: boolean;
+  in_app_enabled?: boolean;
+  quiet_hours_start?: string | null;
+  quiet_hours_end?: string | null;
+}
+
+export const adminNotificationSettingsApi = {
+  getAllNotificationSettings: async (params?: {
+    skip?: number;
+    limit?: number;
+    userId?: string;
+  }): Promise<AxiosResponse<NotificationSettingList>> => {
+    return apiClient.get('/api/v1/admin/notification-settings/', { params });
+  },
+
+  getNotificationSettingById: async (
+    settingId: string
+  ): Promise<AxiosResponse<NotificationSettingUser>> => {
+    return apiClient.get(`/api/v1/admin/notification-settings/${settingId}`);
+  },
+
+  updateNotificationSettingById: async (
+    settingId: string,
+    data: NotificationSettingUpdateData
+  ): Promise<AxiosResponse<NotificationSettingUser>> => {
+    return apiClient.put(`/api/v1/admin/notification-settings/${settingId}`, data);
+  },
 }; 

@@ -57,6 +57,7 @@ export const AdminNavBar: React.FC = () => {
     { label: 'ユーザー管理', path: '/admin/users' },
     { label: 'コンテンツ管理', path: '/admin/content' },
     { label: 'サブスクリプション', path: '/admin/subscription' },
+    { label: '通知管理', path: '/admin/notification-settings' },
   ];
 
   return (
