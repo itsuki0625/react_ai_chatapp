@@ -15,7 +15,6 @@ export default function NotificationsPage() {
           通知履歴を確認できます。
         </p>
       </div>
-
       <NotificationHistory />
     </div>
   );

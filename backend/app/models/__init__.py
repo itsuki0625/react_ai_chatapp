@@ -20,7 +20,8 @@ from .chat import (
 )
 from .system import (
     SystemLog, SystemSetting, Notification, NotificationMetaData, 
-    NotificationSetting, BroadcastNotification, BroadcastTargetRole, 
+    NotificationSetting as SystemNotificationSetting,
+    BroadcastNotification, BroadcastTargetRole, 
     BroadcastTargetSchool, BroadcastNotificationMetaData, AuditLog, 
     AuditLogDetails, AuditLogAdditionalInfo
 )
@@ -47,6 +48,9 @@ from .learning_path import (
     LearningPathItem, UserLearningPath, UserLearningPathItem, 
     UserLearningPathNote, StudyPlanItem
 )
+from .notification_setting import NotificationSetting
+from .push_subscription import PushSubscription
+from .in_app_notification import InAppNotification
 
 __all__ = [
     # Base classes
@@ -113,6 +117,7 @@ __all__ = [
     "Notification",
     "NotificationMetaData",
     "NotificationSetting",
+    "SystemNotificationSetting",
     "BroadcastNotification",
     "BroadcastTargetRole",
     "BroadcastTargetSchool",
@@ -196,5 +201,7 @@ __all__ = [
     "TokenBlacklistReason",
     "AccountLockReason",
     "AuditLogAction",
-    "AuditLogStatus"
+    "AuditLogStatus",
+    "PushSubscription",
+    "InAppNotification"
 ]

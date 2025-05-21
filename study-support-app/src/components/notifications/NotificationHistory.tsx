@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useEffect, useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, isWithinInterval, subDays } from 'date-fns';
