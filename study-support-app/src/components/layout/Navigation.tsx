@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { useRouter } from 'next/navigation';
 
 interface NavItem {
   name: string;
@@ -58,10 +59,18 @@ const adminNavigation: NavItem[] = [
   { name: '設定', href: '/settings', icon: Settings },
 ];
 
+// 簡易的な通知型を定義
+interface MinimalNotification {
+  id: string;
+  is_read: boolean; // バックエンドの is_read に合わせる (または read)
+  // 他に必要なプロパティがあれば追加
+}
+
 export const Navigation = () => {
   const { data: session, status } = useSession();
   const [currentNavItems, setCurrentNavItems] = useState<NavItem[]>(studentNavigation);
   const pathname = usePathname();
+  const router = useRouter();
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -89,16 +98,27 @@ export const Navigation = () => {
     );
   };
 
-  // 未読通知数の取得
-  const { data: notifications } = useQuery({
-    queryKey: ['notifications'],
+  const { data: notificationsData } = useQuery<{
+    unread: number;
+  }>({
+    queryKey: ['notificationsCount'], // クエリキーを NotificationHistory と区別
     queryFn: async () => {
-      const response = await apiClient.get('/in-app-notifications');
-      return response.data;
+      if (status !== 'authenticated') return { unread: 0 };
+      try {
+        const response = await apiClient.get('/api/v1/in-app-notifications/');
+        const notifications = response.data as MinimalNotification[];
+        const unread = notifications.filter(n => !n.is_read).length;
+        return { unread };
+      } catch (error) {
+        console.error('Error fetching notifications count:', error);
+        return { unread: 0 }; // エラー時は0件とする
+      }
     },
+    enabled: status === 'authenticated', // 認証済みの場合のみ実行
+    staleTime: 5 * 60 * 1000, // 5分間はキャッシュを有効にする
   });
 
-  const unreadCount = notifications?.filter((n: any) => !n.is_read).length || 0;
+  const unreadCount = notificationsData?.unread || 0;
 
   if (status === 'loading') {
     return <div>Loading...</div>;

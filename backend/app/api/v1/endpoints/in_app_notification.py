@@ -2,7 +2,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
-from app.api.deps import get_db, get_current_user
+from app.api.deps import get_async_db, get_current_user
 from app.models.user import User
 from app.models.in_app_notification import InAppNotification
 from app.schemas.in_app_notification import (
@@ -16,7 +16,7 @@ router = APIRouter()
 @router.get("/", response_model=List[InAppNotificationInDB])
 async def get_in_app_notifications(
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     stmt = select(InAppNotification).filter(
         InAppNotification.user_id == str(current_user.id)
@@ -28,7 +28,7 @@ async def get_in_app_notifications(
 async def create_in_app_notification(
     notification: InAppNotificationCreate,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     db_notification = InAppNotification(
         user_id=str(current_user.id),
@@ -43,7 +43,7 @@ async def create_in_app_notification(
 async def mark_as_read(
     notification_id: str,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     stmt = select(InAppNotification).filter(
         InAppNotification.id == notification_id,

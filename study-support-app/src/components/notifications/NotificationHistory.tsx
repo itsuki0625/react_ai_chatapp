@@ -79,7 +79,7 @@ export const NotificationHistory = () => {
   const { data: notifications, isLoading } = useQuery<Notification[]>({
     queryKey: ['notifications'],
     queryFn: async () => {
-      const response = await apiClient.get('/notifications');
+      const response = await apiClient.get('/api/v1/in-app-notifications/');
       return response.data;
     },
   });
@@ -93,7 +93,12 @@ export const NotificationHistory = () => {
   // 通知を既読にする
   const markAsRead = useMutation({
     mutationFn: async (notificationIds: string[]) => {
-      await apiClient.patch('/notifications/read', { ids: notificationIds });
+      // 選択された通知IDごとにAPIを呼び出す
+      await Promise.all(
+        notificationIds.map(id => 
+          apiClient.patch(`/api/v1/in-app-notifications/${id}`)
+        )
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
@@ -108,46 +113,59 @@ export const NotificationHistory = () => {
   // 通知を削除する
   const deleteNotification = useMutation({
     mutationFn: async (notificationIds: string[]) => {
-      await apiClient.delete('/notifications', { data: { ids: notificationIds } });
+      // TODO: バックエンドに一括削除APIが実装されたら修正
+      // await apiClient.delete('/notifications', { data: { ids: notificationIds } });
+      console.warn("削除APIは未実装のため、フロントエンドからは呼び出しません。IDs:", notificationIds);
+      // 仮のエラー表示、または何もしない
+      toast.error('通知の削除機能は現在利用できません。'); 
+      return Promise.resolve(); // エラーにならないようにPromiseを返す
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
       setSelectedNotifications([]);
       setShowDeleteDialog(false);
-      toast.success('選択した通知を削除しました');
+      // toast.success('選択した通知を削除しました'); // 成功メッセージも一旦コメントアウト
     },
     onError: () => {
-      toast.error('通知の削除に失敗しました');
+      // toast.error('通知の削除に失敗しました');
     },
   });
 
   // 通知をアーカイブする
   const archiveNotification = useMutation({
     mutationFn: async (notificationIds: string[]) => {
-      await apiClient.patch('/notifications/archive', { ids: notificationIds });
+      // TODO: バックエンドにアーカイブAPIが実装されたら修正
+      // await apiClient.patch('/notifications/archive', { ids: notificationIds });
+      console.warn("アーカイブAPIは未実装のため、フロントエンドからは呼び出しません。IDs:", notificationIds);
+      toast.error('通知のアーカイブ機能は現在利用できません。');
+      return Promise.resolve();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
       setSelectedNotifications([]);
-      toast.success('選択した通知をアーカイブしました');
+      // toast.success('選択した通知をアーカイブしました');
     },
     onError: () => {
-      toast.error('通知のアーカイブに失敗しました');
+      // toast.error('通知のアーカイブに失敗しました');
     },
   });
 
-  // 通知を更新する
+  // 通知を更新する (refreshNotification)
   const refreshNotification = useMutation({
     mutationFn: async (notificationIds: string[]) => {
-      await apiClient.post('/notifications/refresh', { ids: notificationIds });
+      // TODO: バックエンドに更新APIが実装されたら修正 (この機能の詳細は不明)
+      // await apiClient.post('/notifications/refresh', { ids: notificationIds });
+      console.warn("通知更新APIは未実装のため、フロントエンドからは呼び出しません。IDs:", notificationIds);
+      toast.error('通知の更新機能は現在利用できません。');
+      return Promise.resolve();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
       setSelectedNotifications([]);
-      toast.success('選択した通知を更新しました');
+      // toast.success('選択した通知を更新しました');
     },
     onError: () => {
-      toast.error('通知の更新に失敗しました');
+      // toast.error('通知の更新に失敗しました');
     },
   });
 

@@ -74,6 +74,7 @@ class User(Base, TimestampMixin):
     grade: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     prefecture: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     profile_image_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
+    theme: Mapped[Optional[str]] = mapped_column(String(50), default="light", nullable=True)
 
     # Relationships
     profile = relationship("UserProfile", back_populates="user", uselist=False)

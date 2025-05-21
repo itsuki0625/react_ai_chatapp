@@ -23,12 +23,12 @@ import io
 import base64
 from fastapi.responses import JSONResponse
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from app.schemas.user import UserResponse, UserSettingsResponse, UserCreate
 from app.crud import subscription as crud_subscription
 from app.models.subscription import Subscription
 from app.schemas.subscription import SubscriptionResponse
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.exc import IntegrityError
 from app.models.notification_setting import NotificationSetting
 
@@ -395,21 +395,29 @@ async def get_user_settings(
         result = await db.execute(stmt)
         notification_settings = result.scalars().all()
 
-        # 通知設定をマッピング
+        # 通知設定をマッピング (初期化を少し変更)
+        default_quiet_hours = {"start": None, "end": None}
         notification_map = {
-            "SYSTEM_ANNOUNCEMENT": {"enabled": True, "quiet_hours": None},
-            "CHAT_MESSAGE": {"enabled": True, "quiet_hours": None},
-            "DOCUMENT_DEADLINE": {"enabled": True, "quiet_hours": None}
+            "SYSTEM_ANNOUNCEMENT": {"enabled": True, "quiet_hours": default_quiet_hours.copy()},
+            "CHAT_MESSAGE": {"enabled": True, "quiet_hours": default_quiet_hours.copy()},
+            "DOCUMENT_DEADLINE": {"enabled": True, "quiet_hours": default_quiet_hours.copy()}
         }
 
+        system_announcement_setting = None
         for setting in notification_settings:
+            # quiet_hours の処理を改善
+            current_quiet_hours = default_quiet_hours.copy()
+            if setting.quiet_hours_start:
+                current_quiet_hours["start"] = setting.quiet_hours_start.strftime("%H:%M")
+            if setting.quiet_hours_end:
+                current_quiet_hours["end"] = setting.quiet_hours_end.strftime("%H:%M")
+            
             notification_map[setting.notification_type] = {
                 "enabled": setting.email_enabled or setting.push_enabled or setting.in_app_enabled,
-                "quiet_hours": {
-                    "start": setting.quiet_hours_start.strftime("%H:%M") if setting.quiet_hours_start else None,
-                    "end": setting.quiet_hours_end.strftime("%H:%M") if setting.quiet_hours_end else None
-                } if setting.quiet_hours_start or setting.quiet_hours_end else None
+                "quiet_hours": current_quiet_hours
             }
+            if setting.notification_type == "SYSTEM_ANNOUNCEMENT":
+                system_announcement_setting = setting # SYSTEM_ANNOUNCEMENT の設定を保持
 
         # Fetch subscription
         logger.info("Subscription 取得開始")
@@ -431,17 +439,38 @@ async def get_user_settings(
                 logger.error(f"SubscriptionResponse 変換エラー: {str(conversion_error)}", exc_info=True)
                 raise HTTPException(status_code=500, detail="Subscription data conversion failed.")
 
+        # quiet_hours_start と quiet_hours_end を SYSTEM_ANNOUNCEMENT の設定から取得
+        # フロントエンドが空文字列を期待する場合に備えて、None の場合は空文字列にする
+        quiet_hours_start_str = "" 
+        quiet_hours_end_str = ""
+
+        if system_announcement_setting and system_announcement_setting.quiet_hours_start:
+            quiet_hours_start_str = system_announcement_setting.quiet_hours_start.strftime("%H:%M")
+        
+        if system_announcement_setting and system_announcement_setting.quiet_hours_end:
+            quiet_hours_end_str = system_announcement_setting.quiet_hours_end.strftime("%H:%M")
+        
+        # email_notifications と browser_notifications は、SYSTEM_ANNOUNCEMENT の設定に基づいて決定する
+        # (あるいは、全般的な設定として別途フラグを持つか、要件に応じて変更)
+        email_notifications_enabled = False
+        browser_notifications_enabled = False
+        if system_announcement_setting:
+            email_notifications_enabled = system_announcement_setting.email_enabled
+            browser_notifications_enabled = system_announcement_setting.push_enabled
+        # もし system_announcement_setting がない場合でも、他の通知タイプの設定から集約するロジックが必要ならここに追加
+        # 例: email_notifications_enabled = any(s.email_enabled for s in notification_settings)
+
         settings_response_data = {
             "email": current_user.email,
             "full_name": current_user.full_name,
             "profile_image_url": current_user.profile_image_url,
-            "email_notifications": any(setting.email_enabled for setting in notification_settings),
-            "browser_notifications": any(setting.push_enabled for setting in notification_settings),
+            "email_notifications": email_notifications_enabled,
+            "browser_notifications": browser_notifications_enabled,
             "system_notifications": notification_map["SYSTEM_ANNOUNCEMENT"]["enabled"],
             "chat_notifications": notification_map["CHAT_MESSAGE"]["enabled"],
             "document_notifications": notification_map["DOCUMENT_DEADLINE"]["enabled"],
-            "quiet_hours_start": notification_map["SYSTEM_ANNOUNCEMENT"]["quiet_hours"]["start"] if notification_map["SYSTEM_ANNOUNCEMENT"]["quiet_hours"] else None,
-            "quiet_hours_end": notification_map["SYSTEM_ANNOUNCEMENT"]["quiet_hours"]["end"] if notification_map["SYSTEM_ANNOUNCEMENT"]["quiet_hours"] else None,
+            "quiet_hours_start": quiet_hours_start_str,
+            "quiet_hours_end": quiet_hours_end_str,
             "theme": current_user.theme or "light",
             "subscription": sub_data
         }
@@ -523,30 +552,60 @@ async def update_user_settings(
                     notification_setting.in_app_enabled = True
 
         # 静かな時間帯の設定
-        if "quietHoursStart" in settings_data or "quietHoursEnd" in settings_data:
-            # システム通知の設定を取得または作成
+        if "quietHoursStart" in settings_data or "quietHoursEnd" in settings_data or \
+           settings_data.get("quietHoursStart") is None or settings_data.get("quietHoursEnd") is None: # Allow unsetting via null
+
+            # Ensure notification_type is defined, using SYSTEM_ANNOUNCEMENT as a default or general type for quiet hours.
+            # This might need adjustment if quiet hours can be set per notification type.
+            target_notification_type = "SYSTEM_ANNOUNCEMENT" 
+
             stmt = select(NotificationSetting).filter(
                 NotificationSetting.user_id == user.id,
-                NotificationSetting.notification_type == "SYSTEM_ANNOUNCEMENT"
+                NotificationSetting.notification_type == target_notification_type
             )
             result = await db.execute(stmt)
             notification_setting = result.scalars().first()
             
             if not notification_setting:
+                # If no specific setting exists, create one. 
+                # This assumes quiet hours are global or tied to a default type.
+                # Adjust email/push/in_app enabled flags as per application logic for new settings.
                 notification_setting = NotificationSetting(
                     id=uuid.uuid4(),
                     user_id=user.id,
-                    notification_type="SYSTEM_ANNOUNCEMENT",
-                    email_enabled=settings_data.get("emailNotifications", True),
+                    notification_type=target_notification_type,
+                    # Default booleans for a new setting, adjust as needed
+                    email_enabled=settings_data.get("emailNotifications", True), 
                     push_enabled=settings_data.get("browserNotifications", False),
-                    in_app_enabled=True
+                    in_app_enabled=True 
                 )
                 db.add(notification_setting)
             
+            dummy_date = date.min # Use a fixed, minimal date for date part.
+            
             if "quietHoursStart" in settings_data:
-                notification_setting.quiet_hours_start = datetime.strptime(settings_data["quietHoursStart"], "%H:%M").time()
+                if settings_data["quietHoursStart"]:
+                    try:
+                        time_obj = datetime.strptime(settings_data["quietHoursStart"], "%H:%M").time()
+                        notification_setting.quiet_hours_start = datetime.combine(dummy_date, time_obj)
+                    except ValueError:
+                        # Handle invalid time format string if necessary
+                        notification_setting.quiet_hours_start = None 
+                        logger.warning(f"Invalid format for quietHoursStart: {settings_data['quietHoursStart']}")
+                else: # Handles empty string by setting to None
+                    notification_setting.quiet_hours_start = None
+            
             if "quietHoursEnd" in settings_data:
-                notification_setting.quiet_hours_end = datetime.strptime(settings_data["quietHoursEnd"], "%H:%M").time()
+                if settings_data["quietHoursEnd"]:
+                    try:
+                        time_obj = datetime.strptime(settings_data["quietHoursEnd"], "%H:%M").time()
+                        notification_setting.quiet_hours_end = datetime.combine(dummy_date, time_obj)
+                    except ValueError:
+                        # Handle invalid time format string
+                        notification_setting.quiet_hours_end = None
+                        logger.warning(f"Invalid format for quietHoursEnd: {settings_data['quietHoursEnd']}")
+                else: # Handles empty string by setting to None
+                    notification_setting.quiet_hours_end = None
         
         # テーマの更新
         if "theme" in settings_data:

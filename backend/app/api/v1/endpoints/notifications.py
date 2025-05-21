@@ -10,6 +10,9 @@ from app.schemas.notification import (
     NotificationResponse,
     BulkNotificationCreate
 )
+from sqlalchemy import select, desc
+from app.models.in_app_notification import InAppNotification
+from app.schemas.in_app_notification import InAppNotificationResponse
 
 router = APIRouter()
 
