@@ -27,6 +27,7 @@ const initialState: ChatState = {
   viewingSessionStatus: null,
   isWebSocketConnected: false,
   sessionStatus: 'INACTIVE',
+  traceLogs: [],
 };
 
 export const chatReducer = (state: ChatState, action: ChatAction): ChatState => {
@@ -144,6 +145,10 @@ export const chatReducer = (state: ChatState, action: ChatAction): ChatState => 
       return { ...state, sessionId: null, messages: [], justStartedNewChat: false, viewingSessionStatus: null };
     case 'SET_WEBSOCKET_CONNECTED':
       return { ...state, isWebSocketConnected: action.payload };
+    case 'ADD_TRACE':
+      return { ...state, traceLogs: [...state.traceLogs, action.payload] };
+    case 'CLEAR_TRACE':
+      return { ...state, traceLogs: [] };
     default:
       return state;
   }
@@ -228,6 +233,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
              dispatch({ type: 'SET_SESSION_ID', payload: { id: (wsMessage as any).session_id, status: 'ACTIVE' } });
         }
         dispatch({ type: 'SEND_MESSAGE_SUCCESS' });
+        dispatch({ type: 'CLEAR_TRACE' });
         break;
       case 'error':
         console.error("Error from WebSocket:", (wsMessage as any).detail);
@@ -239,6 +245,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             console.log(`[WS INFO] WebSocket provided sessionId ${(wsMessage as any).session_id}, context has ${state.sessionId}. Updating context for info.`);
             dispatch({ type: 'SET_SESSION_ID', payload: { id: (wsMessage as any).session_id, status: 'ACTIVE' } });
         }
+        break;
+      case 'trace':
+        if (wsMessage.content) dispatch({ type: 'ADD_TRACE', payload: wsMessage.content });
         break;
       default:
         console.warn('Received unknown WebSocket message type:', wsMessage);

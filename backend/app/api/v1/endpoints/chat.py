@@ -34,11 +34,7 @@ from sqlalchemy.orm import Session
 from app import models, crud
 from app.api import deps
 from app.models.chat import MessageSender
-from app.services.ai_service import (
-    get_self_analysis_agent_response,
-    get_admission_agent_response,
-    get_study_support_agent_response
-)
+from app.services.ai_service import get_self_analysis_agent_response
 from app.crud.async_chat import get_user_chat_sessions
 import json
 import asyncio
@@ -51,6 +47,20 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 checklist_evaluator = ChecklistEvaluator()
+
+class WebSocketTraceHandler(logging.Handler):
+    def __init__(self, websocket: WebSocket, session_id: str):
+        super().__init__()
+        self.websocket = websocket
+        self.session_id = session_id
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            asyncio.create_task(
+                self.websocket.send_text(json.dumps({"type": "trace", "content": msg, "session_id": self.session_id}))
+            )
+        except Exception:
+            pass
 
 @router.websocket("/ws/chat")
 async def websocket_chat_endpoint(
@@ -171,6 +181,32 @@ async def websocket_chat_endpoint(
             logger.info(f"Empty AI message saved (ID: {ai_message_db_obj.id}) for session {actual_session_id}")
             await db.commit() # 先にAIメッセージのプレースホルダーをコミット
             await db.refresh(ai_message_db_obj)
+
+            # SELF_ANALYSIS 用 AI Service 呼び出し
+            if chat_request.chat_type == ChatTypeEnum.SELF_ANALYSIS:
+                # Traceログをクライアントに送信するハンドラーを設定
+                trace_logger = logging.getLogger("self_analysis_trace")
+                ws_handler = WebSocketTraceHandler(websocket, actual_session_id)
+                ws_handler.setFormatter(logging.Formatter("%(message)s"))
+                trace_logger.addHandler(ws_handler)
+                try:
+                    # formatted_history を Agent に渡す
+                    reply = await get_self_analysis_agent_response(chat_request.message, history=formatted_history)
+                finally:
+                    # ハンドラーを解除
+                    trace_logger.removeHandler(ws_handler)
+                # ユーザー向け内容を一括で返す
+                await websocket.send_text(json.dumps({"type": "chunk", "content": reply or "", "session_id": actual_session_id}))
+                await websocket.send_text(json.dumps({"type": "done", "session_id": actual_session_id}))
+                # AI応答をDBに保存
+                await save_chat_message(
+                    db=db,
+                    session_id=UUID(actual_session_id),
+                    content=reply or "",
+                    sender_type="AI"
+                )
+                await db.commit()
+                continue
 
             full_ai_response = ""
             try:
@@ -542,14 +578,39 @@ async def get_checklist_evaluation_endpoint(
             await db.rollback()
         raise HTTPException(status_code=500, detail="Failed to fetch checklist evaluation")
 
-@router.post("/self-analysis")
+@router.post("/self-analysis", response_model=ChatResponse)
 async def start_self_analysis_chat(
     chat_request: ChatRequest,
     current_user: User = Depends(require_permission('chat_message_send')),
     db: AsyncSession = Depends(get_async_db)
 ):
-    logger.warning("Self-analysis chat endpoint not fully implemented with async DB.")
-    raise HTTPException(status_code=501, detail="Not Implemented Yet")
+    # セッションを取得または作成
+    chat_session = await get_or_create_chat_session(
+        db=db,
+        user_id=current_user.id,
+        session_id=chat_request.session_id,
+        chat_type=chat_request.chat_type.value
+    )
+    actual_session_id = chat_session.id
+    # ユーザー発言を保存
+    await save_chat_message(
+        db=db,
+        session_id=actual_session_id,
+        content=chat_request.message,
+        user_id=current_user.id,
+        sender_type="USER"
+    )
+    # AI応答を生成
+    reply = await get_self_analysis_agent_response(chat_request.message, history=None)
+    # AIメッセージを保存
+    await save_chat_message(
+        db=db,
+        session_id=actual_session_id,
+        content=reply or "",
+        user_id=current_user.id,
+        sender_type="AI"
+    )
+    return ChatResponse(reply=reply or "", session_id=actual_session_id, timestamp=datetime.utcnow())
 
 @router.get("/self-analysis/report")
 async def get_self_analysis_report(
@@ -559,23 +620,31 @@ async def get_self_analysis_report(
     logger.warning("Self-analysis report endpoint not fully implemented with async DB.")
     raise HTTPException(status_code=501, detail="Not Implemented Yet")
 
-@router.post("/admission")
+@router.post("/admission", response_model=ChatResponse)
 async def start_admission_chat(
     chat_request: ChatRequest,
     current_user: User = Depends(require_permission('chat_message_send')),
     db: AsyncSession = Depends(get_async_db)
 ):
-    logger.warning("Admission chat endpoint not fully implemented with async DB.")
-    raise HTTPException(status_code=501, detail="Not Implemented Yet")
+    chat_session = await get_or_create_chat_session(db=db, user_id=current_user.id, session_id=chat_request.session_id, chat_type=chat_request.chat_type.value)
+    actual_session_id = chat_session.id
+    await save_chat_message(db=db, session_id=actual_session_id, content=chat_request.message, user_id=current_user.id, sender_type="USER")
+    reply = await get_admission_agent_response(chat_request.message, history=None)
+    await save_chat_message(db=db, session_id=actual_session_id, content=reply or "", user_id=current_user.id, sender_type="AI")
+    return ChatResponse(reply=reply or "", session_id=actual_session_id, timestamp=datetime.utcnow())
 
-@router.post("/study-support")
+@router.post("/study-support", response_model=ChatResponse)
 async def start_study_support_chat(
     chat_request: ChatRequest,
     current_user: User = Depends(require_permission('chat_message_send')),
     db: AsyncSession = Depends(get_async_db)
 ):
-    logger.warning("Study support chat endpoint not fully implemented with async DB.")
-    raise HTTPException(status_code=501, detail="Not Implemented Yet")
+    chat_session = await get_or_create_chat_session(db=db, user_id=current_user.id, session_id=chat_request.session_id, chat_type=chat_request.chat_type.value)
+    actual_session_id = chat_session.id
+    await save_chat_message(db=db, session_id=actual_session_id, content=chat_request.message, user_id=current_user.id, sender_type="USER")
+    reply = await get_study_support_agent_response(chat_request.message, history=None)
+    await save_chat_message(db=db, session_id=actual_session_id, content=reply or "", user_id=current_user.id, sender_type="AI")
+    return ChatResponse(reply=reply or "", session_id=actual_session_id, timestamp=datetime.utcnow())
 
 @router.get("/analysis")
 async def get_chat_analysis(

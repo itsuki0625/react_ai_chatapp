@@ -1,93 +1,108 @@
-from typing import List, Dict, Optional, Any
-from agents import Runner # OpenAI Agents SDK をインポート
-# from app.core.config import settings # APIキーは環境変数から直接読み込む想定
-from app.services.agents import self_analysis_agent, admission_agent, study_support_agent # エージェント定義をインポート
-import logging
+# from typing import List, Dict, Optional, Any
+# from agents import Runner # OpenAI Agents SDK をインポート
+# # from app.core.config import settings # APIキーは環境変数から直接読み込む想定
+# from app.services.agents import self_analysis_agent, admission_agent, study_support_agent # エージェント定義をインポート
+# import logging
 
-# Agent SDKは環境変数 OPENAI_API_KEY を参照する想定
+
+# logger = logging.getLogger(__name__)
+
+# async def get_admission_agent_response(user_input: str, history: Optional[List[Dict[str, str]]] = None) -> Optional[str]:
+#     """
+#     総合型選抜AI用のAgentを利用し、応答を生成します。
+#     """
+#     try:
+#         print(f"Running {admission_agent.name} with input: {user_input[:50]}...")
+#         result = await Runner.run(admission_agent, user_input)
+#         # print(f"Agent {admission_agent.name} run finished. Status: {result.status}") # Comment out problematic line
+#         if result.final_output: return str(result.final_output).strip()
+#         else:
+#             # print(f"Agent {admission_agent.name} did not produce output. Status: {result.status}, Error: {result.error}") # Comment out problematic line
+#             print(f"Agent {admission_agent.name} did not produce output. Error: {getattr(result, 'error', 'Unknown error')}")
+#             return "申し訳ありません、AIからの応答を取得できませんでした。"
+#     except ImportError as e:
+#          print(f"Error importing openai-agents: {e}. Make sure it is installed.")
+#          return "AI Agent SDKの読み込みに失敗しました。インストールを確認してください。"
+#     except Exception as e:
+#         logger.error(f"An unexpected error occurred while running agent {getattr(admission_agent, 'name', 'Admission')}: {e}", exc_info=True)
+#         return "申し訳ありません、総合型選抜AIの実行中にエラーが発生しました。"
+
+# async def get_study_support_agent_response(user_input: str, history: Optional[List[Dict[str, str]]] = None) -> Optional[str]:
+#     """
+#     汎用学習支援AI用のAgentを利用し、応答を生成します。
+#     """
+#     try:
+#         print(f"Running {study_support_agent.name} with input: {user_input[:50]}...")
+#         result = await Runner.run(study_support_agent, user_input)
+#         # print(f"Agent {study_support_agent.name} run finished. Status: {result.status}") # Comment out problematic line
+#         if result.final_output: return str(result.final_output).strip()
+#         else:
+#             # print(f"Agent {study_support_agent.name} did not produce output. Status: {result.status}, Error: {result.error}") # Comment out problematic line
+#             print(f"Agent {study_support_agent.name} did not produce output. Error: {getattr(result, 'error', 'Unknown error')}")
+#             return "申し訳ありません、AIからの応答を取得できませんでした。"
+#     except ImportError as e:
+#          print(f"Error importing openai-agents: {e}. Make sure it is installed.")
+#          return "AI Agent SDKの読み込みに失敗しました。インストールを確認してください。"
+#     except Exception as e:
+#         logger.error(f"An unexpected error occurred while running agent {getattr(study_support_agent, 'name', 'StudySupport')}: {e}", exc_info=True)
+#         return "申し訳ありません、学習支援AIの実行中にエラーが発生しました。"
+
+# # --- 以前のコードは削除済 --- 
+
+# # ai_service = AIService()
+
+# # async def get_self_analysis_response(user_input: str, history: List[Dict[str, str]]) -> Optional[str]:
+# #     ... 
+
+from uuid import uuid4
+from app.services.agents.self_analysis.orchestrator import SelfAnalysisOrchestrator
+import logging
+from typing import List, Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
 
 async def get_self_analysis_agent_response(user_input: str, history: Optional[List[Dict[str, str]]] = None) -> Optional[str]:
     """
-    自己分析用のAgentを利用し、ユーザー入力に基づいて応答を生成します。
-    history: Agent SDK で会話履歴を渡す方法はドキュメント参照が必要。
-             現時点ではAgentのstate管理外とし、都度実行。
+    monono_agent の SelfAnalysisAdvisor を利用して応答を生成します。
+    history は現状サポートせず、毎回新規会話として扱います。
     """
     try:
-        print(f"Running {self_analysis_agent.name} with input: {user_input[:50]}...")
-
-        # Runnerを使ってエージェントを実行 (非同期)
-        # TODO: 会話履歴をAgentに渡す方法を調査・実装する
-        # シンプルな実行: 毎回新しい会話として扱われる
-        result: Any = await Runner.run(self_analysis_agent, user_input)
-
-        # print(f"Agent {self_analysis_agent.name} run finished. Status: {result.status}") # Comment out problematic line
-
-        if result.final_output:
-            # result.output に最終的な応答が含まれると想定 (ドキュメント確認推奨)
-            final_output = str(result.final_output) # 型が不明なためstrに変換
-            print(f"Agent {self_analysis_agent.name} final output: {final_output[:100]}...")
-            return final_output.strip()
-        else:
-            # 応答がない、またはエラーの場合の処理
-            # print(f"Agent {self_analysis_agent.name} did not produce output. Status: {result.status}, Error: {result.error}") # Comment out problematic line
-            # Accessing result.error directly is likely fine
-            print(f"Agent {self_analysis_agent.name} did not produce output. Error: {getattr(result, 'error', 'Unknown error')}")
-            # result.history や result.events で詳細を確認できる可能性
-            # print(f"Agent run events: {result.events}")
-            return "申し訳ありません、AIからの応答を取得できませんでした。" # エラー時のデフォルトメッセージ
-
-    except ImportError as e:
-         print(f"Error importing openai-agents: {e}. Make sure it is installed.")
-         return "AI Agent SDKの読み込みに失敗しました。インストールを確認してください。"
+        # 新しいセッションIDを生成し、オーケストレーターで自己分析を実行
+        session_id = str(uuid4())
+        orchestrator = SelfAnalysisOrchestrator()
+        # user_visible にはクライアントに返す内容が含まれます
+        user_visible = await orchestrator.run(session_id, user_input)
+        return user_visible
     except Exception as e:
-        logger.error(f"An unexpected error occurred while running agent {getattr(self_analysis_agent, 'name', 'SelfAnalysis')}: {e}", exc_info=True)
+        logger.error(f"Unexpected error in get_self_analysis_agent_response: {e}", exc_info=True)
         return "申し訳ありません、自己分析AIの実行中にエラーが発生しました。"
 
-async def get_admission_agent_response(user_input: str, history: Optional[List[Dict[str, str]]] = None) -> Optional[str]:
+async def get_admission_agent_response(user_input: str, history: Optional[List[Dict[str, Any]]] = None) -> Optional[str]:
     """
-    総合型選抜AI用のAgentを利用し、応答を生成します。
+    総合型選抜AI用のAgentは未実装のため、簡易メッセージを返却します。
     """
     try:
-        print(f"Running {admission_agent.name} with input: {user_input[:50]}...")
-        result = await Runner.run(admission_agent, user_input)
-        # print(f"Agent {admission_agent.name} run finished. Status: {result.status}") # Comment out problematic line
-        if result.final_output: return str(result.final_output).strip()
-        else:
-            # print(f"Agent {admission_agent.name} did not produce output. Status: {result.status}, Error: {result.error}") # Comment out problematic line
-            print(f"Agent {admission_agent.name} did not produce output. Error: {getattr(result, 'error', 'Unknown error')}")
-            return "申し訳ありません、AIからの応答を取得できませんでした。"
-    except ImportError as e:
-         print(f"Error importing openai-agents: {e}. Make sure it is installed.")
-         return "AI Agent SDKの読み込みに失敗しました。インストールを確認してください。"
+        return "申し訳ありません、現在総合型選抜AIは準備中です。"
     except Exception as e:
-        logger.error(f"An unexpected error occurred while running agent {getattr(admission_agent, 'name', 'Admission')}: {e}", exc_info=True)
+        logger.error(f"Unexpected error in get_admission_agent_response: {e}", exc_info=True)
         return "申し訳ありません、総合型選抜AIの実行中にエラーが発生しました。"
 
-async def get_study_support_agent_response(user_input: str, history: Optional[List[Dict[str, str]]] = None) -> Optional[str]:
+async def get_study_support_agent_response(user_input: str, history: Optional[List[Dict[str, Any]]] = None) -> Optional[str]:
     """
-    汎用学習支援AI用のAgentを利用し、応答を生成します。
+    学習支援AI用のAgentは未実装のため、簡易メッセージを返却します。
     """
     try:
-        print(f"Running {study_support_agent.name} with input: {user_input[:50]}...")
-        result = await Runner.run(study_support_agent, user_input)
-        # print(f"Agent {study_support_agent.name} run finished. Status: {result.status}") # Comment out problematic line
-        if result.final_output: return str(result.final_output).strip()
-        else:
-            # print(f"Agent {study_support_agent.name} did not produce output. Status: {result.status}, Error: {result.error}") # Comment out problematic line
-            print(f"Agent {study_support_agent.name} did not produce output. Error: {getattr(result, 'error', 'Unknown error')}")
-            return "申し訳ありません、AIからの応答を取得できませんでした。"
-    except ImportError as e:
-         print(f"Error importing openai-agents: {e}. Make sure it is installed.")
-         return "AI Agent SDKの読み込みに失敗しました。インストールを確認してください。"
+        return "申し訳ありません、現在学習支援AIは準備中です。"
     except Exception as e:
-        logger.error(f"An unexpected error occurred while running agent {getattr(study_support_agent, 'name', 'StudySupport')}: {e}", exc_info=True)
+        logger.error(f"Unexpected error in get_study_support_agent_response: {e}", exc_info=True)
         return "申し訳ありません、学習支援AIの実行中にエラーが発生しました。"
 
-# --- 以前のコードは削除済 --- 
-
-# ai_service = AIService()
-
-# async def get_self_analysis_response(user_input: str, history: List[Dict[str, str]]) -> Optional[str]:
-#     ... 
+async def get_review_agent_response(user_input: str, history: Optional[List[Dict[str, Any]]] = None) -> Optional[str]:
+    """
+    レビューAI用のAgentを利用して応答を生成します。
+    """
+    try:
+        return "申し訳ありません、現在レビューAIは準備中です。"
+    except Exception as e:
+        logger.error(f"Unexpected error in get_review_agent_response: {e}", exc_info=True)
+        return "申し訳ありません、レビューAIの実行中にエラーが発生しました。" 

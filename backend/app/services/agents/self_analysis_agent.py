@@ -1,4 +1,7 @@
-from agents import Agent,WebSearchTool # OpenAI Agents SDK をインポート
+import os
+from agents import WebSearchTool  # 既存の WebSearchTool を再利用
+from app.services.agents.monono_agent.base_agent import BaseAgent
+from app.services.agents.monono_agent.llm_adapters.openai_adapter import OpenAIAdapter
 
 # 自己分析用のシステムプロンプト
 system_prompt = """
@@ -13,9 +16,19 @@ system_prompt = """
 
 web_search_tool = WebSearchTool()
 
-# 自己分析エージェントを定義
-self_analysis_agent = Agent(
+# WebSearchTool を呼び出すラッパー関数
+def web_search(query: str) -> str:
+    """WebSearchTool を使って検索結果を返す"""
+    return web_search_tool.run(query)
+
+# OpenAIAdapter を作成 (環境変数から API キー取得)
+openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_adapter = OpenAIAdapter(model_name="gpt-4o", api_key=openai_api_key)
+
+# 自己分析エージェントを定義 (monono_agent ベース)
+self_analysis_agent = BaseAgent(
     name="SelfAnalysisAdvisor",
     instructions=system_prompt.strip(),
-    tools=[web_search_tool] # ツールが必要な場合はここに追加
+    llm_adapter=openai_adapter,
+    tools=[web_search]
 ) 

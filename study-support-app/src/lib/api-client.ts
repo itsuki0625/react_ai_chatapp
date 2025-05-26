@@ -1,6 +1,6 @@
 import axios, { AxiosRequestHeaders } from 'axios';
 import { API_BASE_URL } from '@/lib/config';
-import { getSession } from 'next-auth/react'; // ★★★ 変更: コメントアウト解除 ★★★
+import { getSession } from 'next-auth/react';
 import { ChatSession as ChatSessionType, ChatSubmitRequest, ChatTypeValue } from "@/types/chat";
 import { AxiosResponse } from "axios";
 

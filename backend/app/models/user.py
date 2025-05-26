@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, UUID, Boolean, DateTime, Integer, ForeignKey, Enum as SQLAlchemyEnum, Text
+from sqlalchemy import Column, String, UUID, Boolean, DateTime, Integer, ForeignKey, Enum as SQLAlchemyEnum, Text, JSON
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from datetime import datetime
 import uuid
@@ -117,9 +117,19 @@ class UserProfile(Base, TimestampMixin):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=False, unique=True)
-    grade = Column(Integer)
-    class_number = Column(String)
-    student_number = Column(String)
+    # grade = Column(Integer) # User.grade (String) との使い分けを検討。学年(数値)はこちらが正か。
+    current_grade = Column(Integer, nullable=True) # 現在の学年（数値、例: 1, 2, 3）
+    class_name = Column(String, nullable=True) # クラス名 (例: A組, 2組)
+    student_number = Column(String, nullable=True) # 出席番号
+    
+    # 自己分析およびエージェント向け追加情報
+    academic_interests = Column(Text, nullable=True) # 学術的な興味・関心分野
+    career_goals = Column(Text, nullable=True) # 将来のキャリア目標
+    significant_experiences = Column(Text, nullable=True) # これまでの重要な経験（部活動、ボランティア、受賞歴など）
+    self_assessment_strengths = Column(Text, nullable=True) # 自己評価による強み
+    self_assessment_weaknesses = Column(Text, nullable=True) # 自己評価による弱み
+    preferred_learning_style = Column(String, nullable=True) # 好みの学習スタイルなど
+    motivation_statement_prompt_answers = Column(JSON, nullable=True) # AIによる初期質問への回答など
     
     # Relationships
     user = relationship("User", back_populates="profile")
