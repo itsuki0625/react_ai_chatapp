@@ -73,14 +73,13 @@ class SelfAnalysisOrchestrator:
         if not agent:
             raise ValueError(f"Unknown step: {step}")
 
-        # MOTIVATIONステップではインタラクティブプランを使用
-        if step == "MOTIVATION":
-            # PlanningEngineでサブタスクを実行
+        # インタラクティブプランを必要とするステップでは interactive_plan を使用
+        if step in ["MOTIVATION", "HISTORY", "GAP", "ACTION", "IMPACT", "UNIV", "VISION", "REFLECT"]:
             return await agent.interactive_plan(
                 messages=[{"role": "user", "content": user_input}],
                 session_id=session_id
             )
-        # エージェントを通常実行
+        # 通常実行
         result = await agent.run(
             messages=[{"role": "user", "content": user_input}],
             session_id=session_id
@@ -157,5 +156,19 @@ class SelfAnalysisOrchestrator:
         """
         マクロリフレクションからのパッチを適用する。
         """
-        # TODO: パッチ適用ロジックを実装
-        logging.debug(f"Applying patches: {patches}") 
+        for step, cfg in patches.items():
+            agent = AGENTS.get(step)
+            if not agent:
+                continue
+            # プロンプトの追加
+            if prompt := cfg.get("prompt_append"):
+                agent.instructions += "\n" + prompt
+            # ガードレール設定の更新
+            if g_upd := cfg.get("guardrail"):
+                agent.guardrail.update_rules(g_upd)
+            # パラメータの更新
+            if prm := cfg.get("param_update"):
+                for k, v in prm.items():
+                    setattr(agent, k, v)
+        logging.info(f"Patches applied: {patches}")
+        # LearningEngineでパッチ後のスコア改善を計測するならここで呼び出し可能 

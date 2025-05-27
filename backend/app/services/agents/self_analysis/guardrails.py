@@ -160,4 +160,148 @@ class ActionGuardrail(SelfAnalysisGuardrail):
         return chunk
 
 # ActionPlanAgent専用ガードレールインスタンス
-action_guardrail = ActionGuardrail() 
+action_guardrail = ActionGuardrail()
+
+class ImpactGuardrail(SelfAnalysisGuardrail):
+    """
+    ImpactAgent専用ガードレール: confidenceとdomainの検証を行います。
+    """
+    async def check_output(self, response_chunk, agent_name=None, session_id=None, user_id=None):
+        # 基底のチェックを実行
+        chunk = await super().check_output(response_chunk, agent_name, session_id, user_id)
+        data = chunk.get("data", {}) or {}
+        content = data.get("content", "")
+        try:
+            parsed = json.loads(content)
+            impacts = parsed.get("chat", {}).get("impacts", [])
+            for imp in impacts:
+                conf = imp.get("confidence")
+                if not isinstance(conf, (int, float)) or not 0 <= conf <= 1:
+                    raise ValueError("confidence範囲外")
+                domain = imp.get("domain")
+                if domain not in ["social","economic","environmental","personal","organizational"]:
+                    raise ValueError("domain不正")
+        except Exception:
+            raise GuardrailViolationError("ImpactAgent出力フォーマット不正: confidenceまたはdomainを確認してください。")
+        return chunk
+
+# ImpactAgent専用ガードレールインスタンス
+impact_guardrail = ImpactGuardrail()
+
+class UnivGuardrail(SelfAnalysisGuardrail):
+    """
+    UniversityMapperAgent専用ガードレール: universities件数とfit範囲の検証を行います。
+    """
+    async def check_output(self, response_chunk, agent_name=None, session_id=None, user_id=None):
+        # 基底のチェックを実行
+        chunk = await super().check_output(response_chunk, agent_name, session_id, user_id)
+        data = chunk.get("data", {}) or {}
+        content = data.get("content", "")
+        try:
+            parsed = json.loads(content)
+            unis = parsed.get("chat", {}).get("universities", [])
+            # 大学件数の検証
+            if not 3 <= len(unis) <= 5:
+                raise ValueError("大学件数NG: 3～5件必要です。")
+            # fitの範囲チェック
+            for u in unis:
+                fit = u.get("fit")
+                if not isinstance(fit, (int, float)) or not 0 <= fit <= 1:
+                    raise ValueError("fit範囲外")
+        except Exception:
+            raise GuardrailViolationError("UniversityMapperAgent出力フォーマット不正: universities件数またはfitを確認してください。")
+        return chunk
+
+# UniversityMapperAgent専用ガードレールインスタンス
+univ_guardrail = UnivGuardrail()
+
+class VisionGuardrail(SelfAnalysisGuardrail):
+    """
+    VisionAgent専用ガードレール: vision文字数、末尾、uniq_score検証を行います。
+    """
+    async def check_output(self, response_chunk, agent_name=None, session_id=None, user_id=None):
+        # 基底のチェックを実行
+        chunk = await super().check_output(response_chunk, agent_name, session_id, user_id)
+        data = chunk.get("data", {}) or {}
+        content = data.get("content", "")
+        try:
+            parsed = json.loads(content)
+            chat = parsed.get("chat", {})
+            v = chat.get("vision", "")
+            # 30字以内チェック
+            if len(v) > 30:
+                raise ValueError("30字超過")
+            # 末尾チェック
+            if not v.endswith(("する", "なる")):
+                raise ValueError("語尾NG")
+            # uniq_scoreチェック
+            uniq = chat.get("uniq_score", 0)
+            if not isinstance(uniq, (int, float)) or uniq > 0.6:
+                raise ValueError("独自性低")
+        except Exception:
+            raise GuardrailViolationError(
+                "VisionAgent出力フォーマット不正: visionやuniq_scoreを確認してください。"
+            )
+        return chunk
+
+# VisionAgent専用ガードレールインスタンス
+vision_guardrail = VisionGuardrail()
+
+class ReflectGuardrail(SelfAnalysisGuardrail):
+    """
+    ReflectAgent専用ガードレール: summary長さとinsights数を検証します。
+    """
+    async def check_output(self, response_chunk, agent_name=None, session_id=None, user_id=None):
+        # 基底チェック
+        chunk = await super().check_output(response_chunk, agent_name, session_id, user_id)
+        data = chunk.get("data", {}) or {}
+        content = data.get("content", "")
+        try:
+            parsed = json.loads(content)
+            chat = parsed.get("chat", {})
+            insights = chat.get("insights", [])
+            summary = chat.get("summary", "")
+            # insights数チェック
+            if len(insights) < 3:
+                raise ValueError("insights 少な過ぎ")
+            # summary長さチェック
+            if len(summary) > 140:
+                raise ValueError("summary 長過ぎ")
+        except Exception:
+            raise GuardrailViolationError(
+                "ReflectAgent出力フォーマット不正: insights数またはsummary長さを確認してください。"
+            )
+        return chunk
+
+# ReflectAgent専用ガードレールインスタンス
+reflect_guardrail = ReflectGuardrail()
+
+class ReflexionGuardrail(SelfAnalysisGuardrail):
+    """
+    PostSessionReflexionAgent専用ガードレール: macro_summary長さとinsight_matrixスコア範囲を検証します。
+    """
+    async def check_output(self, response_chunk, agent_name=None, session_id=None, user_id=None):
+        # 基底チェック
+        chunk = await super().check_output(response_chunk, agent_name, session_id, user_id)
+        data = chunk.get("data", {}) or {}
+        content = data.get("content", "")
+        try:
+            parsed = json.loads(content)
+            chat = parsed.get("chat", {})
+            # macro_summary長さチェック
+            macro_summary = chat.get("macro_summary", "")
+            if len(macro_summary) > 200:
+                raise ValueError("summary>200字")
+            # insight_matrixスコア範囲チェック
+            for item in chat.get("insight_matrix", []):
+                score = item.get("score")
+                if not isinstance(score, (int, float)) or not 1 <= score <= 5:
+                    raise ValueError("score範囲外")
+        except Exception:
+            raise GuardrailViolationError(
+                "PostSessionReflexionAgent出力フォーマット不正: summaryまたはscoreを確認してください。"
+            )
+        return chunk
+
+# PostSessionReflexionAgent専用ガードレールインスタンス
+reflexion_guardrail = ReflexionGuardrail() 

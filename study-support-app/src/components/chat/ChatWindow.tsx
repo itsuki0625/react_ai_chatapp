@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useCallback } from 'react';
 import MessageList from './MessageList';
+import ChatMessageItemDisplay from './ChatMessage';
 import { useChat } from '@/store/chat/ChatContext';
 import { useSession } from 'next-auth/react';
 import { ChatTypeEnum } from '@/types/chat'; // ChatTypeEnumをインポート
@@ -159,6 +160,22 @@ const ChatWindow: React.FC = () => {
   
   // セッションが開始されていない、またはメッセージが空の場合の表示
   if (!sessionId && messages.length === 0) {
+    // SELF_ANALYSIS用の初期AIメッセージを表示
+    if (currentChatType === (ChatTypeEnum.SELF_ANALYSIS as any)) {
+      return (
+        <div className="flex flex-col flex-1 overflow-hidden h-full w-full">
+          <div className="flex-1 overflow-y-auto h-full space-y-6 bg-white pb-40 p-4 pt-6">
+            <ChatMessageItemDisplay message={{
+              id: 'initial-self-analysis',
+              sender: 'AI',
+              content: 'こんにちは、今日から自己分析を始めましょう！　まずは 将来やってみたいこと を 1〜2 行で教えていただけますか？',
+              timestamp: new Date().toISOString(),
+            }} />
+          </div>
+        </div>
+      );
+    }
+    
     let welcomeMessage = "AIチャットへようこそ";
     let welcomeDescription = "下の入力欄からメッセージを送信して会話を始めましょう";
     

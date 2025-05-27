@@ -56,20 +56,33 @@ class BaseSelfAnalysisAgent(BaseAgent):
     prompt_tmpl = load_md("prompts/base_prompt.md")
 
     def __init__(self, *, step_id: str, step_goal: str, **kwargs):
-        # 日本語で敬語かつフレンドリーな口調で回答し、一度の返答につき質問は必ず1つだけ含めるようにしてください。
-        tone_prefix = "日本語で、敬語かつフレンドリーな口調で回答してください。また、一度の返答につき質問は必ず1つだけ含めるようにしてください。\n"
-        prompt = self.prompt_tmpl.replace("{step_id}", step_id).replace("{step_goal}", step_goal)
-        full_instructions = tone_prefix + prompt
+        # Allow subclasses to override instructions without duplication
+        custom_instructions = kwargs.pop("instructions", None)
+        if custom_instructions is not None:
+            full_instructions = custom_instructions
+        else:
+            # 日本語で敬語かつフレンドリーな口調で回答し、一度の返答につき質問は必ず1つだけ含めるようにしてください。
+            tone_prefix = "日本語で、敬語かつフレンドリーな口調で回答してください。また、一度の返答につき質問は必ず1つだけ含めるようにしてください。\n"
+            prompt = self.prompt_tmpl.replace("{step_id}", step_id).replace("{step_goal}", step_goal)
+            full_instructions = tone_prefix + prompt
+
+        # Pop subclass-provided guardrail to avoid passing duplicate
+        custom_guardrail = kwargs.pop("guardrail", None)
+        guardrail_to_use = custom_guardrail if custom_guardrail is not None else SelfAnalysisGuardrail()
+
+        # Pop subclass-provided tools to avoid passing duplicate
+        custom_tools = kwargs.pop("tools", None)
+        tools_to_use = custom_tools if custom_tools is not None else []
         super().__init__(
             name=step_id.title(),
             instructions=full_instructions,
             model="gpt-4o-mini",
-            tools=[],  # currently no external tools; to be added later
+            tools=tools_to_use,  # allow subclass tools
             llm_adapter=openai_adapter,
-            guardrail=SelfAnalysisGuardrail(),
+            guardrail=guardrail_to_use,
             context_manager=ctx_mgr,
             resource_manager=rm,
             trace_logger=trace,
-            planning_engine=PlanningEngine(),
+            planning_engine=PlanningEngine(llm_adapter=openai_adapter),
             **kwargs,
         ) 

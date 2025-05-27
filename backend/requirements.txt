@@ -41,3 +41,10 @@ pytesseract # 画像からテキストを抽出
 SpeechRecognition # 音声からテキストを抽出
 gTTS # テキストから音声を生成
 moviepy # 動画からテキストを抽出
+
+# 追加: 画像生成
+markdown
+icalendar
+duckduckgo-search
+beautifulsoup4
+weasyprint
