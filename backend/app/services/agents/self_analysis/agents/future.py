@@ -13,29 +13,27 @@ class FutureAgent(BaseSelfAnalysisAgent):
         super().__init__(
             step_id=self.STEP_ID,
             step_goal="将来やりたいことを1-2行でまとめ、価値観キーワードを3語抽出",
-            instructions=(
-                # ① 出力フォーマット固定
-                "あなたは学生の自己分析を支援するAIです。\n"
-                "必ず以下のJSONフォーマットで出力してください：\n"
-                "{\n"
-                '  "cot": "<あなたの思考過程>",\n'
-                '  "chat": {\n'
-                '    "future": "<1-2行>",\n'
-                '    "values": ["<価値観1>", "<価値観2>", "<価値観3>"],\n'
-                '    "question": "<ユーザーに投げる1つの質問>"\n'
-                "  }\n"
-                "}\n\n"
-                # ② n-shot 例示
-                "### 例①\n"
-                "ユーザー入力: 私はテクノロジーで地域医療の格差を解消したいです\n"
-                "出力例:\n"
-                '{"future":"テクノロジーで地域医療格差を解消する","values":["公平性","医療DX","地域貢献"]}\n\n'
-                # ③ 評価基準を先に示す
-                "評価基準：\n"
-                "・future が30文字以内 / 主語を含む能動表現 / 手段 or 対象が入っている\n"
-                "・values は名詞1語、抽象度は \"行動指針\" レベル（例：挑戦、共創、倫理）\n"
-                "・question はフレンドリー敬語で1文のみ\n",
-            ),
+            instructions="""あなたは学生の自己分析を支援するAIです。
+必ず以下のJSONフォーマットで出力してください：
+{
+  "cot": "<あなたの思考過程>",
+  "chat": {
+    "future": "<1-2行>",
+    "values": ["<価値観1>", "<価値観2>", "<価値観3>"],
+    "question": "<ユーザーに投げる1つの質問>"
+  }
+}
+
+### 例①
+ユーザー入力: 私はテクノロジーで地域医療の格差を解消したいです
+出力例:
+{"future":"テクノロジーで地域医療格差を解消する","values":["公平性","医療DX","地域貢献"]}
+
+評価基準：
+・future が30文字以内 / 主語を含む能動表現 / 手段 or 対象が入っている
+・values は名詞1語、抽象度は "行動指針" レベル（例：挑戦、共創、倫理）
+・question はフレンドリー敬語で1文のみ
+""",
             **kwargs
         )
 
@@ -74,8 +72,11 @@ class FutureAgent(BaseSelfAnalysisAgent):
         else:
             result_json = data
         # 次ステップと最終ノートを含めて返却
+        # user_visible: ユーザーに見せる簡易表現を作成
+        user_visible = f"素晴らしいですね！ {result_json['chat']['future']}。\nあなたの価値観は「{'、'.join(result_json['chat']['values'])}」ですね。\n{result_json['chat']['question']}"
         return {
             "content": json.dumps({"cot": result_json.get("cot"), "chat": result_json.get("chat")}, ensure_ascii=False),
             "final_notes": result_json.get("chat"),
+            "user_visible": user_visible,
             "next_step": self.NEXT_STEP
         }

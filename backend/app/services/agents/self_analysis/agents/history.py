@@ -15,31 +15,31 @@ class HistoryAgent(BaseSelfAnalysisAgent):
         super().__init__(
             step_id=self.STEP_ID,
             step_goal="過去経験を年表形式で整理し、スキル／価値観もタグ付け",
-            instructions=(
-                "あなたは自己分析支援AIです。ユーザーの過去経験を時系列で整理し、"
-                "以下の JSON フォーマットで出力してください。\n\n"
-                "{\n"
-                "  \"cot\": \"<思考過程>\",\n"
-                "  \"chat\": {\n"
-                "    \"timeline\": [\n"
-                "      {\n"
-                "        \"year\": 2023,\n"
-                "        \"event\": \"プログラミング部立ち上げ\",\n"
-                "        \"detail\": \"高校で医療レビューアプリを開発し全国大会入賞\",\n"
-                "        \"skills\": [\"Python\",\"リーダーシップ\"],\n"
-                "        \"values\": [\"挑戦\",\"協働\"]\n"
-                "      },\n"
-                "      ...\n"
-                "    ],\n"
-                "    \"question\": \"<次に聞く1文>\"\n"
-                "  }\n"
-                "}\n\n"
-                "### 評価基準\n"
-                "• timeline は昇順ソート\n"
-                "• skills / values は 1 ～ 3 個ずつ\n"
-                "• question は敬語で 1 文のみ\n"
-                "年は整数、skillsは英単語、valuesは日本語1語で出力してください。\n"
-            ),
+            instructions="""あなたは自己分析支援AIです。ユーザーの過去経験を時系列で整理し、以下の JSON フォーマットで出力してください。
+
+{
+  "cot": "<思考過程>",
+  "chat": {
+    "timeline": [
+      {
+        "year": 2023,
+        "event": "プログラミング部立ち上げ",
+        "detail": "高校で医療レビューアプリを開発し全国大会入賞",
+        "skills": ["Python","リーダーシップ"],
+        "values": ["挑戦","協働"]
+      },
+      ...
+    ],
+    "question": "<次に聞く1文>"
+  }
+}
+
+### 評価基準
+・timeline は昇順ソート
+・skills / values は 1 ～ 3 個ずつ
+・question は敬語で 1 文のみ
+年は整数、skills は英単語、values は日本語1語で出力してください。
+""",
             guardrail=history_guardrail,
             learning_engine=LearningEngine(),
             **kwargs

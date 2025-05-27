@@ -168,7 +168,7 @@ const ChatWindow: React.FC = () => {
             <ChatMessageItemDisplay message={{
               id: 'initial-self-analysis',
               sender: 'AI',
-              content: 'こんにちは、今日から自己分析を始めましょう！　まずは 将来やってみたいこと を 1〜2 行で教えていただけますか？',
+              content: 'こんにちは、今日から自己分析を始めましょう！　まずは将来やってみたいことを 1〜2 行で教えていただけますか？',
               timestamp: new Date().toISOString(),
             }} />
           </div>

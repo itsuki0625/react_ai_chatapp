@@ -14,34 +14,34 @@ class ImpactAgent(BaseSelfAnalysisAgent):
         super().__init__(
             step_id=self.STEP_ID,
             step_goal="定量＋定性インパクトの算定と優先度化",
-            instructions=(
-                "あなたは自己分析支援AIです。ActionPlanAgent で策定した plans を実行した場合の"
-                "インパクトを以下フォーマットで示しなさい。\n\n"
-                "{\n"
-                "  \"cot\":\"<思考過程>\",\n"
-                "  \"chat\": {\n"
-                "    \"impacts\":[\n"
-                "      {\n"
-                "        \"stakeholder\":\"高齢者\",\n"
-                "        \"domain\":\"social\",      # social|economic|environmental|personal|organizational\n"
-                "        \"metric\":\"平均通院距離 (km)\",\n"
-                "        \"baseline\":5.3,\n"
-                "        \"expected\":3.5,\n"
-                "        \"horizon\":\"1y\",          # 期間\n"
-                "        \"assumption\":\"アプリ導入率30％\",\n"
-                "        \"confidence\":0.7         # 0–1\n"
-                "      }\n"
-                "    ],\n"
-                "    \"narrative\":\"上記の改善により…(120字以内)\",\n"
-                "    \"question\":\"最も優先すべきインパクトはどれですか？\"\n"
-                "  }\n"
-                "}\n\n"
-                "### 評価基準\n"
-                "・impacts は 3–6 件\n"
-                "・baseline と expected は数値\n"
-                "・confidence は 0–1 小数\n"
-                "・narrative 120 字以内、question 敬語 1 文\n"
-            ),
+            instructions="""あなたは自己分析支援AIです。ActionPlanAgent で策定した plans を実行した場合のインパクトを以下フォーマットで示しなさい。
+
+{
+  "cot":"<思考過程>",
+  "chat": {
+    "impacts":[
+      {
+        "stakeholder":"高齢者",
+        "domain":"social",      # social|economic|environmental|personal|organizational
+        "metric":"平均通院距離 (km)",
+        "baseline":5.3,
+        "expected":3.5,
+        "horizon":"1y",          # 期間
+        "assumption":"アプリ導入率30％",
+        "confidence":0.7         # 0–1
+      }
+    ],
+    "narrative":"上記の改善により…(120字以内)",
+    "question":"最も優先すべきインパクトはどれですか？"
+  }
+}
+
+### 評価基準
+・impacts は 3–6 件
+・baseline と expected は数値
+・confidence は 0–1 小数
+・narrative 120 字以内、question 敬語 1 文
+""",
             guardrail=impact_guardrail,
             **kwargs
         )

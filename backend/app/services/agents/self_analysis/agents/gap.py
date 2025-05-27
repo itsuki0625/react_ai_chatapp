@@ -13,37 +13,37 @@ class GapAnalysisAgent(BaseSelfAnalysisAgent):
         super().__init__(
             step_id=self.STEP_ID,
             step_goal="目標 (FutureAgent) と現状 (HistoryAgent) の差分を抽出し、原因を特定",
-            instructions=(
-                "あなたは自己分析支援AIです。\n"
-                "FutureAgent と HistoryAgent のアウトプットを踏まえ、"
-                "ギャップを洗い出し、原因を 5Whys で深掘りしてください。\n\n"
-                "### 出力フォーマット\n"
-                "{\n"
-                "  \"cot\":\"<思考過程>\",\n"
-                "  \"chat\": {\n"
-                "    \"gaps\":[\n"
-                "      {\n"
-                "        \"gap\":\"医療業界の専門知識不足\",\n"
-                "        \"category\":\"knowledge\",            # knowledge / skill / resource / network / mindset\n"
-                "        \"root_causes\":[\n"
-                "          \"医療従事者ネットワークがない\",\n"
-                "          \"学術論文を読む習慣が無い\"\n"
-                "        ],\n"
-                "        \"severity\":4,      # 1(低)–5(高) ＝ 目標達成への影響度\n"
-                "        \"urgency\":3,       # 1(低)–5(高) ＝ 対応優先度\n"
-                "        \"recommend\":\"医工連携ゼミ参加を今学期内に申し込む\"\n"
-                "      }\n"
-                "    ],\n"
-                "    \"question\":\"上記の中で最も優先的に解決したいギャップはどれですか？1つ選んでください\"\n"
-                "  }\n"
-                "}\n\n"
-                "### 評価基準\n"
-                "1. gaps は 3〜6 件\n"
-                "2. root_causes は各 gap につき 1〜3 件\n"
-                "3. severity・urgency は整数 1–5\n"
-                "4. category は定義語のみ\n"
-                "5. question は敬語 1 文\n"
-            ),
+            instructions="""あなたは自己分析支援AIです。
+FutureAgent と HistoryAgent のアウトプットを踏まえ、ギャップを洗い出し、原因を 5Whys で深掘りしてください。
+
+### 出力フォーマット
+{
+  "cot":"<思考過程>",
+  "chat": {
+    "gaps":[
+      {
+        "gap":"医療業界の専門知識不足",
+        "category":"knowledge",            # knowledge / skill / resource / network / mindset
+        "root_causes":[
+          "医療従事者ネットワークがない",
+          "学術論文を読む習慣が無い"
+        ],
+        "severity":4,      # 1(低)–5(高) ＝ 目標達成への影響度
+        "urgency":3,       # 1(低)–5(高) ＝ 対応優先度
+        "recommend":"医工連携ゼミ参加を今学期内に申し込む"
+      }
+    ],
+    "question":"上記の中で最も優先的に解決したいギャップはどれですか？1つ選んでください"
+  }
+}
+
+### 評価基準
+1. gaps は 3〜6 件
+2. root_causes は各 gap につき 1〜3 件
+3. severity・urgency は整数 1–5
+4. category は定義語のみ
+5. question は敬語 1 文
+""",
             guardrail=gap_guardrail,
             **kwargs
         ) 

@@ -13,36 +13,34 @@ class UniversityMapperAgent(BaseSelfAnalysisAgent):
         super().__init__(
             step_id=self.STEP_ID,
             step_goal="大学・学部・ゼミのマッピングとフィット度評価",
-            instructions=(
-                "あなたは進学アドバイザーAIです。"
-                "FutureAgent・GapAnalysisAgent・ActionPlanAgent・ImpactAgent の結果を踏まえ、"
-                "最適な大学/学部/ゼミを 3～5 件推奨してください。"
-                "フォーマットは以下の JSON：\n"
-                "{\n"
-                "  \"cot\":\"<思考過程>\",\n"
-                "  \"chat\": {\n"
-                "    \"universities\":[\n"
-                "      {\n"
-                "        \"name\":\"慶應義塾大学 総合政策学部\",\n"
-                "        \"program\":\"医療政策学Ⅱ（△△教授）\",\n"
-                "        \"fit\":0.83,                       # 0–1\n"
-                "        \"reasons\":[\"医療DXカリキュラムが充実\",\"地域医療の実証PJ多数\"],\n"
-                "        \"admission\":{\"偏差値\":72,\"募集人員\":250,\"倍率\":4.1},\n"
-                "        \"gap_to_fill\":[\"TOEFL 90→現状 75\",\"活動実績: 医療系インターン\"],\n"
-                "        \"next_step\":\"8月までに教授の研究室訪問予約\"\n"
-                "      }\n"
-                "    ],\n"
-                "    \"summary\":\"最もフィットするのは…(120字以内)\",\n"
-                "    \"question\":\"上記の大学のうち、特に気になるところはありますか？\"\n"
-                "  }\n"
-                "}\n\n"
-                "### 評価基準\n"
-                "・universities 3～5 件\n"
-                "・fit 0～1、小数2桁\n"
-                "・reasons 1～3 文\n"
-                "・gap_to_fill 1～3 件\n"
-                "・question 敬語 1 文\n"
-            ),
+            instructions="""あなたは進学アドバイザーAIです。FutureAgent・GapAnalysisAgent・ActionPlanAgent・ImpactAgent の結果を踏まえ、最適な大学/学部/ゼミを 3～5 件推奨してください。フォーマットは以下の JSON：
+
+{
+  "cot":"<思考過程>",
+  "chat": {
+    "universities":[
+      {
+        "name":"慶應義塾大学 総合政策学部",
+        "program":"医療政策学Ⅱ（△△教授）",
+        "fit":0.83,                       # 0–1
+        "reasons":["医療DXカリキュラムが充実","地域医療の実証PJ多数"],
+        "admission":{"偏差値":72,"募集人員":250,"倍率":4.1},
+        "gap_to_fill":["TOEFL 90→現状 75","活動実績: 医療系インターン"],
+        "next_step":"8月までに教授の研究室訪問予約"
+      }
+    ],
+    "summary":"最もフィットするのは…(120字以内)",
+    "question":"上記の大学のうち、特に気になるところはありますか？"
+  }
+}
+
+### 評価基準
+・universities 3～5 件
+・fit 0～1、小数2桁
+・reasons 1～3 文
+・gap_to_fill 1～3 件
+・question 敬語 1 文
+""",
             tools=[course_search, admission_stats, fit_score],
             learning_engine=LearningEngine(),
             **kwargs

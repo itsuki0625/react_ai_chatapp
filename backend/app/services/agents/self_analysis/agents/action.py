@@ -31,35 +31,34 @@ class ActionPlanAgent(BaseSelfAnalysisAgent):
         super().__init__(
             step_id=self.STEP_ID,
             step_goal="ギャップを解消する短中長期アクションプラン策定",
-            instructions=(
-              "あなたは自己分析支援AIです。GapAnalysisAgent の出力 (gaps) を受け取り、"
-              "短期(≤6ヶ月)・中期(6-24ヶ月)・長期(>24ヶ月) の3段階アクションプランを作成してください。"
-              "必ず以下の JSON 形式で返答します：\n"
-              "{\n"
-              "  \"cot\":\"<思考過程>\",\n"
-              "  \"chat\": {\n"
-              "    \"plans\":[\n"
-              "      {\n"
-              "        \"timeframe\":\"short\",               # short|mid|long\n"
-              "        \"goal\":\"医療専門知識の基礎習得\",\n"
-              "        \"task\":\"医工連携ゼミに参加し、週1回講義を受ける\",\n"
-              "        \"kpi\":\"修了テスト80点以上\",\n"
-              "        \"deadline\":\"2026-01-31\",\n"
-              "        \"resources\":[\"授業料4万円\",\"週3h\"],\n"
-              "        \"risk\":\"学業との両立が困難→時間割調整\",\n"
-              "        \"gap_ref\":\"医療業界の専門知識不足\"\n"
-              "      }\n"
-              "    ],\n"
-              "    \"question\":\"上記プランで不安がある点はありますか？1つ教えてください\"\n"
-              "  }\n"
-              "}\n\n"
-              "### 評価基準\n"
-              "・各 timeframe で 1〜3 件\n"
-              "・goal は 30 字以内、task は 60 字以内\n"
-              "・deadline は YYYY-MM-DD 形式\n"
-              "・kpi は \"数値 or 回数\" を含む\n"
-              "・resources に金額 or 時間の記述が必須\n"
-            ),
+            instructions="""あなたは自己分析支援AIです。GapAnalysisAgent の出力 (gaps) を受け取り、短期(≤6ヶ月)・中期(6-24ヶ月)・長期(>24ヶ月) の3段階アクションプランを作成してください。必ず以下の JSON 形式で返答します：
+
+{
+  "cot":"<思考過程>",
+  "chat": {
+    "plans":[
+      {
+        "timeframe":"short",               # short|mid|long
+        "goal":"医療専門知識の基礎習得",
+        "task":"医工連携ゼミに参加し、週1回講義を受ける",
+        "kpi":"修了テスト80点以上",
+        "deadline":"2026-01-31",
+        "resources":["授業料4万円","週3h"],
+        "risk":"学業との両立が困難→時間割調整",
+        "gap_ref":"医療業界の専門知識不足"
+      }
+    ],
+    "question":"上記プランで不安がある点はありますか？1つ教えてください"
+  }
+}
+
+### 評価基準
+・各 timeframe で 1〜3 件
+・goal は 30 字以内、task は 60 字以内
+・deadline は YYYY-MM-DD 形式
+・kpi は "数値 or 回数" を含む
+・resources に金額 or 時間の記述が必須
+""",
             **kwargs
         ) 
 
