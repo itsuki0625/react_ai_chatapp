@@ -83,6 +83,9 @@ class BaseSelfAnalysisAgent(BaseAgent):
             context_manager=ctx_mgr,
             resource_manager=rm,
             trace_logger=trace,
-            planning_engine=PlanningEngine(llm_adapter=openai_adapter),
+            planning_engine=PlanningEngine(
+                llm_adapter=openai_adapter,
+                model="gpt-4.1"
+            ),
             **kwargs,
         ) 
