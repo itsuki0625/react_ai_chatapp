@@ -73,7 +73,7 @@ class FutureAgent(BaseSelfAnalysisAgent):
             result_json = data
         # 次ステップと最終ノートを含めて返却
         # user_visible: ユーザーに見せる簡易表現を作成
-        user_visible = f"素晴らしいですね！ {result_json['chat']['future']}。\nあなたの価値観は「{'、'.join(result_json['chat']['values'])}」ですね。\n{result_json['chat']['question']}"
+        user_visible = result_json['chat']['question']
         return {
             "content": json.dumps({"cot": result_json.get("cot"), "chat": result_json.get("chat")}, ensure_ascii=False),
             "final_notes": result_json.get("chat"),
