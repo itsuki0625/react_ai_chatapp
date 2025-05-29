@@ -670,6 +670,20 @@ async def create_new_chat_session(
         user_id=current_user.id,
         chat_type=session_in.chat_type.value
     )
+    # 新規セッションに初期AIメッセージを追加
+    initial_message_content = settings.INSTRUCTION
+    # SELF_ANALYSISモードの場合の最初の挨拶文を設定
+    if session.chat_type == ChatType.SELF_ANALYSIS:
+        initial_message_content = "こんにちは、今日から自己分析を始めましょう！　まずは将来やってみたいことを 1〜2 行で教えていただけますか？"
+    # FAQモードの場合の固定メッセージ（必要に応じて他のモードも追加）
+    elif session.chat_type == ChatType.FAQ:
+        initial_message_content = "あなたは総合型選抜に関する質問に答えるFAQボットです。"
+    await save_chat_message(
+        db=db,
+        session_id=session.id,
+        content=initial_message_content,
+        sender_type="AI"
+    )
     return session
 
 @router.get("/{session_id}", response_model=ChatSession)

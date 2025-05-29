@@ -116,3 +116,10 @@ export interface ChatContextType extends ChatState {
   fetchArchivedSessions: (chatType: ChatTypeValue) => Promise<void>;
   unarchiveSession: (sessionId: string) => Promise<void>;
 }
+
+// ChatSessionStatus enum を追加: チャットセッションのステータス定義
+export enum ChatSessionStatus {
+  ACTIVE = "ACTIVE",
+  ARCHIVED = "ARCHIVED",
+  CLOSED = "CLOSED",
+}

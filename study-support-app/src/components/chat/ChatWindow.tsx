@@ -29,6 +29,7 @@ const ChatWindow: React.FC = () => {
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
   const userScrolledUpRef = useRef<boolean>(false);
   const prevMessagesLengthRef = useRef<number>(0);
+  const hasFetchedHistoryRef = useRef<boolean>(false);
 
   const scrollToBottomOrPrevious = useCallback(() => {
     if (userScrolledUpRef.current) {
@@ -89,16 +90,18 @@ const ChatWindow: React.FC = () => {
     };
   }, []);
 
-  // 履歴読み込みロジック (セッションIDが設定され、メッセージがまだない場合)
-  // ChatProvider側でセッションID変更時に履歴を読み込むのが理想だが、
-  // ここで明示的にトリガーすることも一時的な手段としてあり得る。
-  // ただし、無限ループを避けるための条件やフラグ管理が重要。
+  // 履歴読み込みロジック: セッションID変更時のみ一度だけ履歴を読み込む
   useEffect(() => {
-    if (sessionId && messages.length === 0 && authStatus === 'authenticated' && !isLoading) {
-      console.log(`ChatWindow: sessionId ${sessionId} detected with no messages. Attempting to load history via fetchMessages.`);
-      fetchMessages(sessionId); // ★★★ fetchMessages を呼び出す ★★★
+    hasFetchedHistoryRef.current = false;
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (sessionId && authStatus === 'authenticated' && !isLoading && !hasFetchedHistoryRef.current) {
+      console.log(`ChatWindow: sessionId ${sessionId} detected. Loading history via fetchMessages.`);
+      fetchMessages(sessionId);
+      hasFetchedHistoryRef.current = true;
     }
-  }, [sessionId, messages.length, authStatus, isLoading, fetchMessages]);
+  }, [sessionId, authStatus, isLoading, fetchMessages]);
 
   // 認証ローディング状態
   if (authStatus === 'loading') {
@@ -143,8 +146,8 @@ const ChatWindow: React.FC = () => {
     );
   }
 
-  // 履歴読み込み中
-  if (isLoading && messages.length === 0 && sessionId) {
+  // 会話履歴読み込み中
+  if (isLoading && messages.length === 0) {
     return (
       <div className="flex flex-col flex-1 items-center justify-center h-full p-8 bg-white">
         <div className="animate-pulse flex flex-col items-center">
@@ -158,8 +161,8 @@ const ChatWindow: React.FC = () => {
     );
   }
   
-  // セッションが開始されていない、またはメッセージが空の場合の表示
-  if (!sessionId && messages.length === 0) {
+  // メッセージが空の場合の初期表示
+  if (messages.length === 0) {
     // SELF_ANALYSIS用の初期AIメッセージを表示
     if (currentChatType === (ChatTypeEnum.SELF_ANALYSIS as any)) {
       return (

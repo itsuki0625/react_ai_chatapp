@@ -43,8 +43,8 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
     let typeFromUrl = undefined;
     if (chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 1) {
       const rawType = pathSegments[chatSegmentIndex + 1];
-      // URLの形式（ハイフン）をEnum値（アンダースコア）に変換
-      typeFromUrl = rawType.replace('-', '_').toUpperCase() as ChatTypeValue;
+      // URLの形式（ハイフン）をEnum値（スネークケース）に変換
+      typeFromUrl = rawType.replace(/-/g, '_').toLowerCase() as ChatTypeValue;
       console.log('[DEBUG] Path parsing:', rawType, '->', typeFromUrl);
     }
     

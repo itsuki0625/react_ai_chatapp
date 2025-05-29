@@ -115,29 +115,43 @@ const ChatSidebar: React.FC = () => {
 
   const handleStartNewChat = async () => {
     if (showArchived) {
-      setShowArchived(false); 
+      setShowArchived(false);
+      // アーカイブ表示を解除したら、アクティブなセッションを再取得
       if (currentChatType) {
         fetchSessions(currentChatType);
       }
-      // For starting a new chat, we don't immediately navigate from here if just toggling archive view.
-      // Instead, let user click "New Chat" again if needed, or handle chat type selection.
-      // For now, simply return after toggling off archived.
+      // 新しいチャットを開始する場合は、再度「新しいチャット」ボタンを押してもらうか、
+      // currentChatType が選択されていれば、そのまま新規チャット作成に進んでも良い。
+      // ここでは一旦、アーカイブ表示解除のみ行い、ユーザーの次のアクションを待つ。
       return;
     }
-    
+
     if (currentChatType) {
-      console.log(`[ChatSidebar][handleStartNewChat] Calling startNewChat (PREPARE_NEW_CHAT) for type: ${currentChatType}`);
-      // startNewChat dispatches PREPARE_NEW_CHAT, which sets justStartedNewChat = true
-      // and currentChatType, and clears sessionId.
-      await startNewChat(currentChatType); 
-      
-      // After context is prepared for a new chat, navigate to the base URL for that chat type.
-      // ChatPage's Effect 2 should then ensure this URL is maintained until a session ID is available.
-      const newPath = `/chat/${currentChatType.toLowerCase()}`;
-      console.log(`[ChatSidebar][handleStartNewChat] Navigating to ${newPath}`);
-      router.push(newPath);
+      try {
+        console.log(`[ChatSidebar][handleStartNewChat] Calling startNewChat for type: ${currentChatType}`);
+        // 変更された startNewChat を呼び出し、新しいセッションIDを取得
+        const newSessionId = await startNewChat(currentChatType);
+
+        if (newSessionId) {
+          const newPath = `/chat/${currentChatType.toLowerCase()}/${newSessionId}`;
+          console.log(`[ChatSidebar][handleStartNewChat] Navigating to ${newPath}`);
+          router.push(newPath);
+        } else {
+          // startNewChat が null を返した場合 (エラーは ChatContext 内で throw され、ここでキャッチされる想定)
+          // startNewChat 内でエラーがスローされなかったが、IDが取得できなかった場合 (フォールバック)
+          console.error('[ChatSidebar][handleStartNewChat] Failed to get new session ID, startNewChat returned null or undefined.');
+          // ここでユーザーにエラーを通知 (例: toast)
+          // alert('新しいチャットを開始できませんでした。時間をおいて再度お試しください。');
+        }
+      } catch (error) {
+        console.error('[ChatSidebar][handleStartNewChat] Error starting new chat:', error);
+        // ここでユーザーにエラーを通知 (例: toast)
+        // alert(`新しいチャットの開始に失敗しました: ${(error as Error).message}`);
+      }
     } else {
       console.warn('[ChatSidebar][handleStartNewChat] currentChatType is null. Cannot start new chat.');
+      // 必要であればユーザーにチャットタイプ選択を促すメッセージを表示
+      // alert('チャットの種類を選択してください。');
     }
   };
 
