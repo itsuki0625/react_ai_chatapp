@@ -38,6 +38,8 @@ class ChatSession(Base):
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
     # ChecklistEvaluation とのリレーションシップを追加
     checklist_evaluations = relationship("ChecklistEvaluation", back_populates="chat_session", cascade="all, delete-orphan")
+    # 追加: PersonalStatementモデルからのリレーションシップ
+    linked_personal_statements = relationship("PersonalStatement", back_populates="self_analysis_chat")
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"

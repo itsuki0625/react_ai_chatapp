@@ -66,6 +66,8 @@ justStartedNewChat?: boolean; // ★新しいチャット開始直後フラグ
 viewingSessionStatus?: SessionStatusValue | null; // ★追加: 表示中セッションのステータス
 isWebSocketConnected: boolean; // ★追加
 sessionStatus: SessionStatusValue | 'PENDING' | 'INACTIVE'; // ★追加 PENDING と INACTIVE も許容
+// TraceLoggerログを保持する配列
+traceLogs: string[];
 }
 
 // useReducer のための Action 型
@@ -93,7 +95,9 @@ export type ChatAction =
 | { type: 'PREPARE_NEW_CHAT'; payload: { chatType: ChatTypeValue } }
 | { type: 'SET_CHAT_TYPE'; payload: ChatTypeValue | null }
 | { type: 'CLEAR_CHAT'; payload: { chatType?: ChatTypeValue | null } }
-| { type: 'SET_WEBSOCKET_CONNECTED'; payload: boolean };
+| { type: 'SET_WEBSOCKET_CONNECTED'; payload: boolean }
+| { type: 'ADD_TRACE'; payload: string }
+| { type: 'CLEAR_TRACE' };
 
 // ChatContext で提供される値の型 (ChatProvider から渡される)
 export interface ChatContextType extends ChatState {
@@ -111,4 +115,11 @@ export interface ChatContextType extends ChatState {
   archiveSession: (sessionId: string) => Promise<void>;
   fetchArchivedSessions: (chatType: ChatTypeValue) => Promise<void>;
   unarchiveSession: (sessionId: string) => Promise<void>;
+}
+
+// ChatSessionStatus enum を追加: チャットセッションのステータス定義
+export enum ChatSessionStatus {
+  ACTIVE = "ACTIVE",
+  ARCHIVED = "ARCHIVED",
+  CLOSED = "CLOSED",
 }

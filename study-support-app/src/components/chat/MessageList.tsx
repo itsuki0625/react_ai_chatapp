@@ -10,7 +10,7 @@ import { AlertCircle, Loader2 } from 'lucide-react';
 // }
 
 const MessageList: React.FC = () => { // Props を削除
-  const { messages, isLoading, error } = useChat(); // useChat フックから状態を取得
+  const { messages, isLoading, error, traceLogs } = useChat(); // useChat フックから状態を取得
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -48,10 +48,20 @@ const MessageList: React.FC = () => { // Props を削除
         </div>
       ) : (
         <>
+          {/* AI思考中のTraceログ */}
+          {traceLogs.length > 0 && (
+            <div className="space-y-1">
+              {traceLogs.map((log: string, i: number) => (
+                <div key={`trace-${i}`} className="text-xs text-gray-500 whitespace-pre-wrap">
+                  {log}
+                </div>
+              ))}
+            </div>
+          )}
           {messages.map((message) => (
             <ChatMessageItemDisplay key={message.id} message={message} />
           ))}
-          
+
           {isLoading && messages.some(m => m.isStreaming) && (
             <div className="flex justify-center py-2">
               <div className="inline-flex items-center px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-xs">
@@ -67,4 +77,4 @@ const MessageList: React.FC = () => { // Props を削除
   );
 };
 
-export default MessageList; 
+export default MessageList;

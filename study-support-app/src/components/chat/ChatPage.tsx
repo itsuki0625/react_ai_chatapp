@@ -43,8 +43,8 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
     let typeFromUrl = undefined;
     if (chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 1) {
       const rawType = pathSegments[chatSegmentIndex + 1];
-      // URLの形式（ハイフン）をEnum値（アンダースコア）に変換
-      typeFromUrl = rawType.replace('-', '_').toUpperCase() as ChatTypeValue;
+      // URLの形式（ハイフン）をEnum値（スネークケース）に変換
+      typeFromUrl = rawType.replace(/-/g, '_').toLowerCase() as ChatTypeValue;
       console.log('[DEBUG] Path parsing:', rawType, '->', typeFromUrl);
     }
     
@@ -59,6 +59,13 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
     const previousContextSessionId = prevContextSessionIdRef.current;
 
     console.log(`[DEBUG ChatPage UnifiedEffect] Start. Path: ${pathname}, PrevCtxSessID: ${previousContextSessionId}, Ctx: CType=${contextChatType} CSessID=${contextSessionId} JustNew=${justStartedNewChat}, URL: UType=${typeFromUrl} USessID=${sessionIdFromUrl}`);
+
+    // 新しいチャットページに遷移したとき、以前のセッションをクリア
+    if (typeFromUrl && !sessionIdFromUrl && contextSessionId) {
+      console.log(`[DEBUG ChatPage UnifiedEffect] Detected new chat path /chat/${typeFromUrl}, clearing previous session.`);
+      dispatch({ type: 'CLEAR_CHAT', payload: { chatType: contextChatType } });
+      return;
+    }
 
     // Priority 1: New Chat URL Update
     if (contextChatType && contextSessionId && !sessionIdFromUrl && 

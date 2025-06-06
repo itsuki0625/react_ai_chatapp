@@ -14,7 +14,7 @@ class UserBase(BaseModel):
     full_name: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class User(UserBase):
     pass
@@ -45,7 +45,7 @@ class NotificationSettingInDBBase(NotificationSettingBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # APIのレスポンスで使用
 class NotificationSetting(NotificationSettingInDBBase):

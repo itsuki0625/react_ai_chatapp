@@ -22,6 +22,15 @@ from app.models.notification_setting import NotificationSetting
 from app.models.push_subscription import PushSubscription
 from app.models.in_app_notification import InAppNotification
 
+# 自己分析関連モデルをインポート
+from app.models.self_analysis import (
+    SelfAnalysisSession,
+    SelfAnalysisNote,
+    COT,
+    Reflection,
+    Summary,
+)
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
