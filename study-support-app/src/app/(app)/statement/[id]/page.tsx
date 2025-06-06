@@ -60,6 +60,7 @@ export default function Page({ params }: Props) {
   return <StatementEditorPage id={params.id} initialData={{
     ...statement,
     status: statement.status as PersonalStatementStatus,
-    desired_department_id: statement.desired_department_id ?? undefined
+    desired_department_id: statement.desired_department_id ?? undefined,
+    self_analysis_chat_id: statement.self_analysis_chat_id ?? undefined
   }} />;
 }
