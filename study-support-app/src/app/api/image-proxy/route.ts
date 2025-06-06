@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
       // キャッシュコントロールを設定 (任意ですが、推奨)
       headers.set('Cache-Control', 'public, max-age=3600, s-maxage=604800, stale-while-revalidate');
       
-      // @ts-ignore ReadableStreamをResponseのbodyに渡す
+      // @ts-expect-error ReadableStreamをResponseのbodyに渡す
       return new Response(externalRes.body, {
         status: externalRes.status,
         statusText: externalRes.statusText,

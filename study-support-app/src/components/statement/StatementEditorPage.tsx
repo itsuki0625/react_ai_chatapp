@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from "next-auth/react";
 import { Button } from '@/components/common/Button';
@@ -129,7 +129,7 @@ export default function StatementEditorPage({ id, initialData }: Props) {
     return () => controller.abort();
   }, [sessionStatus, session]);
 
-  const fetchDesiredDepartments = async (signal?: AbortSignal) => {
+  const fetchDesiredDepartments = useCallback(async (signal?: AbortSignal) => {
     setIsLoading(true);
     setError(null);
     try {
@@ -179,9 +179,9 @@ export default function StatementEditorPage({ id, initialData }: Props) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [session]);
 
-  const fetchSelfAnalysisChats = async (signal?: AbortSignal) => {
+  const fetchSelfAnalysisChats = useCallback(async (signal?: AbortSignal) => {
     setIsLoadingSelfAnalysisChats(true);
     try {
       const token = session?.user?.accessToken;
@@ -212,7 +212,7 @@ export default function StatementEditorPage({ id, initialData }: Props) {
     } finally {
       setIsLoadingSelfAnalysisChats(false);
     }
-  };
+  }, [session]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -238,7 +238,7 @@ export default function StatementEditorPage({ id, initialData }: Props) {
         return;
       }
 
-      let requestData: any = {
+      const requestData: any = {
         content: id ? content : "",
         status: id ? status : PersonalStatementStatus.DRAFT,
       };

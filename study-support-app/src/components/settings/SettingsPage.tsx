@@ -131,7 +131,7 @@ const SettingsPage = () => {
     };
 
     loadUserSettingsInternal();
-  }, [status, userId, userName, userEmail, setUser, setUserSettings, isAuthLoading, isSubLoading]);
+  }, [status, userId, userName, userEmail, setUser, setUserSettings, isAuthLoading, isSubLoading, session?.user]);
 
   useEffect(() => {
     if (selectedFile) {
