@@ -35,9 +35,15 @@ async def run_future_step(state: SelfAnalysisState) -> SelfAnalysisState:
     # Extract user-facing message from JSON response if possible
     user_message = extract_user_message(response, "FUTURE")
     
+    # ステップ完了判定に基づいて次のステップを決定
+    step_completed = is_step_completed("FUTURE", response)
+    next_step = "MOTIVATION" if step_completed else None
+    
+    logger.info(f"FUTURE step completed: {step_completed}, next_step: {next_step}")
+    
     return {
         **state, 
-        "next_step": "MOTIVATION",
+        "next_step": next_step,
         "current_response": response,
         "user_message": user_message
     }
@@ -51,9 +57,15 @@ async def run_motivation_step(state: SelfAnalysisState) -> SelfAnalysisState:
     
     user_message = extract_user_message(response, "MOTIVATION")
     
+    # ステップ完了判定に基づいて次のステップを決定
+    step_completed = is_step_completed("MOTIVATION", response)
+    next_step = "HISTORY" if step_completed else None
+    
+    logger.info(f"MOTIVATION step completed: {step_completed}, next_step: {next_step}")
+    
     return {
         **state, 
-        "next_step": "HISTORY",
+        "next_step": next_step,
         "current_response": response,
         "user_message": user_message
     }
@@ -67,9 +79,15 @@ async def run_history_step(state: SelfAnalysisState) -> SelfAnalysisState:
     
     user_message = extract_user_message(response, "HISTORY")
     
+    # ステップ完了判定に基づいて次のステップを決定
+    step_completed = is_step_completed("HISTORY", response)
+    next_step = "GAP" if step_completed else None
+    
+    logger.info(f"HISTORY step completed: {step_completed}, next_step: {next_step}")
+    
     return {
         **state, 
-        "next_step": "GAP",
+        "next_step": next_step,
         "current_response": response,
         "user_message": user_message
     }
@@ -83,9 +101,15 @@ async def run_gap_step(state: SelfAnalysisState) -> SelfAnalysisState:
     
     user_message = extract_user_message(response, "GAP")
     
+    # ステップ完了判定に基づいて次のステップを決定
+    step_completed = is_step_completed("GAP", response)
+    next_step = "VISION" if step_completed else None
+    
+    logger.info(f"GAP step completed: {step_completed}, next_step: {next_step}")
+    
     return {
         **state, 
-        "next_step": "VISION",
+        "next_step": next_step,
         "current_response": response,
         "user_message": user_message
     }
@@ -99,9 +123,15 @@ async def run_vision_step(state: SelfAnalysisState) -> SelfAnalysisState:
     
     user_message = extract_user_message(response, "VISION")
     
+    # ステップ完了判定に基づいて次のステップを決定
+    step_completed = is_step_completed("VISION", response)
+    next_step = "REFLECT" if step_completed else None
+    
+    logger.info(f"VISION step completed: {step_completed}, next_step: {next_step}")
+    
     return {
         **state, 
-        "next_step": "REFLECT",
+        "next_step": next_step,
         "current_response": response,
         "user_message": user_message
     }
@@ -115,9 +145,14 @@ async def run_reflect_step(state: SelfAnalysisState) -> SelfAnalysisState:
     
     user_message = extract_user_message(response, "REFLECT")
     
+    # REFLECTステップは最終ステップなので常にNone
+    next_step = None
+    
+    logger.info(f"REFLECT step completed, next_step: {next_step}")
+    
     return {
         **state, 
-        "next_step": None,  # End of flow
+        "next_step": next_step,  # End of flow
         "current_response": response,
         "user_message": user_message
     }
@@ -212,6 +247,7 @@ def is_step_completed(step: str, response: str | dict) -> bool:
         # 辞書型の場合はそのまま使用、文字列の場合はJSONパース
         if isinstance(response, str):
             if not response.strip().startswith('{'):
+                logger.debug(f"Response for {step} is not JSON: {response[:100]}")
                 return False
             data = json.loads(response.strip())
         else:
@@ -219,30 +255,44 @@ def is_step_completed(step: str, response: str | dict) -> bool:
 
         # chatセクションが存在するかチェック
         if not isinstance(data, dict) or "chat" not in data:
+            logger.debug(f"No chat section found for {step}: {data}")
             return False
             
         chat = data["chat"]
         
         if step == "FUTURE":
             # future, values, questionが適切に設定されているかチェック
-            return (
+            future_valid = (
                 "future" in chat and 
                 isinstance(chat["future"], str) and 
-                len(chat["future"].strip()) > 0 and
-                len(chat["future"]) <= 30 and
+                len(chat["future"].strip()) > 0
+            )
+            values_valid = (
                 "values" in chat and 
                 isinstance(chat["values"], list) and 
-                len(chat["values"]) == 3 and
-                all(isinstance(v, str) and len(v.strip()) > 0 for v in chat["values"]) and
+                len(chat["values"]) >= 1  # 少なくとも1つあれば良い
+            )
+            question_valid = (
                 "question" in chat and 
                 isinstance(chat["question"], str) and 
                 len(chat["question"].strip()) > 0
             )
             
+            logger.debug(f"FUTURE step validation - future: {future_valid}, values: {values_valid}, question: {question_valid}")
+            logger.debug(f"Chat content: {chat}")
+            
+            return future_valid and values_valid and question_valid
+            
         elif step == "MOTIVATION":
             # episodeの全フィールドが埋まっているかチェック
             episode = chat.get("episode", {})
             required_fields = ["when", "where", "who", "what", "why", "how", "emotion", "insight"]
+            
+            # 初期の質問段階では完了していないと見なす
+            if not episode or len(episode) < len(required_fields):
+                logger.debug(f"MOTIVATION step incomplete - episode fields: {len(episode.keys()) if episode else 0}/{len(required_fields)}")
+                return False
+                
             return (
                 isinstance(episode, dict) and
                 all(field in episode and isinstance(episode[field], str) and len(episode[field].strip()) > 0 
@@ -350,20 +400,110 @@ def select_step_node(state: SelfAnalysisState) -> str:
                 return sa.current_step if sa else "FUTURE"
         
         # 非同期関数を同期的に実行
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # 既存のループ内で実行中の場合は新しいタスクとして実行
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, get_current_step())
-                current_step = future.result(timeout=5)
-        else:
-            current_step = asyncio.run(get_current_step())
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # 既存のループ内で実行中の場合は新しいタスクとして実行
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, get_current_step())
+                    current_step = future.result(timeout=5)
+            else:
+                current_step = asyncio.run(get_current_step())
+        except (RuntimeError, Exception) as e:
+            # イベントループ関連のエラーの場合は、同期的にDBアクセスを試行
+            try:
+                # 同期セッションを使って直接DBアクセス
+                logger.warning(f"Cannot access event loop for session {session_id}, trying synchronous DB access: {e}")
+                from sqlalchemy import create_engine
+                from sqlalchemy.orm import sessionmaker
+                from app.core.config import settings
+                
+                sync_engine = create_engine(settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://"))
+                SyncSessionLocal = sessionmaker(bind=sync_engine)
+                
+                with SyncSessionLocal() as db:
+                    sa = db.get(SelfAnalysisSession, session_id)
+                    current_step = sa.current_step if sa else "FUTURE"
+                    logger.info(f"Retrieved current step synchronously: {current_step}")
+                    return determine_current_step(current_step, len(messages))
+                    
+            except Exception as sync_e:
+                logger.error(f"Synchronous DB access also failed for session {session_id}: {sync_e}")
+                return "FUTURE"
             
         return determine_current_step(current_step, len(messages))
     except Exception as e:
         logger.error(f"Error getting current step for session {session_id}: {e}")
         return "FUTURE"  # デフォルト
+
+# 条件分岐でフェーズ移行を制御する関数を追加
+def decide_next_step(state: SelfAnalysisState) -> str:
+    """ステップ完了状況に基づいて次のアクションを決定"""
+    session_id = state.get("session_id", "")
+    current_response = state.get("current_response", "")
+    
+    try:
+        import asyncio
+        async def get_current_step_and_check():
+            async with AsyncSessionLocal() as db:
+                sa = await db.get(SelfAnalysisSession, session_id)
+                if not sa:
+                    return "FUTURE", False
+                
+                current_step = sa.current_step or "FUTURE"
+                step_completed = is_step_completed(current_step, current_response)
+                return current_step, step_completed
+        
+        # 非同期関数を同期的に実行
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, get_current_step_and_check())
+                    current_step, step_completed = future.result(timeout=5)
+            else:
+                current_step, step_completed = asyncio.run(get_current_step_and_check())
+        except (RuntimeError, Exception) as e:
+            # イベントループ関連のエラーの場合は、同期的にDBアクセスを試行
+            try:
+                logger.warning(f"Cannot access event loop for session {session_id}, trying synchronous DB access: {e}")
+                from sqlalchemy import create_engine
+                from sqlalchemy.orm import sessionmaker
+                from app.core.config import settings
+                
+                sync_engine = create_engine(settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://"))
+                SyncSessionLocal = sessionmaker(bind=sync_engine)
+                
+                with SyncSessionLocal() as db:
+                    sa = db.get(SelfAnalysisSession, session_id)
+                    if not sa:
+                        current_step, step_completed = "FUTURE", False
+                    else:
+                        current_step = sa.current_step or "FUTURE"
+                        step_completed = is_step_completed(current_step, current_response)
+                    logger.info(f"Retrieved step info synchronously: {current_step}, completed: {step_completed}")
+                    
+            except Exception as sync_e:
+                logger.error(f"Synchronous DB access also failed for session {session_id}: {sync_e}")
+                return END
+        
+        if step_completed:
+            next_step = get_next_step(current_step)
+            if next_step:
+                logger.info(f"Step {current_step} completed, moving to {next_step}")
+                return next_step
+            else:
+                logger.info(f"All steps completed for session {session_id}")
+                return END
+        else:
+            logger.info(f"Step {current_step} not completed, staying on current step")
+            return END  # フローを終了してユーザーの次の入力を待つ
+            
+    except Exception as e:
+        logger.error(f"Error in decide_next_step for session {session_id}: {e}")
+        return END
 
 # Graphオーケストレーターの構築
 builder = StateGraph(SelfAnalysisState)
@@ -389,18 +529,53 @@ builder.add_conditional_edges(
     }
 )
 
-# 各ステップから終了へ
-builder.add_edge("FUTURE", END)
-builder.add_edge("MOTIVATION", END)
-builder.add_edge("HISTORY", END)
-builder.add_edge("GAP", END)
-builder.add_edge("VISION", END)
-builder.add_edge("REFLECT", END)
+# 各ステップから条件分岐で次のステップまたは終了を決定
+builder.add_conditional_edges(
+    "FUTURE",
+    decide_next_step,
+    {
+        "MOTIVATION": "MOTIVATION",
+        END: END
+    }
+)
 
-# 条件分岐を削除 - 単一ステップ実行のため不要
-# def decide_after_gap(state: SelfAnalysisState) -> str:
-# def decide_after_vision(state: SelfAnalysisState) -> str:
-# builder.add_conditional_edges(...) は削除
+builder.add_conditional_edges(
+    "MOTIVATION", 
+    decide_next_step,
+    {
+        "HISTORY": "HISTORY",
+        END: END
+    }
+)
+
+builder.add_conditional_edges(
+    "HISTORY",
+    decide_next_step, 
+    {
+        "GAP": "GAP",
+        END: END
+    }
+)
+
+builder.add_conditional_edges(
+    "GAP",
+    decide_next_step,
+    {
+        "VISION": "VISION", 
+        END: END
+    }
+)
+
+builder.add_conditional_edges(
+    "VISION",
+    decide_next_step,
+    {
+        "REFLECT": "REFLECT",
+        END: END
+    }
+)
+
+builder.add_edge("REFLECT", END)
 
 orchestrator = builder.compile()
 
@@ -451,23 +626,28 @@ class SelfAnalysisOrchestrator:
                 async with AsyncSessionLocal() as db:
                     sa = await db.get(SelfAnalysisSession, session_id)
                     if sa:
-                        current_step = sa.current_step or "FUTURE"
+                        # 結果から実行されたステップと次のステップを取得
                         current_response = result.get("current_response", "")
+                        next_step_from_result = result.get("next_step")
+                        
+                        # 現在のステップを取得
+                        current_step = sa.current_step or "FUTURE"
                         
                         # ステップが完了したかチェック
                         step_completed = is_step_completed(current_step, current_response)
                         
-                        if step_completed:
+                        logger.info(f"Database update for session {session_id}: current_step={current_step}, step_completed={step_completed}, next_step_from_result={next_step_from_result}")
+                        
+                        if step_completed and next_step_from_result:
                             # 完了した場合は次のステップに進む
-                            next_step = get_next_step(current_step)
-                            if next_step:
-                                sa.current_step = next_step
-                                logger.info(f"Step completed! Updated SelfAnalysisSession for {session_id}: {current_step} -> {next_step}")
-                            else:
-                                logger.info(f"Session {session_id} completed all steps")
-                        else:
+                            sa.current_step = next_step_from_result
+                            logger.info(f"Step completed! Updated SelfAnalysisSession for {session_id}: {current_step} -> {next_step_from_result}")
+                        elif not step_completed:
                             # 完了していない場合は同じステップを継続
                             logger.info(f"Step {current_step} not yet completed for session {session_id}, staying on current step")
+                        else:
+                            # ステップ完了したが次のステップがない場合（全体完了）
+                            logger.info(f"Session {session_id} completed all steps")
                             
                         db.add(sa)
                         await db.commit()
