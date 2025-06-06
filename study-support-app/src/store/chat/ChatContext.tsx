@@ -334,7 +334,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    let sessionIdForRequest: string | undefined = state.sessionId ?? undefined;
+    const sessionIdForRequest: string | undefined = state.sessionId ?? undefined;
     const chatTypeForRequest = state.currentChatType;
 
     if (!chatTypeForRequest) {
@@ -423,7 +423,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       console.error('Error creating new chat session in startNewChat:', error);
       throw error;
     }
-  }, [authToken, dispatch, apiClient]);
+  }, [authToken, dispatch]);
 
   const fetchSessions = useCallback(async (chatType: ChatTypeValue) => {
     if (!authToken) {

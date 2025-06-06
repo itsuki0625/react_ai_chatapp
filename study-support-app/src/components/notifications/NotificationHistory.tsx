@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, isWithinInterval, subDays } from 'date-fns';
 import { ja } from 'date-fns/locale';
@@ -195,7 +195,7 @@ export const NotificationHistory = () => {
   };
 
   // 日付フィルターの適用
-  const applyDateFilter = (notification: Notification) => {
+  const applyDateFilter = useCallback((notification: Notification) => {
     const date = new Date(notification.created_at);
     const now = new Date();
 
@@ -226,7 +226,7 @@ export const NotificationHistory = () => {
       default:
         return true;
     }
-  };
+  }, [dateFilter]);
 
   // フィルタリングと検索を適用した通知を取得
   const filteredNotifications = useMemo(() => {
@@ -269,7 +269,7 @@ export const NotificationHistory = () => {
             return 0;
         }
       });
-  }, [notifications, filterType, searchQuery, sortType, dateFilter, selectedTypes]);
+  }, [notifications, filterType, searchQuery, sortType, selectedTypes, applyDateFilter]);
 
   // 通知の選択状態を切り替え
   const toggleNotification = (id: string) => {
