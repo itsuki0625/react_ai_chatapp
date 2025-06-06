@@ -110,25 +110,6 @@ export default function StatementEditorPage({ id, initialData }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    if (sessionStatus === 'authenticated' && session?.user?.accessToken) {
-      fetchDesiredDepartments(controller.signal);
-    } else if (sessionStatus === 'unauthenticated') {
-      setError("認証が必要です。ログインしてください。");
-      setIsLoading(false);
-    }
-    return () => controller.abort();
-  }, [sessionStatus, session]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    if (sessionStatus === 'authenticated' && session?.user?.accessToken) {
-      fetchSelfAnalysisChats(controller.signal);
-    }
-    return () => controller.abort();
-  }, [sessionStatus, session]);
-
   const fetchDesiredDepartments = useCallback(async (signal?: AbortSignal) => {
     setIsLoading(true);
     setError(null);
@@ -213,6 +194,25 @@ export default function StatementEditorPage({ id, initialData }: Props) {
       setIsLoadingSelfAnalysisChats(false);
     }
   }, [session]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (sessionStatus === 'authenticated' && session?.user?.accessToken) {
+      fetchDesiredDepartments(controller.signal);
+    } else if (sessionStatus === 'unauthenticated') {
+      setError("認証が必要です。ログインしてください。");
+      setIsLoading(false);
+    }
+    return () => controller.abort();
+  }, [sessionStatus, session, fetchDesiredDepartments]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (sessionStatus === 'authenticated' && session?.user?.accessToken) {
+      fetchSelfAnalysisChats(controller.signal);
+    }
+    return () => controller.abort();
+  }, [sessionStatus, session, fetchSelfAnalysisChats]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

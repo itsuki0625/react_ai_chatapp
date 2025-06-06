@@ -269,7 +269,7 @@ export const NotificationHistory = () => {
             return 0;
         }
       });
-  }, [notifications, filterType, searchQuery, sortType, dateFilter, selectedTypes, applyDateFilter]);
+  }, [notifications, filterType, searchQuery, sortType, selectedTypes, applyDateFilter]);
 
   // 通知の選択状態を切り替え
   const toggleNotification = (id: string) => {
