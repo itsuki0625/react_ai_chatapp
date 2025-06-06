@@ -55,7 +55,7 @@
 # #     ... 
 
 from uuid import uuid4
-from app.services.agents.self_analysis.orchestrator import SelfAnalysisOrchestrator
+from app.services.agents.self_analysis_langchain.main import SelfAnalysisOrchestrator
 import logging
 from typing import List, Dict, Optional, Any
 
@@ -70,9 +70,12 @@ async def get_self_analysis_agent_response(user_input: str, history: Optional[Li
         # 新しいセッションIDを生成し、オーケストレーターで自己分析を実行
         session_id = str(uuid4())
         orchestrator = SelfAnalysisOrchestrator()
-        # user_visible にはクライアントに返す内容が含まれます
-        user_visible = await orchestrator.run(session_id, user_input)
-        return user_visible
+        # messages リストを渡して実行
+        result = await orchestrator.run([{"role": "user", "content": user_input}], session_id)
+        # user_visible にクライアントに返す内容が含まれる
+        if isinstance(result, dict):
+            return result.get("user_visible") or result.get("final_notes") or None
+        return str(result)
     except Exception as e:
         logger.error(f"Unexpected error in get_self_analysis_agent_response: {e}", exc_info=True)
         return "申し訳ありません、自己分析AIの実行中にエラーが発生しました。"

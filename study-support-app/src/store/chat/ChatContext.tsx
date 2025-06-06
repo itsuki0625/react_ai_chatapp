@@ -6,11 +6,14 @@ import { apiClient } from '@/lib/api-client';
 import { chatApi } from '@/lib/api-client';
 import { useSession } from "next-auth/react"; // Added useSession
 
+// OriginalChatAction から START_NEW_CHAT_SESSION を除外する
+type OriginalChatActionWithoutStartNew = Exclude<OriginalChatAction, { type: 'START_NEW_CHAT_SESSION' }>;
+
 // ChatAction 型を拡張
 export type ChatAction = 
-  | OriginalChatAction
+  | OriginalChatActionWithoutStartNew // 除外したものをベースにする
   | { type: 'PREPARE_NEW_CHAT'; payload: { chatType: ChatTypeValue } }
-  | { type: 'START_NEW_CHAT_SESSION'; payload: { sessionId: string; chatType: ChatTypeValue; status: ChatSessionStatus } };
+  | { type: 'START_NEW_CHAT_SESSION'; payload: { sessionId: string; chatType: ChatTypeValue; status: ChatSessionStatus } }; // こちらの定義を優先
 
 const initialState: ChatState = {
   sessionId: undefined,
@@ -100,16 +103,19 @@ export const chatReducer = (state: ChatState, action: ChatAction): ChatState => 
       return { ...state, isLoadingSessions: false, errorSessions: action.payload };
     case 'START_NEW_CHAT_SESSION':
       console.log('[chatReducer] START_NEW_CHAT_SESSION, payload:', action.payload);
+      // ChatActionの型定義修正により、payloadにはsessionId, chatType, statusが必ず含まれることを期待
+      const { sessionId: newSessionIdForStart, chatType: newChatTypeForStart, status: newStatusForStart } = action.payload;
+
       return {
         ...state,
         messages: [],
-        sessionId: action.payload.sessionId,
+        sessionId: newSessionIdForStart,
         isLoading: false,
         error: null,
-        currentChatType: action.payload.chatType,
+        currentChatType: newChatTypeForStart,
         justStartedNewChat: false,
-        sessionStatus: action.payload.status,
-        viewingSessionStatus: action.payload.status,
+        sessionStatus: newStatusForStart,
+        viewingSessionStatus: newStatusForStart,
       };
     case 'ARCHIVE_SESSION_SUCCESS':
       return {

@@ -36,6 +36,8 @@ apiClient.interceptors.request.use(
     if (typeof window !== 'undefined') {
       try {
         const session = await getSession() as SessionWithToken | null;
+        console.log('[ApiClientInterceptor] Session fetched:', session); // セッション情報をログ出力
+
         // NextAuth v5 以降など、session.accessToken が直接存在しない場合があるため
         // session?.user?.accessToken のような構造も考慮する
         // session オブジェクトと accessToken の実際の構造に合わせて調整してください
@@ -47,16 +49,25 @@ apiClient.interceptors.request.use(
             config.headers = {} as AxiosRequestHeaders;
           }
           config.headers.Authorization = `Bearer ${accessToken}`;
-          console.log('Authorization header added with token.'); // デバッグ用ログ
+          console.log('[ApiClientInterceptor] Authorization header added with token:', accessToken.substring(0, 20) + '...'); // トークンの一部をログ出力
         } else {
-          // トークンがない場合でもクッキー認証にフォールバックする可能性があるため、
-          // ここでは警告に留める。セッション自体がない場合も同様。
-          console.warn('Session found but no access token, or no session found. Proceeding without Authorization header.');
+          console.warn('[ApiClientInterceptor] No access token found in session. Headers:', config.headers);
+          // どのパスへのリクエストでトークンがないかログ出力
+          if (config.url) {
+            console.warn(`[ApiClientInterceptor] Request to ${config.url} without token.`);
+          }
+          // セッションはあるがトークンがない場合、その旨をより詳しくログに出す
+          if (session && !accessToken) {
+            console.warn('[ApiClientInterceptor] Session exists, but accessToken is missing. Session details:', session);
+          }
         }
       } catch (error) {
-        console.error('Failed to get session or attach token:', error);
+        console.error('[ApiClientInterceptor] Failed to get session or attach token:', error);
         // セッション取得に失敗した場合でもリクエストは続行させるか、
         // エラーを投げて中断させるかは要件による
+        if (config.url) {
+          console.error(`[ApiClientInterceptor] Error occurred for request to ${config.url}`);
+        }
       }
     }
     // ★★★ 変更: 型アサーションを削除 (不要) ★★★
@@ -64,7 +75,7 @@ apiClient.interceptors.request.use(
   },
   (error) => {
     // リクエストエラーの処理
-    console.error('API Request Error:', error);
+    console.error('[ApiClientInterceptor] API Request Error:', error);
     return Promise.reject(error);
   }
 );

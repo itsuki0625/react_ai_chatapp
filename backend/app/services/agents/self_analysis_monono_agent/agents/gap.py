@@ -1,4 +1,4 @@
-from .base_prompt import BaseSelfAnalysisAgent
+from .base_prompt import BaseSelfAnalysisAgent, load_md
 from ..guardrails import gap_guardrail
 import json
 
@@ -7,7 +7,8 @@ class GapAnalysisAgent(BaseSelfAnalysisAgent):
     ギャップ&原因抽出を行うエージェント
     """
     STEP_ID = "GAP"
-    NEXT_STEP = "ACTION"
+    STEP_GOAL = "明確になった将来像と、年表で整理された現状の自分との間に存在するギャップ（知識、スキル、経験、実績など）を具体的に特定し、その根本原因を分析する。克服すべき課題に優先順位を付ける。"
+    NEXT_STEP = "VISION"
 
     def __init__(self, **kwargs):
         super().__init__(
@@ -47,24 +48,6 @@ FutureAgent と HistoryAgent のアウトプットを踏まえ、ギャップを
             guardrail=gap_guardrail,
             **kwargs
         ) 
-
-    async def interactive_plan(self, messages, session_id=None):
-        """
-        PlanningEngineで3つのサブタスク（collect_diff→analyze_cause→score_rank）に分解し、結果を返します。
-        """
-        from app.services.agents.monono_agent.components.planning_engine import SubTask, Plan
-        # サブタスク定義
-        tasks = [
-            SubTask(id="collect_diff", description="Future のゴール要素 × History の実績の差分を生成し、ギャップ候補をリストアップしてください", depends_on=[]),
-            SubTask(id="analyze_cause", description="各ギャップについて5Whysで深掘りし、1〜3件の因子を抽出してください", depends_on=["collect_diff"]),
-            SubTask(id="score_rank", description="各ギャップに対してseverityとurgencyを打点し、影響度×解決コストから推奨度を計算してください", depends_on=["analyze_cause"]),
-        ]
-        results = []
-        for sub in tasks:
-            res = await self.planning_engine.execute_sub_task(sub, self, session_id)
-            results.append({"id": sub.id, "result": res})
-        plan = Plan(tasks=tasks)
-        return {"plan": plan.dict(), "subtask_results": results} 
 
     @staticmethod
     def _dedup_gaps(gaps: list[dict]) -> list[dict]:
@@ -107,35 +90,10 @@ FutureAgent と HistoryAgent のアウトプットを踏まえ、ギャップを
             score += 1
         return score
 
-    async def run(self, messages, session_id=None):
-        system_msg = {"role": "system", "content": self.instructions}
-        draft_resp = await self.llm_adapter.chat_completion(messages=[system_msg, *messages], stream=False)
-        try:
-            data = json.loads(draft_resp.get("content", "{}"))
-        except:
-            data = {}
-        # 自己採点
-        score = self._grade_gaps(data)
-        if score < 5:
-            fix_msg = {"role": "user", "content": f"評価基準に照らして{score}点でした。条件を満たすように再度同じフォーマットで出力してください。"}
-            final_resp = await self.llm_adapter.chat_completion(messages=[system_msg, *messages, fix_msg], stream=False)
-            try:
-                data = json.loads(final_resp.get("content", "{}"))
-            except:
-                pass
-        # 後処理: 重複排除 & スコア正規化
-        chat = data.get("chat", {})
-        gaps = chat.get("gaps", [])
-        cleaned = self._dedup_gaps(gaps)
-        normalized = self._normalize_scores(cleaned)
-        gap_count = len(normalized)
-        avg_severity = sum(g.get("severity", 0) for g in normalized) / gap_count if gap_count else 0
-        chat["gaps"] = normalized
-        data["chat"] = chat
-        # トレース: gap_count / avg_severity を記録
-        self.trace_logger.trace("gap_metrics", {"gap_count": gap_count, "avg_severity": avg_severity})
-        return {
-            "content": json.dumps({"cot": data.get("cot"), "chat": chat}, ensure_ascii=False),
-            "final_notes": chat,
-            "next_step": self.NEXT_STEP
-        } 
+    # run メソッドは BaseSelfAnalysisAgent.run_with_plan が担うため削除
+    # async def run(self, messages, session_id=None):
+    #     ...
+
+    # interactive_plan は BaseSelfAnalysisAgent.run_with_plan が担うため削除
+    # async def interactive_plan(self, messages, session_id=None):
+    #     ... 

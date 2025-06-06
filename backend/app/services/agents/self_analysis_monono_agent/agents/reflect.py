@@ -1,4 +1,4 @@
-from .base_prompt import BaseSelfAnalysisAgent
+from .base_prompt import BaseSelfAnalysisAgent, load_md
 from ..guardrails import reflect_guardrail
 
 class ReflectAgent(BaseSelfAnalysisAgent):
@@ -6,8 +6,8 @@ class ReflectAgent(BaseSelfAnalysisAgent):
     セッション最終振り返りを行うエージェント
     """
     STEP_ID = "REFLECT"
-    # 最終ステップのためNEXT_STEPは定義しないかFINに遷移
-    NEXT_STEP = None
+    STEP_GOAL = "各ステップの成果やプロセスを振り返り、自己理解が深まった点や新たな気づきを整理する（マイクロリフレクション）。また、自己分析全体を通じて得られた学びや、今後の行動への示唆をまとめる（マクロリフレクション）。"
+    NEXT_STEP = "FIN"
 
     def __init__(self, **kwargs):
         super().__init__(
@@ -43,29 +43,10 @@ class ReflectAgent(BaseSelfAnalysisAgent):
             **kwargs
         )
 
-    async def interactive_plan(self, messages, session_id=None):
-        """
-        PlanningEngineで2つのサブタスク（synthesize_findings→format_polish）を順次実行し、結果をまとめて返します。
-        """
-        from app.services.agents.monono_agent.components.planning_engine import SubTask, Plan
-        tasks = [
-            SubTask(
-                id="synthesize_findings",
-                description="全ステップの note / cot / reflection を要約 → raw insights, strengths, edges 抽出",
-                depends_on=[]
-            ),
-            SubTask(
-                id="format_polish",
-                description="テンプレに整形・文字数調整・ランキング（重要度順）",
-                depends_on=["synthesize_findings"]
-            ),
-        ]
-        results = []
-        for sub in tasks:
-            res = await self.planning_engine.execute_sub_task(sub, self, session_id)
-            results.append({"id": sub.id, "result": res})
-        plan = Plan(tasks=tasks)
-        return {"plan": plan.dict(), "subtask_results": results}
+    # interactive_plan は BaseSelfAnalysisAgent.run_with_plan が担うため削除
+    # async def interactive_plan(self, messages, session_id=None):
+    #     ...
 
-    async def run(self, messages, session_id=None):
-        return await self.interactive_plan(messages, session_id) 
+    # run メソッドは BaseSelfAnalysisAgent.run_with_plan が担う (実質 interactive_plan を呼び出していた)
+    # async def run(self, messages, session_id=None):
+    #     return await self.interactive_plan(messages, session_id) 

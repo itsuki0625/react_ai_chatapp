@@ -48,3 +48,17 @@ icalendar
 duckduckgo-search
 beautifulsoup4
 weasyprint
+
+# LangChain Agent SDK
+langchain>=0.0.320
+# LangGraph for orchestrator
+langgraph>=0.1.0
+
+# Community モジュール (ChatOpenAI などをサポート)
+langchain-community>=0.0.1
+
+# LangChain Experimental for PlanAndExecute
+langchain-experimental>=0.0.6
+
+# OpenAI LLM Support
+langchain-openai>=0.0.1

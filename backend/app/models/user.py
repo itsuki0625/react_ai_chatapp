@@ -108,7 +108,11 @@ class User(Base, TimestampMixin):
     conversations_as_user1 = relationship("Conversation", foreign_keys="Conversation.user1_id", back_populates="user1")
     conversations_as_user2 = relationship("Conversation", foreign_keys="Conversation.user2_id", back_populates="user2")
     sent_messages = relationship("Message", foreign_keys="Message.sender_id", back_populates="sender")
-    notification_settings = relationship("app.models.notification_setting.NotificationSetting", back_populates="user")
+    notification_settings = relationship(
+        "app.models.notification_setting.NotificationSetting",
+        back_populates="user",
+        overlaps="user"
+    )
     push_subscriptions = relationship("PushSubscription", back_populates="user")
     in_app_notifications = relationship("InAppNotification", back_populates="user")
 
