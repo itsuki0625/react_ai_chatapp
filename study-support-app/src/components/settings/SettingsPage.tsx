@@ -422,6 +422,7 @@ const SettingsPage = () => {
                           type="text"
                           name="name"
                           id="name"
+                          autoComplete="name"
                           value={userSettings?.name || ''}
                           onChange={handleChange}
                           className="mt-1"
@@ -434,6 +435,7 @@ const SettingsPage = () => {
                           type="email"
                           name="email"
                           id="email"
+                          autoComplete="email"
                           value={userSettings?.email || ''}
                           disabled
                           className="mt-1 bg-gray-100"
@@ -446,6 +448,7 @@ const SettingsPage = () => {
                       <select
                         id="theme"
                         name="theme"
+                        autoComplete="off"
                         value={userSettings?.theme || 'light'}
                         onChange={handleChange}
                         className="w-full p-2 border rounded-md mt-1"

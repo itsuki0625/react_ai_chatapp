@@ -110,9 +110,22 @@ app.add_middleware(
         "https://app.smartao.jp", # 本番環境フロントエンド
     ],
     allow_credentials=True,  # 認証情報を許可
-    allow_methods=["*"],  # すべてのHTTPメソッドを許可
-    allow_headers=["*"],  # すべてのヘッダーを許可
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # 明示的なメソッド指定
+    allow_headers=[
+        "Accept",
+        "Accept-Language",
+        "Content-Language",
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "X-CSRF-Token",
+        "X-Auth-Status",
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+    ],  # 具体的なヘッダー指定
     expose_headers=["Set-Cookie", "X-Auth-Status"],  # 公開するヘッダー
+    max_age=3600,  # プリフライトリクエストのキャッシュ時間
 )
 
 # 2. セッションミドルウェア（認証の前に実行される）
@@ -142,11 +155,12 @@ async def handle_options(full_path: str):
     return Response(
         status_code=200,
         headers={
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": "http://localhost:3001",  # 具体的なオリジンを指定
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+            "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
             "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Max-Age": "3600"
+            "Access-Control-Max-Age": "3600",
+            "Vary": "Origin",  # オリジンによってレスポンスが変わることを示す
         }
     )
 

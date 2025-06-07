@@ -166,6 +166,7 @@ const SignupPage = () => {
                 id="name"
                 name="name"
                 type="text"
+                autoComplete="name"
                 required
                 value={formData.name}
                 onChange={handleChange}
@@ -187,6 +188,7 @@ const SignupPage = () => {
                 id="email"
                 name="email"
                 type="email"
+                autoComplete="email"
                 required
                 value={formData.email}
                 onChange={handleChange}
@@ -208,6 +210,7 @@ const SignupPage = () => {
                 id="password"
                 name="password"
                 type={showPassword ? "text" : "password"}
+                autoComplete="new-password"
                 required
                 value={formData.password}
                 onChange={handleChange}
@@ -243,6 +246,7 @@ const SignupPage = () => {
                 id="confirmPassword"
                 name="confirmPassword"
                 type={showPassword ? "text" : "password"}
+                autoComplete="new-password"
                 required
                 value={formData.confirmPassword}
                 onChange={handleChange}
