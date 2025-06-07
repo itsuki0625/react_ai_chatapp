@@ -70,20 +70,51 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # OPTIONSリクエストは認証をスキップ（CORSプリフライトリクエスト用）
         if request.method == "OPTIONS":
             logger.debug(f"OPTIONSリクエストのため認証をスキップ: {request.url.path}")
+            
+            # リクエストのオリジンを取得
+            origin = request.headers.get("origin")
+            
+            # 許可されたオリジンのリスト
+            allowed_origins = [
+                "http://localhost:3001",
+                "http://localhost:5050", 
+                "http://127.0.0.1:3001",
+                "https://app.smartao.jp",
+                "https://api.smartao.jp",
+                "https://stg.smartao.jp",
+                "https://smartao.jp"
+            ]
+            
+            # オリジンが許可リストに含まれているかチェック
+            allow_origin = "*"  # デフォルト
+            if origin and origin in allowed_origins:
+                allow_origin = origin
+            
             try:
                 response = await call_next(request)
                 logger.debug(f"OPTIONSレスポンス: {request.url.path} - ステータス: {response.status_code}")
+                
+                # CORSヘッダーを追加/更新
+                response.headers["Access-Control-Allow-Origin"] = allow_origin
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+                response.headers["Access-Control-Allow-Headers"] = "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+                response.headers["Access-Control-Max-Age"] = "3600"
+                response.headers["Vary"] = "Origin"
+                
                 return response
             except Exception as e:
                 logger.error(f"OPTIONSリクエスト処理中にエラー: {request.url.path} - {str(e)}", exc_info=True)
-                # OPTIONSリクエストに対してシンプルなレスポンスを返す
+                # OPTIONSリクエストに対してフォールバックレスポンスを返す
                 return Response(
                     status_code=200,
                     headers={
-                        "Access-Control-Allow-Origin": "*",
-                        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-                        "Access-Control-Allow-Headers": "*",
-                        "Access-Control-Allow-Credentials": "true"
+                        "Access-Control-Allow-Origin": allow_origin,
+                        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+                        "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+                        "Access-Control-Allow-Credentials": "true",
+                        "Access-Control-Max-Age": "3600",
+                        "Vary": "Origin"
                     }
                 )
 
@@ -163,6 +194,24 @@ class AuthMiddleware(BaseHTTPMiddleware):
             logger.debug(f"認証成功: User ID {request.state.user_id}, Email: {user.email}")
             try:
                 response = await call_next(request)
+                
+                # CORSヘッダーを確実に設定
+                origin = request.headers.get("origin")
+                allowed_origins = [
+                    "http://localhost:3001",
+                    "http://localhost:5050", 
+                    "http://127.0.0.1:3001",
+                    "https://app.smartao.jp",
+                    "https://api.smartao.jp",
+                    "https://stg.smartao.jp",
+                    "https://smartao.jp"
+                ]
+                
+                if origin and origin in allowed_origins:
+                    response.headers["Access-Control-Allow-Origin"] = origin
+                    response.headers["Access-Control-Allow-Credentials"] = "true"
+                    response.headers["Vary"] = "Origin"
+                
                 return response
             except Exception as e:
                 logger.error(f"認証ミドルウェアの後続処理でエラー: {str(e)}", exc_info=True)
@@ -171,16 +220,50 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 if isinstance(e, HTTPException):
                     detail_message = e.detail
                     status_code = e.status_code
+                
+                # エラーレスポンスにもCORSヘッダーを追加
+                origin = request.headers.get("origin")
+                cors_headers = {}
+                if origin and origin in allowed_origins:
+                    cors_headers.update({
+                        "Access-Control-Allow-Origin": origin,
+                        "Access-Control-Allow-Credentials": "true",
+                        "Vary": "Origin"
+                    })
+                
                 return JSONResponse(
                     status_code=status_code,
-                    content={"detail": detail_message}
+                    content={"detail": detail_message},
+                    headers=cors_headers
                 )
         else:
             logger.error(f"認証失敗: {request.url.path}")
+            
+            # オリジンを取得してCORSヘッダーを設定
+            origin = request.headers.get("origin")
+            allowed_origins = [
+                "http://localhost:3001",
+                "http://localhost:5050", 
+                "http://127.0.0.1:3001",
+                "https://app.smartao.jp",
+                "https://api.smartao.jp",
+                "https://stg.smartao.jp",
+                "https://smartao.jp"
+            ]
+            
+            cors_headers = {"WWW-Authenticate": "Bearer"}
+            
+            if origin and origin in allowed_origins:
+                cors_headers.update({
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Allow-Credentials": "true",
+                    "Vary": "Origin"
+                })
+            
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 content={"detail": "認証が必要です"},
-                headers={"WWW-Authenticate": "Bearer"} # Add header for 401
+                headers=cors_headers
             )
 
         # レスポンスヘッダーのログ出力
