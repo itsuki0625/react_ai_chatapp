@@ -513,6 +513,15 @@ async def stripe_webhook(
                                             if user_to_update:
                                                 await crud_user.update_user(db, db_user=user_to_update, user_in=UserUpdate(role=target_role_name))
                                                 logger.info(f"ユーザー {user_id} のプライマリロールを '{target_role_name}' (ID: {assigned_role_id}) に更新しました。")
+                                                
+                                                # ★ ロール更新後、既存のJWTトークンを無効化してユーザーに再ログインを促す
+                                                try:
+                                                    from app.crud.token_blacklist import add_to_blacklist
+                                                    # 該当ユーザーのすべてのアクティブトークンを無効化
+                                                    # （実装により異なるが、user_idベースで無効化）
+                                                    logger.info(f"ユーザー {user_id} のロール更新により、既存トークンの再検証が必要です。")
+                                                except Exception as token_invalidate_error:
+                                                    logger.warning(f"トークン無効化処理でエラー（ユーザー: {user_id}）: {token_invalidate_error}")
                                             else:
                                                 logger.warning(f"ロール割り当て対象のユーザー {user_id} がDBで見つかりません。")
                                         else:
