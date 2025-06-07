@@ -107,6 +107,7 @@ app.add_middleware(
         "http://host.docker.internal:5050",  # Docker -> ホスト接続
         "https://yourdomain.com",  # 本番環境（必要に応じて変更）
         "https://stg.smartao.jp", # ステージング環境フロントエンド
+        "https://stg-api.smartao.jp", # ステージング環境API（追加）
         "https://api.smartao.jp", # 本番環境API
         "https://app.smartao.jp", # 本番環境フロントエンド
         "https://smartao.jp",     # 本番環境メインドメイン
@@ -161,6 +162,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         "https://app.smartao.jp",
         "https://api.smartao.jp",
         "https://stg.smartao.jp",
+        "https://stg-api.smartao.jp",
         "https://smartao.jp"
     ]
     
@@ -209,6 +211,7 @@ async def handle_options(full_path: str, request: Request):
         "https://app.smartao.jp",
         "https://api.smartao.jp",
         "https://stg.smartao.jp",
+        "https://stg-api.smartao.jp",
         "https://smartao.jp"
     ]
     
