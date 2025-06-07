@@ -259,17 +259,56 @@ export const CampaignCodeManagement: React.FC = () => {
   });
 
   const handleDeleteCampaignCode = async (codeId: string) => {
-    if (!confirm('このキャンペーンコードを削除してもよろしいですか？')) {
+    if (!confirm('このキャンペーンコードを削除してもよろしいですか？\n\nStripeの関連データも無効化されます。この操作は取り消せません。')) {
       return;
     }
+
     try {
       await adminService.deleteCampaignCode(codeId);
-      toast({ title: "成功", description: "キャンペーンコードが削除されました。" });
+      
+      toast({ 
+        title: "削除完了", 
+        description: "キャンペーンコードが正常に削除されました。" 
+      });
+      
+      // キャッシュを無効化してリストを更新
       queryClient.invalidateQueries({ queryKey: ['adminCampaignCodes'] });
+      
     } catch (err) {
+      
       console.error('キャンペーンコードの削除中にエラーが発生しました:', err);
-      const detail = err instanceof Error ? err.message : 'キャンペーンコードの削除中にエラーが発生しました';
-      toast({ variant: "destructive", title: "削除エラー", description: detail });
+      
+      // エラーメッセージを詳細に分析
+      let errorMessage = 'キャンペーンコードの削除中にエラーが発生しました';
+      let errorDescription = '';
+
+      if (err instanceof Error) {
+        errorMessage = err.message;
+        
+        // 特定のエラーパターンを識別
+        if (err.message.includes('404') || err.message.includes('not found')) {
+          errorDescription = 'キャンペーンコードが見つかりません。既に削除されている可能性があります。';
+        } else if (err.message.includes('403') || err.message.includes('permission')) {
+          errorDescription = '削除権限がありません。管理者にお問い合わせください。';
+        } else if (err.message.includes('500') || err.message.includes('Internal Server Error')) {
+          errorDescription = 'サーバー内部エラーが発生しました。Stripe連携の問題の可能性があります。';
+        } else if (err.message.includes('network') || err.message.includes('fetch')) {
+          errorDescription = 'ネットワークエラーが発生しました。インターネット接続を確認してください。';
+        } else {
+          errorDescription = err.message;
+        }
+      }
+
+             toast({ 
+         variant: "destructive", 
+         title: "削除エラー", 
+         description: errorDescription || errorMessage
+       });
+
+      // 404エラーの場合はキャッシュを更新（既に削除済みの可能性）
+      if (errorMessage.includes('404') || errorMessage.includes('not found')) {
+        queryClient.invalidateQueries({ queryKey: ['adminCampaignCodes'] });
+      }
     }
   };
 
