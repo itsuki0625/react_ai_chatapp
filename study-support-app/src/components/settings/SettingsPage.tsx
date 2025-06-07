@@ -380,13 +380,14 @@ const SettingsPage = () => {
                 <form onSubmit={handleSubmit}>
                   <div className="space-y-6">
                     <div>
-                      <Label className="block text-sm font-medium text-gray-700 mb-2">プロフィール画像</Label>
+                      <Label htmlFor="profile-image-upload" className="block text-sm font-medium text-gray-700 mb-2">プロフィール画像</Label>
                       <div className="flex items-center space-x-4">
                         <Avatar className="h-20 w-20 cursor-pointer" onClick={handleAvatarClick}>
                           <AvatarImage src={currentIconUrl ?? undefined} alt={displayName} />
                           <AvatarFallback>{fallbackChar}</AvatarFallback>
                         </Avatar>
                         <Input
+                          id="profile-image-upload"
                           type="file"
                           accept="image/png, image/jpeg, image/gif"
                           ref={fileInputRef}

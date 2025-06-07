@@ -142,8 +142,9 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
         </div>
       )}
       <div className="space-y-1">
-        <label className="text-sm font-medium text-gray-700">大学</label>
+        <label htmlFor="university_id" className="text-sm font-medium text-gray-700">大学</label>
         <select
+          id="university_id"
           name="university_id"
           value={formData.university_id}
           onChange={handleChange}
@@ -158,8 +159,9 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
       </div>
 
       <div className="space-y-1">
-        <label className="text-sm font-medium text-gray-700">学部・学科</label>
+        <label htmlFor="department_id" className="text-sm font-medium text-gray-700">学部・学科</label>
         <select
+          id="department_id"
           name="department_id"
           value={formData.department_id}
           onChange={handleChange}
@@ -177,8 +179,9 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
       </div>
 
       <div className="space-y-1">
-        <label className="text-sm font-medium text-gray-700">入試方式</label>
+        <label htmlFor="admission_method_id" className="text-sm font-medium text-gray-700">入試方式</label>
         <select
+          id="admission_method_id"
           name="admission_method_id"
           value={formData.admission_method_id}
           onChange={handleChange}
@@ -193,8 +196,9 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
       </div>
 
       <div className="space-y-1">
-        <label className="text-sm font-medium text-gray-700">志望順位</label>
+        <label htmlFor="priority" className="text-sm font-medium text-gray-700">志望順位</label>
         <select
+          id="priority"
           name="priority"
           value={formData.priority}
           onChange={handleChange}
@@ -210,8 +214,9 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
       </div>
 
       <div className="space-y-1">
-        <label className="text-sm font-medium text-gray-700">メモ</label>
+        <label htmlFor="notes" className="text-sm font-medium text-gray-700">メモ</label>
         <textarea
+          id="notes"
           name="notes"
           value={formData.notes}
           onChange={handleChange}

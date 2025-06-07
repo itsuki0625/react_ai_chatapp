@@ -605,8 +605,9 @@ export default function ApplicationPage() {
           }}>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">書類名</label>
+                <label htmlFor="document-name" className="block text-sm font-medium text-gray-700">書類名</label>
                 <input
+                  id="document-name"
                   type="text"
                   name="name"
                   defaultValue={editingDocument?.name}
@@ -615,9 +616,10 @@ export default function ApplicationPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">提出期限</label>
+                <label htmlFor="deadline_date" className="block text-sm font-medium text-gray-700">提出期限</label>
                 <div className="flex space-x-2">
                   <input
+                    id="deadline_date"
                     type="date"
                     name="deadline_date"
                     defaultValue={editingDocument ? formatDateForInput(editingDocument.deadline).dateValue : ''}
@@ -625,6 +627,7 @@ export default function ApplicationPage() {
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
                   />
                   <input
+                    id="deadline_time"
                     type="time"
                     name="deadline_time"
                     defaultValue={editingDocument ? formatDateForInput(editingDocument.deadline).timeValue : ''}
@@ -634,8 +637,9 @@ export default function ApplicationPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">ステータス</label>
+                <label htmlFor="document-status" className="block text-sm font-medium text-gray-700">ステータス</label>
                 <select
+                  id="document-status"
                   name="status"
                   defaultValue={editingDocument?.status}
                   required
@@ -648,8 +652,9 @@ export default function ApplicationPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">メモ</label>
+                <label htmlFor="document-notes" className="block text-sm font-medium text-gray-700">メモ</label>
                 <textarea
+                  id="document-notes"
                   name="notes"
                   defaultValue={editingDocument?.notes}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
@@ -695,8 +700,9 @@ export default function ApplicationPage() {
           }}>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">イベント名</label>
+                <label htmlFor="event-name" className="block text-sm font-medium text-gray-700">イベント名</label>
                 <input
+                  id="event-name"
                   type="text"
                   name="event_name"
                   defaultValue={editingSchedule?.event_name}
@@ -705,8 +711,9 @@ export default function ApplicationPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">日付</label>
+                <label htmlFor="schedule-date" className="block text-sm font-medium text-gray-700">日付</label>
                 <input
+                  id="schedule-date"
                   type="date"
                   name="date"
                   defaultValue={editingSchedule ? formatDateForInput(editingSchedule.date).dateValue : ''}
@@ -715,8 +722,9 @@ export default function ApplicationPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">イベントタイプ</label>
+                <label htmlFor="event-type" className="block text-sm font-medium text-gray-700">イベントタイプ</label>
                 <select
+                  id="event-type"
                   name="type"
                   defaultValue={editingSchedule?.type}
                   required
