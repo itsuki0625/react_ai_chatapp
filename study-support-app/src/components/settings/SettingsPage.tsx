@@ -33,6 +33,7 @@ const SettingsPage = () => {
   const [saving, setSaving] = useState(false);
   const { user, setUser } = useUserStore();
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
+  const [hasInitialized, setHasInitialized] = useState(false);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -47,85 +48,99 @@ const SettingsPage = () => {
     queryFn: subscriptionService.getUserSubscription,
     enabled: status === 'authenticated',
     staleTime: 5 * 60 * 1000,
+    retry: 2,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 
-  // Extract necessary values from session to stabilize dependencies
   const userId = session?.user?.id;
   const userName = session?.user?.name;
   const userEmail = session?.user?.email;
 
   const loadUserSettingsInternal = useCallback(async () => {
-    // Loading states should be checked centrally
-    const shouldShowLoading = status === 'loading' || (status === 'authenticated' && (isAuthLoading || isSubLoading));
-    
-    if (shouldShowLoading) {
-      setIsLoading(true);
-      return; // Exit early if we're still loading auth state
-    }
-
-    if (status === 'authenticated' && userId) {
-      setIsLoading(true); 
-      try {
-        const settingsData = await fetchUserSettings();
-        const mappedSettings: UserSettings = {
-          full_name: String(settingsData.full_name || userName || ''),
-          name: String(settingsData.name || settingsData.full_name || userName || ''),
-          email: String(settingsData.email || userEmail || ''),
-          profile_image_url: settingsData.profile_image_url ?? null,
-          emailNotifications: settingsData.emailNotifications ?? true,
-          browserNotifications: settingsData.browserNotifications ?? false,
-          systemNotifications: settingsData.systemNotifications ?? true,
-          chatNotifications: settingsData.chatNotifications ?? true,
-          documentNotifications: settingsData.documentNotifications ?? true,
-          theme: String(settingsData.theme || 'light'),
-        };
-        setUserSettings(mappedSettings);
-
-        const userProfileImageKey = settingsData.profile_image_url ?? null;
-
-        const currentUserInStore = useUserStore.getState().user;
-
-        if (!currentUserInStore || currentUserInStore.id !== userId || currentUserInStore.profile_image_url !== userProfileImageKey) {
-          console.log("Initializing/Updating Zustand user state based on fetched data or userID change...");
-          const currentSessionUser = session?.user ?? {};
-          const userDataForStore = {
-            ...currentSessionUser,
-            id: userId,
-            name: settingsData.name || settingsData.full_name || userName,
-            email: settingsData.email || userEmail,
-            profile_image_url: userProfileImageKey,
-            role: (currentSessionUser as any)?.role,
-          };
-          setUser(userDataForStore as any);
-        }
-        setPreviewUrl(userProfileImageKey);
-
-      } catch (error) {
-        console.error('ユーザー設定の取得エラー:', error);
-        toast.error('ユーザー設定の取得に失敗しました。');
-        setUserSettings({
-          full_name: String(userName || 'ユーザー'),
-          name: String(userName || 'ユーザー'),
-          email: String(userEmail || ''),
-          profile_image_url: null,
-          emailNotifications: true,
-          browserNotifications: false,
-          systemNotifications: true,
-          chatNotifications: true,
-          documentNotifications: true,
-          theme: 'light',
-        });
+    if (hasInitialized || status !== 'authenticated' || !userId) {
+      if (status === 'unauthenticated') {
+        setUserSettings(null);
         setPreviewUrl(null);
-      } finally {
+        setUser(null);
         setIsLoading(false);
       }
-    } else if (status === 'unauthenticated') {
-      setUserSettings(null);
+      return;
+    }
+
+    if (isAuthLoading || isSubLoading) {
+      setIsLoading(true);
+      return;
+    }
+
+    setIsLoading(true);
+    
+    try {
+      const settingsData = await fetchUserSettings();
+      
+      const mappedSettings: UserSettings = {
+        full_name: String(settingsData.full_name || userName || ''),
+        name: String(settingsData.name || settingsData.full_name || userName || ''),
+        email: String(settingsData.email || userEmail || ''),
+        profile_image_url: settingsData.profile_image_url ?? null,
+        emailNotifications: settingsData.emailNotifications ?? true,
+        browserNotifications: settingsData.browserNotifications ?? false,
+        systemNotifications: settingsData.systemNotifications ?? true,
+        chatNotifications: settingsData.chatNotifications ?? true,
+        documentNotifications: settingsData.documentNotifications ?? true,
+        theme: String(settingsData.theme || 'light'),
+      };
+      
+      setUserSettings(mappedSettings);
+
+      const currentUserInStore = useUserStore.getState().user;
+      const userProfileImageKey = settingsData.profile_image_url ?? null;
+
+      if (!currentUserInStore || 
+          currentUserInStore.id !== userId || 
+          currentUserInStore.profile_image_url !== userProfileImageKey) {
+        
+        const userDataForStore = {
+          ...(session?.user ?? {}),
+          id: userId,
+          name: mappedSettings.name,
+          email: mappedSettings.email,
+          profile_image_url: userProfileImageKey,
+          role: session?.user?.role,
+        };
+        setUser(userDataForStore as any);
+      }
+
+      setPreviewUrl(userProfileImageKey);
+      setHasInitialized(true);
+
+    } catch (error) {
+      console.error('ユーザー設定の取得エラー:', error);
+      
+      const fallbackSettings: UserSettings = {
+        full_name: String(userName || 'ユーザー'),
+        name: String(userName || 'ユーザー'),
+        email: String(userEmail || ''),
+        profile_image_url: null,
+        emailNotifications: true,
+        browserNotifications: false,
+        systemNotifications: true,
+        chatNotifications: true,
+        documentNotifications: true,
+        theme: 'light',
+      };
+      
+      setUserSettings(fallbackSettings);
       setPreviewUrl(null);
-      setUser(null);
+      
+      if (error instanceof Error && !error.message.includes('network')) {
+        toast.error('設定の読み込みに問題がありました。デフォルト値を使用します。');
+      }
+      
+      setHasInitialized(true);
+    } finally {
       setIsLoading(false);
     }
-  }, [status, userId, userName, userEmail, isAuthLoading, isSubLoading, session?.user]);
+  }, [status, userId, userName, userEmail, isAuthLoading, isSubLoading, hasInitialized, session?.user]);
 
   useEffect(() => {
     loadUserSettingsInternal();
@@ -133,15 +148,19 @@ const SettingsPage = () => {
 
   useEffect(() => {
     if (selectedFile) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            setPreviewUrl(reader.result as string);
-        };
-        reader.readAsDataURL(selectedFile);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreviewUrl(reader.result as string);
+      };
+      reader.onerror = () => {
+        toast.error('ファイルの読み込みに失敗しました。');
+        setSelectedFile(null);
+      };
+      reader.readAsDataURL(selectedFile);
     } else {
-        setPreviewUrl(user?.profile_image_url ?? null);
+      setPreviewUrl(user?.profile_image_url ?? null);
     }
-  }, [selectedFile, user]);
+  }, [selectedFile, user?.profile_image_url]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -149,22 +168,29 @@ const SettingsPage = () => {
 
     setUserSettings(prev => {
       if (prev === null) return null;
-      return { ...prev, [name]: type === 'checkbox' ? checked : value };
+      return { 
+        ...prev, 
+        [name]: type === 'checkbox' ? checked : value 
+      };
     });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (!userSettings) {
-      toast.error('ユーザー設定が読み込まれていません。');
+      toast.error('設定データが読み込まれていません。ページを再読み込みしてください。');
       return;
     }
+    
     if (status !== 'authenticated') {
-      toast.error('認証されていません。設定は更新されません。');
+      toast.error('認証が必要です。再度ログインしてください。');
       return;
     }
+
+    setSaving(true);
+    
     try {
-      setSaving(true);
       const requestData = {
         name: userSettings.name,
         emailNotifications: userSettings.emailNotifications,
@@ -174,7 +200,7 @@ const SettingsPage = () => {
         documentNotifications: userSettings.documentNotifications,
         theme: userSettings.theme,
       };
-      console.log('設定更新データ:', requestData);
+
       const updatedSettings = await updateUserSettings(requestData as Partial<UserSettings>);
 
       const currentUserFromStore = useUserStore.getState().user;
@@ -189,23 +215,32 @@ const SettingsPage = () => {
         setUser(userToUpdate);
       }
 
-      setUserSettings({
-          full_name: updatedSettings.full_name || userSettings?.full_name || '',
-          name: updatedSettings.name || userSettings?.name || '',
-          email: userSettings?.email || '', 
-          profile_image_url: updatedSettings.profile_image_url !== undefined ? updatedSettings.profile_image_url : userSettings?.profile_image_url,
-          emailNotifications: updatedSettings.emailNotifications,
-          browserNotifications: updatedSettings.browserNotifications,
-          systemNotifications: updatedSettings.systemNotifications,
-          chatNotifications: updatedSettings.chatNotifications,
-          documentNotifications: updatedSettings.documentNotifications,
-          theme: updatedSettings.theme,
+      setUserSettings(prevSettings => {
+        if (!prevSettings) return null;
+        
+        return {
+          ...prevSettings,
+          full_name: updatedSettings.full_name || prevSettings.full_name || '',
+          name: updatedSettings.name || prevSettings.name || '',
+          profile_image_url: updatedSettings.profile_image_url !== undefined 
+            ? updatedSettings.profile_image_url 
+            : prevSettings.profile_image_url,
+          emailNotifications: updatedSettings.emailNotifications ?? prevSettings.emailNotifications,
+          browserNotifications: updatedSettings.browserNotifications ?? prevSettings.browserNotifications,
+          systemNotifications: updatedSettings.systemNotifications ?? prevSettings.systemNotifications,
+          chatNotifications: updatedSettings.chatNotifications ?? prevSettings.chatNotifications,
+          documentNotifications: updatedSettings.documentNotifications ?? prevSettings.documentNotifications,
+          theme: updatedSettings.theme || prevSettings.theme,
+        };
       });
 
       toast.success('設定を更新しました。');
     } catch (error) {
       console.error('設定更新エラー:', error);
-      toast.error(`設定の更新に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : '設定の更新に失敗しました。';
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -213,57 +248,79 @@ const SettingsPage = () => {
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-        const allowedTypes = ['image/png', 'image/jpeg', 'image/gif'];
-        if (!allowedTypes.includes(file.type)) {
-            toast.error('許可されていないファイル形式です。(PNG, JPG, GIFのみ)');
-            if (fileInputRef.current) fileInputRef.current.value = "";
-            setSelectedFile(null);
-            return;
-        }
-        const maxSize = 5 * 1024 * 1024; // 5MB
-        if (file.size > maxSize) {
-            toast.error('ファイルサイズが大きすぎます。(5MBまで)');
-            if (fileInputRef.current) fileInputRef.current.value = "";
-            setSelectedFile(null);
-            return;
-        }
-      setSelectedFile(file);
-    } else {
+    
+    if (!file) {
       setSelectedFile(null);
+      return;
     }
+
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('許可されていないファイル形式です。(PNG, JPG, GIFのみ)');
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setSelectedFile(null);
+      return;
+    }
+    
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      toast.error('ファイルサイズが大きすぎます。(5MBまで)');
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setSelectedFile(null);
+      return;
+    }
+    
+    setSelectedFile(file);
   };
 
   const handleUploadIcon = async () => {
-    if (!selectedFile) return;
+    if (!selectedFile) {
+      toast.error('アップロードするファイルを選択してください。');
+      return;
+    }
+
     setIsIconLoading(true);
+    
     try {
       const updatedUser = await uploadUserIcon(selectedFile);
       setUser(updatedUser);
-      toast.success('アイコンを更新しました。');
+      toast.success('プロフィール画像を更新しました。');
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (error) {
       console.error('Icon upload failed:', error);
-      toast.error(error instanceof Error ? error.message : 'アイコンのアップロードに失敗しました。');
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'プロフィール画像のアップロードに失敗しました。';
+      toast.error(errorMessage);
     } finally {
       setIsIconLoading(false);
     }
   };
 
   const handleDeleteIcon = async () => {
-    if (!user?.profile_image_url && !session?.user?.profile_image_url) return;
+    const hasIcon = !!(user?.profile_image_url || session?.user?.profile_image_url);
+    
+    if (!hasIcon) {
+      toast.error('削除する画像がありません。');
+      return;
+    }
+
     setIsIconLoading(true);
+    
     try {
       const updatedUser = await deleteUserIcon();
       setUser(updatedUser);
-      toast.success('アイコンを削除しました。');
+      toast.success('プロフィール画像を削除しました。');
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       setPreviewUrl(null);
     } catch (error) {
       console.error('Icon delete failed:', error);
-      toast.error(error instanceof Error ? error.message : 'アイコンの削除に失敗しました。');
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'プロフィール画像の削除に失敗しました。';
+      toast.error(errorMessage);
     } finally {
       setIsIconLoading(false);
     }
@@ -275,43 +332,29 @@ const SettingsPage = () => {
 
   const handleManageSubscription = async () => {
     setIsPortalLoading(true);
+    
     try {
       const returnUrl = window.location.href;
       const { url } = await subscriptionService.createPortalSession(returnUrl);
       window.location.href = url;
     } catch (error) {
       console.error('ポータルセッション作成エラー:', error);
-      toast.error(error instanceof Error ? error.message : 'サブスクリプション管理画面への遷移に失敗しました。');
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'サブスクリプション管理画面への遷移に失敗しました。';
+      toast.error(errorMessage);
     } finally {
       setIsPortalLoading(false);
     }
   };
 
   const handleChangePlanClick = () => {
-    toast.success('プラン変更機能は現在実装中です。');
+    router.push('/subscription');
   };
 
   const navigateToPasswordChange = () => {
     router.push('/settings/password');
   };
-
-  if (isLoading) {
-    return (
-      <div className="p-6 max-w-4xl mx-auto text-center">
-        <p>読み込み中...</p>
-      </div>
-    );
-  }
-
-  const displayName = userSettings?.name ?? user?.name ?? session?.user?.name ?? 'ユーザー';
-  const fallbackChar = displayName?.charAt(0)?.toUpperCase() ?? 'U';
-
-  const profileImageUrlKey = previewUrl;
-  const currentIconUrl = profileImageUrlKey && !profileImageUrlKey.startsWith('data:')
-    ? `${ASSET_BASE_URL}/${profileImageUrlKey}`
-    : profileImageUrlKey;
-
-  const hasExistingIcon = !!(user?.profile_image_url ?? session?.user?.profile_image_url);
 
   const formatDate = (dateString: string | null | undefined) => {
     if (!dateString) return '-';
@@ -324,6 +367,7 @@ const SettingsPage = () => {
 
   const getPlanStatusBadge = (status: string | undefined) => {
     if (!status) return <Badge variant="secondary">不明</Badge>;
+    
     switch (status) {
       case 'active':
       case 'trialing':
@@ -337,6 +381,40 @@ const SettingsPage = () => {
         return <Badge variant="secondary">{status}</Badge>;
     }
   };
+
+  if (isLoading || status === 'loading') {
+    return (
+      <div className="p-6 max-w-4xl mx-auto">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">設定を読み込み中...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'unauthenticated') {
+    return (
+      <div className="p-6 max-w-4xl mx-auto text-center">
+        <p className="text-gray-600">設定にアクセスするにはログインが必要です。</p>
+        <Button onClick={() => router.push('/login')} className="mt-4">
+          ログイン
+        </Button>
+      </div>
+    );
+  }
+
+  const displayName = userSettings?.name ?? user?.name ?? session?.user?.name ?? 'ユーザー';
+  const fallbackChar = displayName?.charAt(0)?.toUpperCase() ?? 'U';
+  
+  const profileImageUrlKey = previewUrl;
+  const currentIconUrl = profileImageUrlKey && !profileImageUrlKey.startsWith('data:')
+    ? `${ASSET_BASE_URL}/${profileImageUrlKey}`
+    : profileImageUrlKey;
+
+  const hasExistingIcon = !!(user?.profile_image_url || session?.user?.profile_image_url);
 
   return (
     <div className="p-6 max-w-5xl mx-auto">

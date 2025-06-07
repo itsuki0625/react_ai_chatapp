@@ -495,26 +495,69 @@ async def increment_campaign_code_usage(db: AsyncSession, campaign_code_id: UUID
     return campaign_code
 
 async def delete_campaign_code(db: AsyncSession, campaign_code_id: UUID) -> bool:
+    """
+    キャンペーンコードを削除する。
+    関連するStripe Promotion Codeも無効化を試行する。
+    """
     campaign_code = await get_campaign_code(db, campaign_code_id)
-    if campaign_code:
-        # --- ★ Stripe Promotion Code を無効化 ---
-        if campaign_code.stripe_promotion_code_id:
-            try:
-                logger.info(f"CampaignCode {campaign_code.code} 削除のため、Stripe Promotion Code {campaign_code.stripe_promotion_code_id} を無効化します。")
-                StripeService.archive_promotion_code(campaign_code.stripe_promotion_code_id)
-            except Exception as e_archive:
-                # 無効化に失敗してもDB削除は続行する（エラーログは残す）
-                 logger.error(f"Stripe Promotion Code ({campaign_code.stripe_promotion_code_id}) の無効化に失敗 (DB削除は続行): {e_archive}")
-        # --- ★ ここまで追加 ---
+    if not campaign_code:
+        logger.warning(f"削除対象のキャンペーンコード（ID: {campaign_code_id}）が見つかりません。")
+        return False
+    
+    stripe_promotion_code_id = campaign_code.stripe_promotion_code_id
+    stripe_error_occurred = False
+    
+    # --- ★ Stripe Promotion Code を無効化 ---
+    if stripe_promotion_code_id:
         try:
-            await db.delete(campaign_code) # SQLAlchemy 2.0 スタイル
-            await db.commit()
-            return True
-        except Exception as e:
-            await db.rollback()
-            logger.error(f"Campaign Code 削除エラー (ID: {campaign_code_id}): {e}", exc_info=True)
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="キャンペーンコードの削除に失敗しました。")
-    return False
+            logger.info(f"CampaignCode {campaign_code.code} (ID: {campaign_code_id}) 削除のため、Stripe Promotion Code {stripe_promotion_code_id} を無効化します。")
+            StripeService.archive_promotion_code(stripe_promotion_code_id)
+            logger.info(f"Stripe Promotion Code {stripe_promotion_code_id} の無効化が完了しました。")
+        except Exception as e_archive:
+            # Stripe無効化エラーはログに記録し、フラグを立てるが、DB削除は続行
+            stripe_error_occurred = True
+            logger.error(f"Stripe Promotion Code ({stripe_promotion_code_id}) の無効化に失敗しました。DB削除は続行します: {e_archive}", exc_info=True)
+            
+            # Stripeエラーの種類を判定（デバッグ用）
+            if "404" in str(e_archive) or "not found" in str(e_archive).lower():
+                logger.warning(f"Stripe Promotion Code {stripe_promotion_code_id} が既に存在しないか、アクセスできません。")
+            elif "403" in str(e_archive) or "forbidden" in str(e_archive).lower():
+                logger.error(f"Stripe Promotion Code {stripe_promotion_code_id} の無効化権限がありません。")
+            else:
+                logger.error(f"Stripe Promotion Code {stripe_promotion_code_id} の無効化中に予期せぬエラーが発生しました。")
+    else:
+        logger.info(f"CampaignCode {campaign_code.code} (ID: {campaign_code_id}) にはstripe_promotion_code_idが設定されていません。Stripe無効化をスキップします。")
+    
+    # --- DB削除処理 ---
+    try:
+        logger.info(f"CampaignCode {campaign_code.code} (ID: {campaign_code_id}) をDBから削除します。")
+        await db.delete(campaign_code)
+        await db.commit()
+        logger.info(f"CampaignCode {campaign_code.code} (ID: {campaign_code_id}) の削除が完了しました。")
+        
+        # Stripe無効化でエラーがあった場合は警告ログを追加
+        if stripe_error_occurred:
+            logger.warning(f"注意: CampaignCode {campaign_code.code} の削除は完了しましたが、Stripe Promotion Code {stripe_promotion_code_id} の無効化でエラーが発生しました。手動での確認が必要な場合があります。")
+        
+        return True
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"CampaignCode {campaign_code.code} (ID: {campaign_code_id}) のDB削除中にエラーが発生しました: {e}", exc_info=True)
+        
+        # DB削除エラーの詳細分析
+        error_detail = "キャンペーンコードの削除に失敗しました。"
+        if "constraint" in str(e).lower() or "foreign key" in str(e).lower():
+            error_detail = "このキャンペーンコードは他のデータから参照されているため削除できません。"
+        elif "deadlock" in str(e).lower():
+            error_detail = "データベースロックエラーです。しばらく待ってから再試行してください。"
+        elif "connection" in str(e).lower():
+            error_detail = "データベース接続エラーです。ネットワークを確認してください。"
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=error_detail
+        )
 
 async def verify_campaign_code(db: AsyncSession, code: str, price_id: str) -> Dict[str, Any]:
     # --- ★ Coupon 情報を含めて取得 ---

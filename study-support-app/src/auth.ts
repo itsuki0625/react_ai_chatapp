@@ -46,6 +46,10 @@ export const authConfig: NextAuthConfig = {
   // 追加: シークレットとホストチェック無効化（ステージング用）
   secret: process.env.NEXTAUTH_SECRET,
   trustHost: true,
+  pages: {
+    signIn: '/login',
+    error: '/login', // エラー時もログインページに戻す
+  },
   providers: [
     CredentialsProvider({
       name: "Credentials",
@@ -55,6 +59,7 @@ export const authConfig: NextAuthConfig = {
       },
       async authorize(credentials): Promise<User | null> {
         if (!credentials?.email || !credentials?.password) {
+          console.warn('[Authorize] Missing email or password');
           return null;
         }
         // ★ 型アサーションを追加して email と password が string であることを保証
@@ -75,14 +80,21 @@ export const authConfig: NextAuthConfig = {
 
           const response = await fetch(apiUrl, { // ★ apiUrl を使用
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, // ★ ヘッダーを変更
+            headers: { 
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Accept': 'application/json',
+            }, 
             body: body, // ★ URLSearchParams オブジェクトを送信
+            // ★ タイムアウトとエラーハンドリングを追加
+            signal: AbortSignal.timeout(10000), // 10秒タイムアウト
           });
 
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
             console.error(`[Authorize] API login failed for ${email}:`, response.status, errorData);
-            throw new Error(errorData.detail || 'Authentication failed');
+            // ★ より詳細なエラーログ
+            console.error(`[Authorize] Response headers:`, Object.fromEntries(response.headers.entries()));
+            throw new Error(errorData.detail || `Authentication failed (${response.status})`);
           }
 
           const data = await response.json(); // LoginResponse 形式を期待
@@ -90,7 +102,7 @@ export const authConfig: NextAuthConfig = {
 
           if (!data || !data.token || !data.token.access_token || !data.user) {
             console.error('[Authorize] API response missing required fields (token or user)');
-            throw new Error('Invalid API response');
+            throw new Error('Invalid API response format');
           }
 
           // BackendのUser型とToken型をNextAuthのUser型にマッピング
@@ -112,6 +124,12 @@ export const authConfig: NextAuthConfig = {
           return user;
         } catch (error: any) { // ★ エラーの型を any にして詳細をログ出力
           console.error("[Authorize] Error in authorize callback:", error);
+          // ★ ネットワークエラーと他のエラーを区別
+          if (error.name === 'AbortError') {
+            console.error("[Authorize] Request timeout");
+          } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            console.error("[Authorize] Network connection error");
+          }
           // ★ エラーの原因 (cause) もログ出力してみる
           if (error.cause) {
             console.error("[Authorize] Error Cause:", error.cause);
@@ -214,20 +232,32 @@ export const authConfig: NextAuthConfig = {
 
         try {
             console.debug("JWT Callback: Sending request to refresh token endpoint...");
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/refresh-token`, {
+            const refreshUrl = `${process.env.INTERNAL_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/refresh-token`;
+            
+            const response = await fetch(refreshUrl, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
                 body: JSON.stringify({ refresh_token: token.refreshToken }),
                 credentials: 'include',
+                // ★ タイムアウトを追加
+                signal: AbortSignal.timeout(10000), // 10秒タイムアウト
             });
 
-            const refreshedTokens = await response.json();
-
             if (!response.ok) {
-                 console.error("JWT Callback: Failed to refresh token from API", { status: response.status, error: refreshedTokens });
-                 const errorDetail = refreshedTokens?.detail || "Refresh token failed";
-                 return { ...token, error: "RefreshAccessTokenError", errorDetail: errorDetail };
+                const refreshedTokens = await response.json().catch(() => ({}));
+                console.error("JWT Callback: Failed to refresh token from API", { 
+                    status: response.status, 
+                    error: refreshedTokens,
+                    headers: Object.fromEntries(response.headers.entries())
+                });
+                const errorDetail = refreshedTokens?.detail || `Refresh token failed (${response.status})`;
+                return { ...token, error: "RefreshAccessTokenError", errorDetail: errorDetail };
             }
+
+            const refreshedTokens = await response.json();
 
             // リフレッシュ成功
             // --- リフレッシュ後のトークンもデコード ---
@@ -271,13 +301,25 @@ export const authConfig: NextAuthConfig = {
         } catch (error: any) {
             console.error("JWT Callback: Catch block error during refresh token fetch", {
                 errorMessage: error.message,
+                errorName: error.name,
                 errorDetails: error,
                 refreshTokenUsed: token.refreshToken?.substring(0, 10) + '...'
             });
+            
+            // ★ ネットワークエラーのハンドリング
+            let errorDetail = "Network error or failed to parse response";
+            if (error.name === 'AbortError') {
+                errorDetail = "Request timeout during token refresh";
+            } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                errorDetail = "Network connection error during token refresh";
+            } else if (error.message) {
+                errorDetail = error.message;
+            }
+            
             return {
                 ...token,
                 error: "RefreshAccessTokenError",
-                errorDetail: error.message || "Network error or failed to parse response",
+                errorDetail: errorDetail,
             };
         }
     },
@@ -421,11 +463,6 @@ export const authConfig: NextAuthConfig = {
       return true;
     }
     */
-  },
-  pages: {
-    signIn: '/login',
-    newUser: '/signup',
-    error: '/login'
   },
   session: {
     strategy: "jwt",
