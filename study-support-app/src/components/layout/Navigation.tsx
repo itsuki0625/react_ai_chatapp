@@ -29,6 +29,7 @@ interface NavItem {
   children?: NavItem[];
   expanded?: boolean;
   requiresPaid?: boolean; // 有料プラン限定機能かどうか
+  requiresPremium?: boolean; // プレミアムプラン限定機能かどうか
   disabled?: boolean;
 }
 
@@ -49,7 +50,7 @@ const freeUserNavigation: NavItem[] = [
       { name: 'FAQチャット', href: '/chat/faq', icon: CircleHelp, requiresPaid: true, disabled: true },
     ] 
   },
-  { name: 'コミュニケーション', href: '/communication', icon: Users },
+  { name: 'コミュニケーション', href: '/communication', icon: Users, requiresPaid: true },
   { name: '志望校管理', href: '/application', icon: User },
   { name: '志望理由書', href: '/statement', icon: FileText, requiresPaid: true },
   { name: 'コンテンツ', href: '/contents', icon: SquarePlay, requiresPaid: true },
@@ -106,6 +107,7 @@ export const Navigation = () => {
   const userRole = session?.user?.role;
   const isFreeUser = userRole === 'フリー';
   const isPaidUser = userRole === 'スタンダード' || userRole === 'プレミアム';
+  const isPremiumUser = userRole === 'プレミアム';
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -120,7 +122,7 @@ export const Navigation = () => {
     } else if (status === 'unauthenticated') {
       setCurrentNavItems([]);
     }
-  }, [session, status, isAdmin, isFreeUser, isPaidUser]);
+  }, [session, status, isAdmin, isFreeUser, isPaidUser, isPremiumUser]);
 
   const [navItemsState, setNavItemsState] = useState<NavItem[]>([]);
 
@@ -160,7 +162,8 @@ export const Navigation = () => {
 
   // 制限されたアイテムのクリックハンドラー
   const handleRestrictedClick = (e: React.MouseEvent, item: NavItem) => {
-    if (item.requiresPaid && !isPaidUser && !isAdmin) {
+    if ((item.requiresPaid && !isPaidUser && !isAdmin) || 
+        (item.requiresPremium && !isPremiumUser && !isAdmin)) {
       e.preventDefault();
       router.push('/subscription');
     }
@@ -193,7 +196,8 @@ export const Navigation = () => {
           const isActive = pathname === item.href ||
                          (item.children && item.children.some(child => pathname?.startsWith(child.href)));
           const Icon = item.icon;
-          const isRestricted = item.requiresPaid && !isPaidUser && !isAdmin;
+          const isRestricted = (item.requiresPaid && !isPaidUser && !isAdmin) || 
+                             (item.requiresPremium && !isPremiumUser && !isAdmin);
 
           return (
             <div key={item.name}>
@@ -224,7 +228,7 @@ export const Navigation = () => {
                         <div className="ml-2 flex items-center gap-1">
                           <Lock className="h-3 w-3 text-slate-400" />
                           <Badge variant="outline" className="text-xs px-1 py-0">
-                            有料
+                            {item.requiresPremium ? 'プレミアム' : '有料'}
                           </Badge>
                         </div>
                       )}
@@ -246,7 +250,8 @@ export const Navigation = () => {
                       {item.children.map(child => {
                         const isChildActive = pathname === child.href;
                         const ChildIcon = child.icon;
-                        const isChildRestricted = child.requiresPaid && !isPaidUser && !isAdmin;
+                        const isChildRestricted = (child.requiresPaid && !isPaidUser && !isAdmin) || 
+                                                 (child.requiresPremium && !isPremiumUser && !isAdmin);
 
                         return (
                           <Link
