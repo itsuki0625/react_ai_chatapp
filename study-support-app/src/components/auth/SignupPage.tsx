@@ -69,7 +69,7 @@ const SignupPage = () => {
 
     setIsLoading(true);
 
-    const signupApiUrl = `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/signup`;
+          const signupApiUrl = `/api/v1/auth/signup`;
     console.log('>>> [SignupPage] Attempting to fetch signup API:', signupApiUrl);
 
     try {
