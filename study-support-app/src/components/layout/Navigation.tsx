@@ -50,9 +50,9 @@ const freeUserNavigation: NavItem[] = [
     ] 
   },
   { name: 'コミュニケーション', href: '/communication', icon: Users },
-  { name: '志望校管理', href: '/application', icon: User, requiresPaid: true },
+  { name: '志望校管理', href: '/application', icon: User },
   { name: '志望理由書', href: '/statement', icon: FileText, requiresPaid: true },
-  { name: 'コンテンツ', href: '/contents', icon: SquarePlay },
+  { name: 'コンテンツ', href: '/contents', icon: SquarePlay, requiresPaid: true },
   { name: '設定', href: '/settings', icon: Settings },
   { name: 'プラン', href: '/subscription', icon: DollarSign },
 ];
