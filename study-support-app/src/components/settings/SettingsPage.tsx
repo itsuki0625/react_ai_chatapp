@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, User, Shield, CreditCard, ExternalLink, Settings } from 'lucide-react';
 import LogoutButton from '@/components/common/LogoutButton';
 import { toast } from 'react-hot-toast';
@@ -54,84 +54,82 @@ const SettingsPage = () => {
   const userName = session?.user?.name;
   const userEmail = session?.user?.email;
 
-  useEffect(() => {
-    const loadUserSettingsInternal = async () => {
-      if (status === 'loading' || (status === 'authenticated' && (isAuthLoading || isSubLoading))) {
-        setIsLoading(true);
-      }
+  const loadUserSettingsInternal = useCallback(async () => {
+    // Loading states should be checked centrally
+    const shouldShowLoading = status === 'loading' || (status === 'authenticated' && (isAuthLoading || isSubLoading));
+    
+    if (shouldShowLoading) {
+      setIsLoading(true);
+      return; // Exit early if we're still loading auth state
+    }
 
-      if (status === 'authenticated' && userId) {
-        setIsLoading(true); 
-        try {
-          const settingsData = await fetchUserSettings();
-          const mappedSettings: UserSettings = {
-            full_name: String(settingsData.full_name || userName || ''),
-            name: String(settingsData.name || settingsData.full_name || userName || ''),
-            email: String(settingsData.email || userEmail || ''),
-            profile_image_url: settingsData.profile_image_url ?? null,
-            emailNotifications: settingsData.emailNotifications ?? true,
-            browserNotifications: settingsData.browserNotifications ?? false,
-            systemNotifications: settingsData.systemNotifications ?? true,
-            chatNotifications: settingsData.chatNotifications ?? true,
-            documentNotifications: settingsData.documentNotifications ?? true,
-            theme: String(settingsData.theme || 'light'),
+    if (status === 'authenticated' && userId) {
+      setIsLoading(true); 
+      try {
+        const settingsData = await fetchUserSettings();
+        const mappedSettings: UserSettings = {
+          full_name: String(settingsData.full_name || userName || ''),
+          name: String(settingsData.name || settingsData.full_name || userName || ''),
+          email: String(settingsData.email || userEmail || ''),
+          profile_image_url: settingsData.profile_image_url ?? null,
+          emailNotifications: settingsData.emailNotifications ?? true,
+          browserNotifications: settingsData.browserNotifications ?? false,
+          systemNotifications: settingsData.systemNotifications ?? true,
+          chatNotifications: settingsData.chatNotifications ?? true,
+          documentNotifications: settingsData.documentNotifications ?? true,
+          theme: String(settingsData.theme || 'light'),
+        };
+        setUserSettings(mappedSettings);
+
+        const userProfileImageKey = settingsData.profile_image_url ?? null;
+
+        const currentUserInStore = useUserStore.getState().user;
+
+        if (!currentUserInStore || currentUserInStore.id !== userId || currentUserInStore.profile_image_url !== userProfileImageKey) {
+          console.log("Initializing/Updating Zustand user state based on fetched data or userID change...");
+          const currentSessionUser = session?.user ?? {};
+          const userDataForStore = {
+            ...currentSessionUser,
+            id: userId,
+            name: settingsData.name || settingsData.full_name || userName,
+            email: settingsData.email || userEmail,
+            profile_image_url: userProfileImageKey,
+            role: (currentSessionUser as any)?.role,
           };
-          setUserSettings(mappedSettings);
-
-          const userProfileImageKey = settingsData.profile_image_url ?? null;
-
-          const currentUserInStore = useUserStore.getState().user;
-
-          if (!currentUserInStore || currentUserInStore.id !== userId || currentUserInStore.profile_image_url !== userProfileImageKey) {
-            console.log("Initializing/Updating Zustand user state based on fetched data or userID change...");
-            const currentSessionUser = session?.user ?? {};
-            const userDataForStore = {
-              ...currentSessionUser,
-              id: userId,
-              name: settingsData.name || settingsData.full_name || userName,
-              email: settingsData.email || userEmail,
-              profile_image_url: userProfileImageKey,
-              role: (currentSessionUser as any)?.role,
-            };
-            setUser(userDataForStore as any);
-          }
-          setPreviewUrl(userProfileImageKey);
-
-        } catch (error) {
-          console.error('ユーザー設定の取得エラー:', error);
-          toast.error('ユーザー設定の取得に失敗しました。');
-          setUserSettings({
-            full_name: String(userName || 'ユーザー'),
-            name: String(userName || 'ユーザー'),
-            email: String(userEmail || ''),
-            profile_image_url: null,
-            emailNotifications: true,
-            browserNotifications: false,
-            systemNotifications: true,
-            chatNotifications: true,
-            documentNotifications: true,
-            theme: 'light',
-          });
-          setPreviewUrl(null);
-        } finally {
-          if (status === 'authenticated') {
-            setIsLoading(isAuthLoading || isSubLoading);
-          } else {
-            setIsLoading(false);
-          }
+          setUser(userDataForStore as any);
         }
-      } else if (status === 'unauthenticated') {
-        setUserSettings(null);
-        setPreviewUrl(null);
-        setUser(null);
-        setIsLoading(false);
-      } else if (status === 'loading') {
-        setIsLoading(true);
-      }
-    };
+        setPreviewUrl(userProfileImageKey);
 
+      } catch (error) {
+        console.error('ユーザー設定の取得エラー:', error);
+        toast.error('ユーザー設定の取得に失敗しました。');
+        setUserSettings({
+          full_name: String(userName || 'ユーザー'),
+          name: String(userName || 'ユーザー'),
+          email: String(userEmail || ''),
+          profile_image_url: null,
+          emailNotifications: true,
+          browserNotifications: false,
+          systemNotifications: true,
+          chatNotifications: true,
+          documentNotifications: true,
+          theme: 'light',
+        });
+        setPreviewUrl(null);
+      } finally {
+        setIsLoading(false);
+      }
+    } else if (status === 'unauthenticated') {
+      setUserSettings(null);
+      setPreviewUrl(null);
+      setUser(null);
+      setIsLoading(false);
+    }
+  }, [status, userId, userName, userEmail, isAuthLoading, isSubLoading, session?.user]);
+
+  useEffect(() => {
     loadUserSettingsInternal();
-  }, [status, userId, userName, userEmail, setUser, setUserSettings, isAuthLoading, isSubLoading, session?.user]);
+  }, [loadUserSettingsInternal]);
 
   useEffect(() => {
     if (selectedFile) {
