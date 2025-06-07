@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from app.core.config import settings
@@ -108,6 +108,7 @@ app.add_middleware(
         "https://stg.smartao.jp", # ステージング環境フロントエンド
         "https://api.smartao.jp", # 本番環境API
         "https://app.smartao.jp", # 本番環境フロントエンド
+        "https://smartao.jp",     # 本番環境メインドメイン
     ],
     allow_credentials=True,  # 認証情報を許可
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # 明示的なメソッド指定
@@ -147,20 +148,38 @@ app.include_router(v1_api_router, prefix="/api/v1")
 
 # グローバルOPTIONSハンドラー（すべてのパスでOPTIONSリクエストを処理）
 @app.options("/{full_path:path}")
-async def handle_options(full_path: str):
+async def handle_options(full_path: str, request: Request):
     """
     すべてのパスでOPTIONSリクエストを処理するグローバルハンドラー
     CORSプリフライトリクエストに対応
     """
+    origin = request.headers.get("origin")
+    
+    # 許可されたオリジンのリスト
+    allowed_origins = [
+        "http://localhost:3001",
+        "http://localhost:5050",
+        "http://127.0.0.1:3001",
+        "https://app.smartao.jp",
+        "https://api.smartao.jp",
+        "https://stg.smartao.jp",
+        "https://smartao.jp"
+    ]
+    
+    # オリジンが許可リストに含まれているかチェック
+    allow_origin = "*"  # デフォルト
+    if origin and origin in allowed_origins:
+        allow_origin = origin
+    
     return Response(
         status_code=200,
         headers={
-            "Access-Control-Allow-Origin": "http://localhost:3001",  # 具体的なオリジンを指定
+            "Access-Control-Allow-Origin": allow_origin,
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
             "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
             "Access-Control-Allow-Credentials": "true",
             "Access-Control-Max-Age": "3600",
-            "Vary": "Origin",  # オリジンによってレスポンスが変わることを示す
+            "Vary": "Origin",
         }
     )
 
