@@ -1,5 +1,5 @@
 import uuid
-from typing import Generator, Set, Callable, Awaitable
+from typing import Generator, Set, Callable, Awaitable, Optional
 from fastapi import Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,6 +48,31 @@ async def get_current_user(
             detail="Invalid user context (user not found)",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    return db_user
+
+async def get_current_user_optional(
+    request: Request, db: AsyncSession = Depends(get_async_db)
+) -> Optional[User]:
+    """
+    オプショナル認証用のユーザー取得関数。
+    認証されていない場合はNoneを返し、例外は発生させない。
+    """
+    user_id = getattr(request.state, "user_id", None)
+    if user_id is None:
+        return None
+
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError:
+        logger.warning(f"Invalid user_id format in request state: {user_id}")
+        return None
+
+    db_user = await crud_user.get_user(db, user_id=user_uuid)
+
+    if db_user is None:
+        logger.warning(f"User UUID ({user_uuid}) from request state not found in DB.")
+        return None
 
     return db_user
 
