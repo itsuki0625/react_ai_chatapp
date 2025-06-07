@@ -50,9 +50,9 @@ const freeUserNavigation: NavItem[] = [
     ] 
   },
   { name: 'コミュニケーション', href: '/communication', icon: Users },
-  { name: '志望校管理', href: '/application', icon: User, requiresPaid: true },
+  { name: '志望校管理', href: '/application', icon: User },
   { name: '志望理由書', href: '/statement', icon: FileText, requiresPaid: true },
-  { name: 'コンテンツ', href: '/contents', icon: SquarePlay },
+  { name: 'コンテンツ', href: '/contents', icon: SquarePlay, requiresPaid: true },
   { name: '設定', href: '/settings', icon: Settings },
   { name: 'プラン', href: '/subscription', icon: DollarSign },
 ];
@@ -111,12 +111,10 @@ export const Navigation = () => {
     if (status === 'authenticated') {
       if (isAdmin) {
         setCurrentNavItems(adminNavigation);
-      } else if (isFreeUser) {
-        setCurrentNavItems(freeUserNavigation);
       } else if (isPaidUser) {
         setCurrentNavItems(paidUserNavigation);
       } else {
-        // デフォルトはフリー扱い
+        // スタンダード・プレミアム以外はフリー扱い
         setCurrentNavItems(freeUserNavigation);
       }
     } else if (status === 'unauthenticated') {
@@ -162,7 +160,7 @@ export const Navigation = () => {
 
   // 制限されたアイテムのクリックハンドラー
   const handleRestrictedClick = (e: React.MouseEvent, item: NavItem) => {
-    if (item.requiresPaid && isFreeUser) {
+    if (item.requiresPaid && !isPaidUser && !isAdmin) {
       e.preventDefault();
       router.push('/subscription');
     }
@@ -195,7 +193,7 @@ export const Navigation = () => {
           const isActive = pathname === item.href ||
                          (item.children && item.children.some(child => pathname?.startsWith(child.href)));
           const Icon = item.icon;
-          const isRestricted = item.requiresPaid && isFreeUser;
+          const isRestricted = item.requiresPaid && !isPaidUser && !isAdmin;
 
           return (
             <div key={item.name}>
@@ -248,7 +246,7 @@ export const Navigation = () => {
                       {item.children.map(child => {
                         const isChildActive = pathname === child.href;
                         const ChildIcon = child.icon;
-                        const isChildRestricted = child.requiresPaid && isFreeUser;
+                        const isChildRestricted = child.requiresPaid && !isPaidUser && !isAdmin;
 
                         return (
                           <Link
@@ -310,7 +308,7 @@ export const Navigation = () => {
       </nav>
 
       {/* フリーユーザー向けプラン案内 */}
-      {isFreeUser && (
+      {!isPaidUser && !isAdmin && (
         <div className="p-4 border-t border-gray-200">
           <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-2">
