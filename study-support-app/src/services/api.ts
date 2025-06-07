@@ -6,7 +6,7 @@ import { ContentCategoryInfo, ContentCategoryCreate, ContentCategoryUpdate } fro
 // ブラウザ環境かサーバー環境かによって適切なAPIのベースURLを取得
 export const getApiBaseUrl = () => {
   return typeof window !== 'undefined'
-    ? process.env.NEXT_PUBLIC_BROWSER_API_URL || 'http://localhost:5050'
+    ? '' // ブラウザ側では相対パス（Next.jsのrewritesを使用）
     : process.env.NEXT_PUBLIC_API_BASE_URL || 'http://backend:5050';
 };
 

@@ -68,7 +68,7 @@ const ProfileSetupPage = () => {
       // API呼び出し
       // ★★★ バックエンドのユーザー更新APIのエンドポイントを確認 (/users/me or /users/{userId}) ★★★
       // 現状は /user-settings を使っているはず
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/user-settings`, { // ★ エンドポイントを修正
+              const response = await fetch(`/api/v1/auth/user-settings`, { // ★ エンドポイントを修正
         method: 'PUT', // ★ PUT に修正
         headers: {
            'Content-Type': 'application/json',
