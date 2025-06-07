@@ -326,16 +326,13 @@ async def signup(
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
+                detail="このメールアドレスは既に登録されています"
             )
-        
-        # パスワードのハッシュ化
-        hashed_password = get_password_hash(user_data.password)
         
         # ユーザーの作成 (UserCreate スキーマを使用して呼び出し)
         user_create_schema = UserCreate(
             email=user_data.email,
-            password=user_data.password, # ハッシュ化前のパスワードを渡す (create_user内でハッシュ化されるため)
+            password=user_data.password, # ハッシュ化はCRUD層で実行
             full_name=user_data.full_name
             # 必要に応じて role や status も設定 (UserCreate の定義による)
             # role=user_data.role, 
@@ -353,7 +350,7 @@ async def signup(
         # 正しくロールと権限を取得する
         primary_user_role = next((ur for ur in user.user_roles if ur.is_primary), None)
         role_permissions = []
-        role_name = "不明" # デフォルト
+        role_name = "不明" # デフォルト値を変更
         if primary_user_role and primary_user_role.role:
             role_name = primary_user_role.role.name
             # role_permissions 属性は Role モデルで定義されている関連プロパティを想定
@@ -366,18 +363,25 @@ async def signup(
         print("request.session : ", request.session)
         
         return {
-            "message": "User created successfully",
+            "message": "アカウントが正常に作成されました",
             "user": {
                 "email": user.email,
                 "full_name": user.full_name,
                 "role": role_name # レスポンスにはロール名を返す
             }
         }
+    except ValueError as ve:
+        # ロール関連のエラーなど、予期されるエラーを捕捉
+        logger.error(f"Signup validation error: {str(ve)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve)
+        )
     except Exception as e:
         logger.error(f"Signup error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="アカウント作成中にエラーが発生しました。しばらく後にもう一度お試しください。"
         )
 
 @router.get("/user-settings", response_model=UserSettingsResponse)

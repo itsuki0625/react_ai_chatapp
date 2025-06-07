@@ -88,6 +88,17 @@ const SignupPage = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('Signup API Error Details:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData: errorData,
+          requestBody: {
+            email: formData.email,
+            full_name: formData.name
+            // パスワードはログに出力しない
+          }
+        });
+        
         let errorMessage = 'アカウントの作成に失敗しました。もう一度お試しください。';
         if (typeof errorData?.detail === 'string') {
           errorMessage = errorData.detail;
@@ -105,6 +116,8 @@ const SignupPage = () => {
         return;
       }
       
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       const signInResult = await signIn('credentials', {
         email: formData.email,
         password: formData.password,
@@ -113,12 +126,14 @@ const SignupPage = () => {
       });
 
       if (signInResult?.error) {
-        router.push('/login');
+        console.error('Auto-login failed after signup:', signInResult.error);
+        setError('アカウントが作成されました。ログインページでログインしてください。');
+        setTimeout(() => {
+          router.push('/login');
+        }, 2000);
         return;
       }
 
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
       router.push('/profile/setup');
 
     } catch (err) {
@@ -126,7 +141,12 @@ const SignupPage = () => {
       if (err instanceof Error && 'cause' in err) {
            console.error("Signup error cause:", (err as any).cause);
       }
-      setError('アカウントの作成に失敗しました。もう一度お試しください。');
+      
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        setError('ネットワークエラーが発生しました。インターネット接続を確認してください。');
+      } else {
+        setError('アカウントの作成に失敗しました。もう一度お試しください。');
+      }
     } finally {
       setIsLoading(false);
     }

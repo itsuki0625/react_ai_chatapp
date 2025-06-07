@@ -98,48 +98,72 @@ async def create_user(db: AsyncSession, *, user_in: UserCreate) -> User:
     if not db_role:
         # Ensure this part is handled correctly, maybe raise an error or log as critical
         logger.error(f"Role '{role_name}' not found in database during user creation for {user_in.email}.")
-        raise ValueError(f"Role '{role_name}' not found in database.")
+        raise ValueError(f"ロール '{role_name}' が見つかりません。")
 
-    db_user = User(
-        id=uuid.uuid4(),
-        email=user_in.email,
-        hashed_password=get_password_hash(user_in.password),
-        full_name=user_in.full_name,
-        status=SchemaUserStatus.ACTIVE, # Default status, ensure this is intended
-        is_verified=True, # Default verification, ensure this is intended
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
-    )
-    db.add(db_user)
-    await db.flush() # db_user.id is available after flush
-    logger.info(f"User object created and flushed for email: {user_in.email}, user_id: {db_user.id}")
-
-    user_role_assoc = ModelUserRole(
-        user_id=db_user.id,
-        role_id=db_role.id,
-        is_primary=True
-    )
-    db.add(user_role_assoc)
-    logger.info(f"UserRole association created for user_id: {db_user.id}")
+    # 既存のユーザーがいないか再確認（競合状態を避けるため）
+    existing_user = await get_user_by_email(db, user_in.email)
+    if existing_user:
+        logger.warning(f"User with email {user_in.email} already exists during create_user call.")
+        raise ValueError(f"メールアドレス '{user_in.email}' は既に登録されています。")
 
     try:
-        email_verification = UserEmailVerification(
-            id=uuid.uuid4(), user_id=db_user.id, email_verified=False, created_at=datetime.utcnow(), updated_at=datetime.utcnow()
-        )
-        db.add(email_verification)
-        logger.info(f"UserEmailVerification object created for user_id: {db_user.id}")
-        
-        logger.info(f"Attempting to create UserLoginInfo for user_id: {db_user.id}")
-        login_info = UserLoginInfo(
+        db_user = User(
             id=uuid.uuid4(),
-            user_id=db_user.id, # Ensure this is correct
-            failed_login_attempts=0,
-            # last_login_at is intentionally left null on creation
+            email=user_in.email,
+            hashed_password=get_password_hash(user_in.password),
+            full_name=user_in.full_name,
+            status=SchemaUserStatus.ACTIVE, # Default status, ensure this is intended
+            is_verified=True, # Default verification, ensure this is intended
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
-        db.add(login_info)
-        logger.info(f"UserLoginInfo object added to session for user_id: {db_user.id}")
+        db.add(db_user)
+        await db.flush() # db_user.id is available after flush
+        logger.info(f"User object created and flushed for email: {user_in.email}, user_id: {db_user.id}")
+
+        user_role_assoc = ModelUserRole(
+            user_id=db_user.id,
+            role_id=db_role.id,
+            is_primary=True
+        )
+        db.add(user_role_assoc)
+        logger.info(f"UserRole association created for user_id: {db_user.id}")
+
+        # UserEmailVerificationを作成（既存のものがないことを確認）
+        existing_email_verification = await db.execute(
+            select(UserEmailVerification).filter(UserEmailVerification.user_id == db_user.id)
+        )
+        if not existing_email_verification.scalars().first():
+            email_verification = UserEmailVerification(
+                id=uuid.uuid4(), 
+                user_id=db_user.id, 
+                email_verified=False, 
+                created_at=datetime.utcnow(), 
+                updated_at=datetime.utcnow()
+            )
+            db.add(email_verification)
+            logger.info(f"UserEmailVerification object created for user_id: {db_user.id}")
+        else:
+            logger.warning(f"UserEmailVerification already exists for user_id: {db_user.id}")
+        
+        # UserLoginInfoを作成（既存のものがないことを確認）
+        existing_login_info = await db.execute(
+            select(UserLoginInfo).filter(UserLoginInfo.user_id == db_user.id)
+        )
+        if not existing_login_info.scalars().first():
+            logger.info(f"Attempting to create UserLoginInfo for user_id: {db_user.id}")
+            login_info = UserLoginInfo(
+                id=uuid.uuid4(),
+                user_id=db_user.id, # Ensure this is correct
+                failed_login_attempts=0,
+                # last_login_at is intentionally left null on creation
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(login_info)
+            logger.info(f"UserLoginInfo object added to session for user_id: {db_user.id}")
+        else:
+            logger.warning(f"UserLoginInfo already exists for user_id: {db_user.id}")
 
         logger.info(f"Attempting to commit all new records for user: {user_in.email}")
         await db.commit()
@@ -150,14 +174,21 @@ async def create_user(db: AsyncSession, *, user_in: UserCreate) -> User:
         if not loaded_user:
              # 通常ここには到達しないはずだが、念のためエラーハンドリング
              logger.error(f"Failed to reload user {db_user.id} after creation.")
-             raise ValueError(f"Failed to reload user {db_user.id} after creation.")
+             raise ValueError(f"ユーザー作成後の再読み込みに失敗しました。")
         return loaded_user
 
     except Exception as e:
-        logger.error(f"Error during commit or related record creation for {user_in.email}: {e}", exc_info=True)
+        logger.error(f"Error during user creation for {user_in.email}: {e}", exc_info=True)
         await db.rollback()
         logger.info(f"Rolled back transaction for user: {user_in.email}")
-        raise e
+        
+        # 具体的なエラーメッセージを提供
+        if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
+            raise ValueError(f"このメールアドレスは既に使用されています。")
+        elif "foreign key" in str(e).lower():
+            raise ValueError(f"関連データの作成に失敗しました。")
+        else:
+            raise ValueError(f"ユーザーアカウントの作成に失敗しました: {str(e)}")
 
 async def update_user(
     db: AsyncSession,
