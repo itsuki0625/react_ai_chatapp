@@ -85,3 +85,6 @@ Docker 上ではなく、ECS Fargate 上のコンテナで一度だけデモデ�
 
 以上の手順で、ECS Fargate 上のコンテナに手を触れずに一時的にデータ挿入が可能です。
 
+
+docker-compose exec backend pytest /app/services/agents/monono_agent/tests/llm_adapters
+

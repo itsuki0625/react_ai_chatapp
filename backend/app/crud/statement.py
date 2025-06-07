@@ -5,18 +5,27 @@ from app.models.university import Department
 from app.schemas.personal_statement import PersonalStatementCreate, PersonalStatementUpdate, FeedbackCreate
 from uuid import UUID
 from typing import List, Optional
+from fastapi import HTTPException, status
+from app.models.chat import ChatSession
+from app.models.enums import ChatType
 
 def create_statement(
     db: Session,
-    statement: PersonalStatementCreate,
+    statement_in: PersonalStatementCreate,
     user_id: UUID
 ) -> PersonalStatement:
     """新しい志望理由書を作成"""
+    if statement_in.self_analysis_chat_id:
+        validate_self_analysis_chat(db, statement_in.self_analysis_chat_id, user_id)
+
     db_statement = PersonalStatement(
         user_id=user_id,
-        content=statement.content,
-        status=statement.status,
-        desired_department_id=statement.desired_department_id
+        content=statement_in.content,
+        status=statement_in.status,
+        desired_department_id=statement_in.desired_department_id,
+        title=statement_in.title,
+        keywords=statement_in.keywords,
+        self_analysis_chat_id=statement_in.self_analysis_chat_id
     )
     db.add(db_statement)
     db.commit()
@@ -65,17 +74,22 @@ def get_statements(
 def update_statement_db(
     db: Session,
     statement: PersonalStatement,
-    statement_update: PersonalStatementUpdate
+    statement_in: PersonalStatementUpdate,
+    user_id: UUID
 ) -> PersonalStatement:
     """志望理由書を更新"""
     # 更新前の状態を出力
     # print(f"Before update: {statement.__dict__}")
     
     # 更新するフィールドを設定
-    update_data = statement_update.dict(exclude_unset=True)
+    update_data = statement_in.model_dump(exclude_unset=True)
     
+    if "self_analysis_chat_id" in update_data:
+        if update_data["self_analysis_chat_id"] is not None:
+            validate_self_analysis_chat(db, update_data["self_analysis_chat_id"], user_id)
+
     # desired_department_idの存在確認
-    if "desired_department_id" in update_data:
+    if "desired_department_id" in update_data and update_data["desired_department_id"]:
         desired_dept = db.query(DesiredDepartment).filter(
             DesiredDepartment.id == update_data["desired_department_id"]
         ).first()
@@ -128,4 +142,29 @@ def get_feedbacks(
     statement_id: str
 ) -> List[Feedback]:
     """フィードバック一覧を取得"""
-    return db.query(Feedback).filter(Feedback.personal_statement_id == statement_id).all() 
+    return db.query(Feedback).filter(Feedback.personal_statement_id == statement_id).all()
+
+def validate_self_analysis_chat(db: Session, chat_id: UUID, user_id: UUID) -> ChatSession:
+    """
+    指定されたchat_idがユーザーのもので、かつ自己分析タイプか検証する。
+    問題なければChatSessionオブジェクトを返す。
+    """
+    if not chat_id:
+        return None
+
+    chat_session = db.query(ChatSession).filter(
+        ChatSession.id == chat_id,
+        ChatSession.user_id == user_id
+    ).first()
+
+    if not chat_session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"指定された自己分析チャット (ID: {chat_id}) が見つかりません。"
+        )
+    if chat_session.chat_type != ChatType.SELF_ANALYSIS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"指定されたチャット (ID: {chat_id}) は自己分析タイプではありません。"
+        )
+    return chat_session 

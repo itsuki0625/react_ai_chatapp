@@ -22,6 +22,10 @@ qrcode
 pillow
 openai-agents
 websockets
+pytest
+pytest-asyncio
+anthropic
+google-genai
 
 # tests
 pytest>=8.2.2
@@ -30,3 +34,31 @@ pytest>=8.2.2
 asyncpg
 greenlet
 boto3>=1.28.0
+pywebpush
+
+pillow # 画像処理
+pytesseract # 画像からテキストを抽出
+SpeechRecognition # 音声からテキストを抽出
+gTTS # テキストから音声を生成
+moviepy # 動画からテキストを抽出
+
+# 追加: 画像生成
+markdown
+icalendar
+duckduckgo-search
+beautifulsoup4
+weasyprint
+
+# LangChain Agent SDK
+langchain>=0.0.320
+# LangGraph for orchestrator
+langgraph>=0.1.0
+
+# Community モジュール (ChatOpenAI などをサポート)
+langchain-community>=0.0.1
+
+# LangChain Experimental for PlanAndExecute
+langchain-experimental>=0.0.6
+
+# OpenAI LLM Support
+langchain-openai>=0.0.1

@@ -49,12 +49,28 @@ const FormField: React.FC<{
   children: React.ReactNode;
   error?: string;
 }> = ({ label, children, error }) => {
+  // 子要素からnameプロパティを取得してIDを生成
+  const getFieldId = () => {
+    if (React.isValidElement(children) && 
+        typeof children.props === 'object' && 
+        children.props !== null && 
+        'name' in children.props) {
+      return `field-${children.props.name}`;
+    }
+    return undefined;
+  };
+
+  const fieldId = getFieldId();
+
   return (
-    <div className="mb-4">
-      <label className="block text-gray-700 text-sm font-medium mb-2">
+    <div>
+      <label htmlFor={fieldId} className="block text-sm font-medium text-gray-700 mb-1">
         {label}
       </label>
-      {children}
+      {React.isValidElement(children) 
+        ? React.cloneElement(children as React.ReactElement<any>, { id: fieldId })
+        : children
+      }
       {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
     </div>
   );
@@ -71,8 +87,10 @@ const Input: React.FC<{
   step?: string;
   name?: string;
 }> = ({ type = "text", value, onChange, placeholder, required, min, step, name }) => {
+  const inputId = name ? `input-${name}` : undefined;
   return (
     <input
+      id={inputId}
       type={type}
       value={value}
       onChange={onChange}
@@ -81,7 +99,8 @@ const Input: React.FC<{
       min={min}
       step={step}
       name={name}
-      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+      autoComplete="off"
+      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
     />
   );
 };
@@ -93,17 +112,21 @@ const Checkbox: React.FC<{
   label: string;
   name?: string;
 }> = ({ checked, onChange, label, name }) => {
+  const checkboxId = name ? `checkbox-${name}` : 'checkbox';
   return (
-    <label className="inline-flex items-center">
+    <div className="flex items-center">
       <input
+        id={checkboxId}
         type="checkbox"
         checked={checked}
         onChange={onChange}
         name={name}
         className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
       />
-      <span className="ml-2 text-gray-700">{label}</span>
-    </label>
+      <label htmlFor={checkboxId} className="ml-2 block text-sm text-gray-900">
+        {label}
+      </label>
+    </div>
   );
 };
 
@@ -115,16 +138,19 @@ const Select: React.FC<{
   required?: boolean;
   name?: string;
 }> = ({ value, onChange, options, required, name }) => {
+  const selectId = name ? `select-${name}` : undefined;
   return (
     <select
+      id={selectId}
       value={value}
       onChange={onChange}
       required={required}
       name={name}
-      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+      autoComplete="off"
+      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
     >
       <option value="">選択してください</option>
-      {options.map((option) => (
+      {options.map(option => (
         <option key={option.value} value={option.value}>
           {option.label}
         </option>

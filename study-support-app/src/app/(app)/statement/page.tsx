@@ -130,7 +130,7 @@ const StatementListPage: React.FC = () => {
                             </CardContent>
                             <CardFooter className="flex justify-end space-x-2 border-t pt-4 mt-auto">
                                 {hasPermission('statement_manage_own') && (
-                                    <Link href={`/statement/edit/${statement.id}`}>
+                                    <Link href={`/statement/${statement.id}/edit`}>
                                         <Button variant="outline" size="sm">
                                             <Edit className="mr-1 h-4 w-4" />編集
                                         </Button>

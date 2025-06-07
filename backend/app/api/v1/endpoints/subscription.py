@@ -9,7 +9,7 @@ from uuid import UUID
 from datetime import datetime # datetime をインポート
 
 from app.core.config import settings
-from app.api.deps import get_async_db, get_current_user
+from app.api.deps import get_async_db, get_current_user, get_current_user_optional
 from app.services.stripe_service import StripeService
 from app.crud import subscription as crud_subscription
 from app.crud import user as crud_user # ユーザー情報取得用にインポート
@@ -167,71 +167,39 @@ async def get_payment_history(
 
 @router.post("/verify-campaign-code", response_model=VerifyCampaignCodeResponse)
 async def verify_campaign_code(
-    request_data: VerifyCampaignCodeRequest, # ★ 修正: スキーマを使用
+    request_data: VerifyCampaignCodeRequest,
     db: AsyncSession = Depends(get_async_db),
-    # 認証は必須ではないかもしれないが、ユーザー情報をログ等で使う可能性を考慮
-    current_user: Optional[UserModel] = Depends(get_current_user) # Optional に
+    current_user: Optional[UserModel] = Depends(get_current_user_optional) # Optional認証を使用
 ):
     """
     キャンペーンコードを検証します。
     """
-    db_code = await crud_subscription.get_campaign_code_by_code(db, request_data.code)
-    if not db_code or not db_code.is_active:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="無効なキャンペーンコードです。")
-
-    if db_code.valid_until and db_code.valid_until < datetime.utcnow().replace(tzinfo=None): # naive datetimeと比較
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="キャンペーンコードの有効期限が切れています。")
-
-    if db_code.max_uses is not None and db_code.used_count >= db_code.max_uses:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="キャンペーンコードの利用回数上限に達しています。")
-    
-    # Stripe Coupon ID があるか確認 (これがないと割引計算が難しい)
-    if not db_code.stripe_coupon_id:
-        logger.error(f"DB CampaignCode {db_code.code} に stripe_coupon_id が設定されていません。")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="キャンペーンコードの設定に問題があります。")
-
     try:
-        stripe_coupon = StripeService.retrieve_coupon(db_code.stripe_coupon_id) # type: ignore
+        # CRUD関数を使用してキャンペーンコードを検証
+        verification_result = await crud_subscription.verify_campaign_code(
+            db, request_data.code, request_data.price_id
+        )
+        
+        # CRUD関数の結果をPydanticモデルに変換
+        response = VerifyCampaignCodeResponse(
+            valid=verification_result["valid"],
+            message=verification_result["message"],
+            discount_type=verification_result["discount_type"],
+            discount_value=verification_result["discount_value"],
+            original_amount=verification_result["original_amount"],
+            discounted_amount=verification_result["discounted_amount"],
+            campaign_code_id=str(verification_result["campaign_code_id"]) if verification_result["campaign_code_id"] else None,
+            stripe_coupon_id=verification_result["stripe_coupon_id"]
+        )
+        
+        return response
+        
     except Exception as e:
-        logger.error(f"Stripe Coupon ({db_code.stripe_coupon_id}) 取得エラー: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="割引情報の取得に失敗しました。")
-
-    # プランの価格を取得 (リクエストから plan_id または price_id を受け取る想定)
-    # ここでは request_data.price_id を使用
-    original_amount = 0
-    try:
-        price_data = StripeService.get_price(request_data.price_id)
-        original_amount = price_data.get('unit_amount', 0)
-    except Exception:
-        # 価格取得に失敗しても、コードの有効性だけは返すこともできる
-        logger.warning(f"価格情報 (Price ID: {request_data.price_id}) の取得に失敗。割引額計算はスキップ。")
-        # raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="プラン価格の取得に失敗しました。")
-
-    discounted_amount = original_amount
-    discount_type = None
-    discount_value = 0
-
-    if stripe_coupon.get('percent_off') is not None:
-        percent_off = stripe_coupon['percent_off']
-        discounted_amount = original_amount * (1 - percent_off / 100)
-        discount_type = 'percentage'
-        discount_value = percent_off
-    elif stripe_coupon.get('amount_off') is not None:
-        amount_off = stripe_coupon['amount_off']
-        discounted_amount = max(0, original_amount - amount_off)
-        discount_type = 'fixed'
-        discount_value = amount_off
-
-    return VerifyCampaignCodeResponse(
-        valid=True,
-        message="キャンペーンコードが適用されました。",
-        discount_type=discount_type, # type: ignore
-        discount_value=discount_value,
-        original_amount=original_amount,
-        discounted_amount=int(discounted_amount),
-        campaign_code_id=str(db_code.id),
-        stripe_coupon_id=db_code.stripe_coupon_id
-    )
+        logger.error(f"キャンペーンコード検証エラー (Code: {request_data.code}, Price ID: {request_data.price_id}): {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail="キャンペーンコードの検証中にエラーが発生しました。"
+        )
 
 
 @router.post("/create-checkout", response_model=CheckoutSessionResponse)

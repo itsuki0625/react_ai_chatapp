@@ -14,9 +14,22 @@ from app.models.base import Base
 from app.models.user import User, UserRole, Role, Permission, RolePermission, UserLoginInfo, PasswordResetToken, TokenBlacklist
 from app.models.chat import ChatSession, ChatMessage, ChatAttachment, ChatMessageMetadata
 from app.models.subscription import Subscription, SubscriptionPlan
-from app.models.audit import AuditLog
+from app.models.system import AuditLog # 修正: audit -> system
 from app.models.checklist import ChecklistItem, ChecklistEvaluation # 追加: Checklist関連モデル
 
+# 通知関連モデルのインポートを追加
+from app.models.notification_setting import NotificationSetting
+from app.models.push_subscription import PushSubscription
+from app.models.in_app_notification import InAppNotification
+
+# 自己分析関連モデルをインポート
+from app.models.self_analysis import (
+    SelfAnalysisSession,
+    SelfAnalysisNote,
+    COT,
+    Reflection,
+    Summary,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

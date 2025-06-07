@@ -34,11 +34,8 @@ from sqlalchemy.orm import Session
 from app import models, crud
 from app.api import deps
 from app.models.chat import MessageSender
-from app.services.ai_service import (
-    get_self_analysis_agent_response,
-    get_admission_agent_response,
-    get_study_support_agent_response
-)
+from app.services.ai_service import get_self_analysis_agent_response
+from app.services.agents.self_analysis_langchain.main import SelfAnalysisOrchestrator
 from app.crud.async_chat import get_user_chat_sessions
 import json
 import asyncio
@@ -51,6 +48,20 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 checklist_evaluator = ChecklistEvaluator()
+
+class WebSocketTraceHandler(logging.Handler):
+    def __init__(self, websocket: WebSocket, session_id: str):
+        super().__init__()
+        self.websocket = websocket
+        self.session_id = session_id
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            asyncio.create_task(
+                self.websocket.send_text(json.dumps({"type": "trace", "content": msg, "session_id": self.session_id}))
+            )
+        except Exception:
+            pass
 
 @router.websocket("/ws/chat")
 async def websocket_chat_endpoint(
@@ -171,6 +182,83 @@ async def websocket_chat_endpoint(
             logger.info(f"Empty AI message saved (ID: {ai_message_db_obj.id}) for session {actual_session_id}")
             await db.commit() # 先にAIメッセージのプレースホルダーをコミット
             await db.refresh(ai_message_db_obj)
+
+            # SELF_ANALYSIS 用 AI Service 呼び出し
+            if chat_request.chat_type == ChatTypeEnum.SELF_ANALYSIS:
+                # まず簡単なテスト応答を送信
+                await websocket.send_text(json.dumps({
+                    "type": "test", 
+                    "content": "自己分析処理を開始します...",
+                    "session_id": actual_session_id
+                }))
+                
+                # Traceログをクライアントに送信するハンドラーを設定
+                trace_logger = logging.getLogger("self_analysis_trace")
+                ws_handler = WebSocketTraceHandler(websocket, actual_session_id)
+                ws_handler.setFormatter(logging.Formatter("%(message)s"))
+                trace_logger.addHandler(ws_handler)
+                try:
+                    logger.info(f"Starting SelfAnalysisOrchestrator for session {actual_session_id}")
+                    # 新版LangChain自己分析オーケストレーターを利用
+                    orchestrator = SelfAnalysisOrchestrator()
+                    logger.info(f"Orchestrator created, calling run with {len(messages_for_openai)} messages")
+                    # LangChainオーケストレーター実行 (辞書結果を受け取る)
+                    result = await orchestrator.run(messages_for_openai, actual_session_id)
+                    logger.info(f"Orchestrator run completed. Result type: {type(result)}, content: {result}")
+                    # ユーザー向け応答抽出
+                    reply = None
+                    if isinstance(result, dict):
+                        reply = result.get("user_visible") or result.get("final_notes") or str(result)
+                        logger.info(f"Extracted reply from dict result: {reply}")
+                    else:
+                        reply = str(result)
+                        logger.info(f"Using result as string reply: {reply}")
+                    
+                    if not reply or reply.strip() == "":
+                        reply = "申し訳ございませんが、処理中に問題が発生しました。もう一度お試しください。"
+                        logger.warning(f"Empty reply detected, using fallback message for session {actual_session_id}")
+                    
+                    logger.info(f"Final reply to be sent: {reply}")
+                except Exception as orchestrator_err:
+                    # OpenAI rate limit specific error handling
+                    import openai
+                    if isinstance(orchestrator_err, openai.RateLimitError):
+                        logger.warning(f"OpenAI rate limit reached for session {actual_session_id}: {orchestrator_err}")
+                        # Send user-friendly rate limit message
+                        rate_limit_message = "申し訳ございませんが、現在APIの利用制限に達しています。少し時間をおいてから再度お試しください。"
+                        await websocket.send_text(json.dumps({
+                            "type": "error", 
+                            "detail": rate_limit_message,
+                            "session_id": actual_session_id,
+                            "error_code": "rate_limit"
+                        }))
+                        await websocket.send_text(json.dumps({"type": "done", "session_id": actual_session_id, "error": True}))
+                        continue
+                    else:
+                        # Log the original error and send generic error message
+                        logger.error(f"Error in self-analysis orchestrator for session {actual_session_id}: {orchestrator_err}", exc_info=True)
+                        await websocket.send_text(json.dumps({
+                            "type": "error", 
+                            "detail": "AI処理中にエラーが発生しました。しばらく時間をおいてから再度お試しください。",
+                            "session_id": actual_session_id
+                        }))
+                        await websocket.send_text(json.dumps({"type": "done", "session_id": actual_session_id, "error": True}))
+                        continue
+                finally:
+                    # ハンドラーを解除
+                    trace_logger.removeHandler(ws_handler)
+                # ユーザー向け内容を一括で返す
+                await websocket.send_text(json.dumps({"type": "chunk", "content": reply or "", "session_id": actual_session_id}))
+                await websocket.send_text(json.dumps({"type": "done", "session_id": actual_session_id}))
+                # AI応答をDBに保存
+                await save_chat_message(
+                    db=db,
+                    session_id=UUID(actual_session_id),
+                    content=reply or "",
+                    sender_type="AI"
+                )
+                await db.commit()
+                continue
 
             full_ai_response = ""
             try:
@@ -542,40 +630,110 @@ async def get_checklist_evaluation_endpoint(
             await db.rollback()
         raise HTTPException(status_code=500, detail="Failed to fetch checklist evaluation")
 
-@router.post("/self-analysis")
+@router.post("/self-analysis", response_model=ChatResponse)
 async def start_self_analysis_chat(
     chat_request: ChatRequest,
     current_user: User = Depends(require_permission('chat_message_send')),
     db: AsyncSession = Depends(get_async_db)
 ):
-    logger.warning("Self-analysis chat endpoint not fully implemented with async DB.")
-    raise HTTPException(status_code=501, detail="Not Implemented Yet")
+    # セッションを取得または作成
+    chat_session = await get_or_create_chat_session(
+        db=db,
+        user_id=current_user.id,
+        session_id=chat_request.session_id,
+        chat_type=chat_request.chat_type.value
+    )
+    actual_session_id = chat_session.id
+    # ユーザー発言を保存
+    await save_chat_message(
+        db=db,
+        session_id=actual_session_id,
+        content=chat_request.message,
+        user_id=current_user.id,
+        sender_type="USER"
+    )
+    # 新版LangChain自己分析オーケストレーターを利用して応答生成
+    orchestrator = SelfAnalysisOrchestrator()
+    result = await orchestrator.run([{"role": "user", "content": chat_request.message}], actual_session_id)
+    # ユーザー向け応答抽出
+    if isinstance(result, dict):
+        reply = result.get("user_visible") or result.get("final_notes") or str(result)
+    else:
+        reply = str(result)
+    # AIメッセージを保存
+    await save_chat_message(
+        db=db,
+        session_id=actual_session_id,
+        content=reply or "",
+        user_id=current_user.id,
+        sender_type="AI"
+    )
+    return ChatResponse(reply=reply or "", session_id=actual_session_id, timestamp=datetime.utcnow())
 
 @router.get("/self-analysis/report")
 async def get_self_analysis_report(
+    session_id: UUID = Query(..., description="対象の自己分析セッションID"),
     current_user: User = Depends(require_permission('chat_session_read')),
     db: AsyncSession = Depends(get_async_db)
 ):
-    logger.warning("Self-analysis report endpoint not fully implemented with async DB.")
-    raise HTTPException(status_code=501, detail="Not Implemented Yet")
+    """
+    指定の自己分析セッションについて、各ステップのノートとMarkdown年表をまとめて返します。
+    """
+    # セッション存在と所有権の確認
+    session = await get_chat_session_by_id(db, session_id)
+    if not session or session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this report")
+    # ノート取得関数
+    from app.services.agents.self_analysis_monono_agent.tools.notes import list_notes as list_notes_fn
+    # Markdown変換
+    from app.services.agents.self_analysis_langchain.markdown import render_markdown_timeline
 
-@router.post("/admission")
+    # 各ステップのJSONノート
+    future = await list_notes_fn(str(session_id), 'FUTURE')
+    motivation = await list_notes_fn(str(session_id), 'MOTIVATION')
+    history = await list_notes_fn(str(session_id), 'HISTORY')
+    gap = await list_notes_fn(str(session_id), 'GAP')
+    vision = await list_notes_fn(str(session_id), 'VISION')
+    reflect = await list_notes_fn(str(session_id), 'REFLECT')
+    # Markdown年表
+    timeline = history[0].get('timeline', []) if history and isinstance(history[0], dict) else []
+    timeline_md = render_markdown_timeline(timeline)
+
+    return {
+        'future': future,
+        'motivation': motivation,
+        'history': history,
+        'timeline_md': timeline_md,
+        'gap': gap,
+        'vision': vision,
+        'reflect': reflect,
+    }
+
+@router.post("/admission", response_model=ChatResponse)
 async def start_admission_chat(
     chat_request: ChatRequest,
     current_user: User = Depends(require_permission('chat_message_send')),
     db: AsyncSession = Depends(get_async_db)
 ):
-    logger.warning("Admission chat endpoint not fully implemented with async DB.")
-    raise HTTPException(status_code=501, detail="Not Implemented Yet")
+    chat_session = await get_or_create_chat_session(db=db, user_id=current_user.id, session_id=chat_request.session_id, chat_type=chat_request.chat_type.value)
+    actual_session_id = chat_session.id
+    await save_chat_message(db=db, session_id=actual_session_id, content=chat_request.message, user_id=current_user.id, sender_type="USER")
+    reply = await get_admission_agent_response(chat_request.message, history=None)
+    await save_chat_message(db=db, session_id=actual_session_id, content=reply or "", user_id=current_user.id, sender_type="AI")
+    return ChatResponse(reply=reply or "", session_id=actual_session_id, timestamp=datetime.utcnow())
 
-@router.post("/study-support")
+@router.post("/study-support", response_model=ChatResponse)
 async def start_study_support_chat(
     chat_request: ChatRequest,
     current_user: User = Depends(require_permission('chat_message_send')),
     db: AsyncSession = Depends(get_async_db)
 ):
-    logger.warning("Study support chat endpoint not fully implemented with async DB.")
-    raise HTTPException(status_code=501, detail="Not Implemented Yet")
+    chat_session = await get_or_create_chat_session(db=db, user_id=current_user.id, session_id=chat_request.session_id, chat_type=chat_request.chat_type.value)
+    actual_session_id = chat_session.id
+    await save_chat_message(db=db, session_id=actual_session_id, content=chat_request.message, user_id=current_user.id, sender_type="USER")
+    reply = await get_study_support_agent_response(chat_request.message, history=None)
+    await save_chat_message(db=db, session_id=actual_session_id, content=reply or "", user_id=current_user.id, sender_type="AI")
+    return ChatResponse(reply=reply or "", session_id=actual_session_id, timestamp=datetime.utcnow())
 
 @router.get("/analysis")
 async def get_chat_analysis(
@@ -600,6 +758,20 @@ async def create_new_chat_session(
         db=db,
         user_id=current_user.id,
         chat_type=session_in.chat_type.value
+    )
+    # 新規セッションに初期AIメッセージを追加
+    initial_message_content = settings.INSTRUCTION
+    # SELF_ANALYSISモードの場合の最初の挨拶文を設定
+    if session.chat_type == ChatType.SELF_ANALYSIS:
+        initial_message_content = "こんにちは、今日から自己分析を始めましょう！　まずは将来やってみたいことを 1〜2 行で教えていただけますか？"
+    # FAQモードの場合の固定メッセージ（必要に応じて他のモードも追加）
+    elif session.chat_type == ChatType.FAQ:
+        initial_message_content = "あなたは総合型選抜に関する質問に答えるFAQボットです。"
+    await save_chat_message(
+        db=db,
+        session_id=session.id,
+        content=initial_message_content,
+        sender_type="AI"
     )
     return session
 

@@ -1,15 +1,19 @@
 import React, { createContext, useReducer, useContext, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
-import { ChatState, ChatAction as OriginalChatAction, ChatMessage, ChatSubmitRequest, ChatTypeValue, ChatTypeEnum, ChatSession, MessageSender } from '@/types/chat'; // ChatActionをOriginalChatActionとしてインポート
+import { ChatState, ChatAction as OriginalChatAction, ChatMessage, ChatSubmitRequest, ChatTypeValue, ChatTypeEnum, ChatSession, MessageSender, ChatSessionStatus } from '@/types/chat'; // ChatActionをOriginalChatActionとしてインポート
 import { useChatWebSocket, WebSocketMessage } from '@/hooks/useChatWebSocket';
 import { v4 as uuidv4 } from 'uuid';
 import { apiClient } from '@/lib/api-client';
 import { chatApi } from '@/lib/api-client';
 import { useSession } from "next-auth/react"; // Added useSession
 
+// OriginalChatAction から START_NEW_CHAT_SESSION を除外する
+type OriginalChatActionWithoutStartNew = Exclude<OriginalChatAction, { type: 'START_NEW_CHAT_SESSION' }>;
+
 // ChatAction 型を拡張
 export type ChatAction = 
-  | OriginalChatAction
-  | { type: 'PREPARE_NEW_CHAT'; payload: { chatType: ChatTypeValue } };
+  | OriginalChatActionWithoutStartNew // 除外したものをベースにする
+  | { type: 'PREPARE_NEW_CHAT'; payload: { chatType: ChatTypeValue } }
+  | { type: 'START_NEW_CHAT_SESSION'; payload: { sessionId: string; chatType: ChatTypeValue; status: ChatSessionStatus } }; // こちらの定義を優先
 
 const initialState: ChatState = {
   sessionId: undefined,
@@ -27,6 +31,7 @@ const initialState: ChatState = {
   viewingSessionStatus: null,
   isWebSocketConnected: false,
   sessionStatus: 'INACTIVE',
+  traceLogs: [],
 };
 
 export const chatReducer = (state: ChatState, action: ChatAction): ChatState => {
@@ -34,9 +39,14 @@ export const chatReducer = (state: ChatState, action: ChatAction): ChatState => 
   switch (action.type) {
     case 'SET_SESSION_ID':
       const newSessionId = action.payload.id;
-      const currentSessionId = state.sessionId;
+      const currentSessionId = state.sessionId ?? null;
       const sessionActuallyChanged = newSessionId !== currentSessionId;
-      const newStatus = action.payload.status || (newSessionId ? 'ACTIVE' : null);
+      let newStatus: ChatSessionStatus | null = null;
+      if (action.payload.status && Object.values(ChatSessionStatus).includes(action.payload.status.toUpperCase() as ChatSessionStatus)) {
+        newStatus = action.payload.status.toUpperCase() as ChatSessionStatus;
+      } else if (newSessionId) {
+        newStatus = ChatSessionStatus.ACTIVE;
+      }
 
       if (state.viewingSessionStatus !== newStatus || sessionActuallyChanged) {
         console.log(`[DEBUG] ChatReducer - SET_SESSION_ID: newId=${newSessionId}, newStatus=${newStatus}, sessionActuallyChanged=${sessionActuallyChanged}`);
@@ -47,7 +57,7 @@ export const chatReducer = (state: ChatState, action: ChatAction): ChatState => 
         sessionId: newSessionId, 
         viewingSessionStatus: newStatus, 
         messages: sessionActuallyChanged ? [] : state.messages, 
-        justStartedNewChat: sessionActuallyChanged && newSessionId !== null ? false : state.justStartedNewChat,
+        justStartedNewChat: !newSessionId,
         sessionStatus: newStatus,
       };
     case 'SET_CURRENT_CHAT_TYPE':
@@ -93,15 +103,19 @@ export const chatReducer = (state: ChatState, action: ChatAction): ChatState => 
       return { ...state, isLoadingSessions: false, errorSessions: action.payload };
     case 'START_NEW_CHAT_SESSION':
       console.log('[chatReducer] START_NEW_CHAT_SESSION, payload:', action.payload);
+      // ChatActionの型定義修正により、payloadにはsessionId, chatType, statusが必ず含まれることを期待
+      const { sessionId: newSessionIdForStart, chatType: newChatTypeForStart, status: newStatusForStart } = action.payload;
+
       return {
         ...state,
         messages: [],
-        sessionId: action.payload.sessionId === null ? undefined : action.payload.sessionId,
+        sessionId: newSessionIdForStart,
         isLoading: false,
         error: null,
-        currentChatType: action.payload.chatType,
-        justStartedNewChat: true,
-        sessionStatus: action.payload.sessionId ? 'ACTIVE' : 'PENDING',
+        currentChatType: newChatTypeForStart,
+        justStartedNewChat: false,
+        sessionStatus: newStatusForStart,
+        viewingSessionStatus: newStatusForStart,
       };
     case 'ARCHIVE_SESSION_SUCCESS':
       return {
@@ -144,6 +158,10 @@ export const chatReducer = (state: ChatState, action: ChatAction): ChatState => 
       return { ...state, sessionId: null, messages: [], justStartedNewChat: false, viewingSessionStatus: null };
     case 'SET_WEBSOCKET_CONNECTED':
       return { ...state, isWebSocketConnected: action.payload };
+    case 'ADD_TRACE':
+      return { ...state, traceLogs: [...state.traceLogs, action.payload] };
+    case 'CLEAR_TRACE':
+      return { ...state, traceLogs: [] };
     default:
       return state;
   }
@@ -228,6 +246,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
              dispatch({ type: 'SET_SESSION_ID', payload: { id: (wsMessage as any).session_id, status: 'ACTIVE' } });
         }
         dispatch({ type: 'SEND_MESSAGE_SUCCESS' });
+        dispatch({ type: 'CLEAR_TRACE' });
         break;
       case 'error':
         console.error("Error from WebSocket:", (wsMessage as any).detail);
@@ -239,6 +258,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             console.log(`[WS INFO] WebSocket provided sessionId ${(wsMessage as any).session_id}, context has ${state.sessionId}. Updating context for info.`);
             dispatch({ type: 'SET_SESSION_ID', payload: { id: (wsMessage as any).session_id, status: 'ACTIVE' } });
         }
+        break;
+      case 'trace':
+        if (wsMessage.content) dispatch({ type: 'ADD_TRACE', payload: wsMessage.content });
         break;
       default:
         console.warn('Received unknown WebSocket message type:', wsMessage);
@@ -305,14 +327,14 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         dispatch({ type: 'SEND_MESSAGE_FAILURE', payload: 'Authentication token is missing.' });
         return;
     }
-    if (!wsIsConnected || actualWebSocketRef.current?.readyState !== WebSocket.OPEN) { // Use wsIsConnected
+
+    if (!wsIsConnected || actualWebSocketRef.current?.readyState !== WebSocket.OPEN) {
       console.error('sendMessage: Cannot send message, WebSocket is not connected or not open.');
       dispatch({ type: 'SEND_MESSAGE_FAILURE', payload: 'WebSocket not connected. Please try again.' });
-      // Optionally, try to reconnect if authToken is present, but useChatWebSocket should handle this.
       return;
     }
 
-    let sessionIdForRequest: string | undefined = state.sessionId ?? undefined;
+    const sessionIdForRequest: string | undefined = state.sessionId ?? undefined;
     const chatTypeForRequest = state.currentChatType;
 
     if (!chatTypeForRequest) {
@@ -321,44 +343,31 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         return;
     }
 
-    if (state.justStartedNewChat || !sessionIdForRequest) {
-      const newFrontendSessionId = uuidv4(); 
-      console.log(`[sendMessage] This is the first message for a new chat. Frontend temp sessionId: ${newFrontendSessionId}`);
-      const userMessage: ChatMessage = {
-        id: uuidv4(), 
-        session_id: newFrontendSessionId, 
-        content: messageContent,
-        sender: 'USER',
-        timestamp: new Date().toISOString(),
-        isLoading: true,
-      };
-      dispatch({ type: 'ADD_MESSAGE', payload: userMessage });
-      dispatch({ type: 'SEND_MESSAGE_START' });
-      dispatch({ type: 'START_NEW_CHAT_SESSION', payload: { sessionId: undefined, chatType: chatTypeForRequest } }); 
-      sessionIdForRequest = undefined; 
-    } else {
-      const userMessage: ChatMessage = {
-        id: uuidv4(),
-        session_id: sessionIdForRequest as string,
-        content: messageContent,
-        sender: 'USER',
-        timestamp: new Date().toISOString(),
-        isLoading: true,
-      };
-      dispatch({ type: 'ADD_MESSAGE', payload: userMessage });
-      dispatch({ type: 'SEND_MESSAGE_START' });
+    if (!sessionIdForRequest) {
+      console.error(`[sendMessage] Attempted to send message for chat type ${chatTypeForRequest} without a session ID. This should not happen in the new flow. A session must be created first.`);
+      dispatch({ type: 'SEND_MESSAGE_FAILURE', payload: 'Cannot send message: session ID is missing. Please start a new chat.' });
+      return;
     }
 
-    const request: Omit<ChatSubmitRequest, 'session_id'> & { session_id?: string } = {
+    const userMessage: ChatMessage = {
+      id: uuidv4(),
+      session_id: sessionIdForRequest as string,
+      content: messageContent,
+      sender: 'USER',
+      timestamp: new Date().toISOString(),
+      isLoading: true,
+    };
+    dispatch({ type: 'ADD_MESSAGE', payload: userMessage });
+    dispatch({ type: 'SEND_MESSAGE_START' });
+
+    const request: Omit<ChatSubmitRequest, 'session_id'> & { session_id: string } = {
       message: messageContent,
       chat_type: chatTypeForRequest!,
+      session_id: sessionIdForRequest,
     };
-    if (sessionIdForRequest !== undefined) {
-        request.session_id = sessionIdForRequest;
-    }
-    console.log('[sendMessage] Sending request to WebSocket via wsSendMessage:', request); // Updated log
+    console.log('[sendMessage] Sending request to WebSocket via wsSendMessage:', request);
     wsSendMessage(request as ChatSubmitRequest);
-  }, [authToken, wsIsConnected, state.sessionId, state.currentChatType, state.justStartedNewChat, dispatch, wsSendMessage, actualWebSocketRef]); // Added wsIsConnected
+  }, [authToken, wsIsConnected, state.sessionId, state.currentChatType, dispatch, wsSendMessage, actualWebSocketRef]);
 
   const clearChat = useCallback((chatType?: ChatTypeValue) => {
     dispatch({ type: 'CLEAR_CHAT', payload: { chatType: chatType ?? state.currentChatType } });
@@ -372,10 +381,49 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   }, [state.currentChatType, dispatch]);
   
   const startNewChat = useCallback(async (chatType: ChatTypeValue): Promise<string | null> => {
-    console.warn("[ChatContext.startNewChat] This function's behavior has changed. It no longer guarantees returning a new session ID immediately.");
-    dispatch({ type: 'PREPARE_NEW_CHAT', payload: { chatType } });
-    return null; 
-  }, [dispatch]);
+    if (!authToken) {
+      console.error('startNewChat: Auth token missing.');
+      throw new Error('Authentication required to start new chat.');
+    }
+    if (!chatType) {
+      console.error('startNewChat: Chat type missing.');
+      throw new Error('Chat type required to start new chat.');
+    }
+
+    try {
+      console.log(`[ChatContext] Attempting to create new session for type: ${chatType}`);
+      const response = await apiClient.post<ChatSession>(
+        '/api/v1/chat/sessions/',
+        { chat_type: chatType },
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+
+      const newSession = response.data;
+      const sessionStatus = Object.values(ChatSessionStatus).includes((newSession.status || '').toUpperCase() as ChatSessionStatus) 
+                            ? (newSession.status || '').toUpperCase() as ChatSessionStatus 
+                            : ChatSessionStatus.ACTIVE;
+
+      if (newSession && newSession.id) {
+        console.log(`[ChatContext] New session created successfully: ${newSession.id}, Status: ${sessionStatus}`);
+        dispatch({
+          type: 'START_NEW_CHAT_SESSION',
+          payload: {
+            sessionId: newSession.id,
+            chatType: chatType,
+            status: sessionStatus
+          }
+        });
+        return newSession.id;
+      } else {
+        console.error('[ChatContext] Failed to create session or session ID missing in response:', response);
+        const detail = (response.data as any)?.detail || 'Unknown error from server.';
+        throw new Error(`Failed to create session: ${detail}`);
+      }
+    } catch (error: any) {
+      console.error('Error creating new chat session in startNewChat:', error);
+      throw error;
+    }
+  }, [authToken, dispatch]);
 
   const fetchSessions = useCallback(async (chatType: ChatTypeValue) => {
     if (!authToken) {

@@ -8,11 +8,11 @@ import logging
 from app.database.database import Base, engine
 from fastapi.background import BackgroundTasks
 from app.crud.token import remove_expired_tokens
-from sqlalchemy.orm import Session
-from contextlib import contextmanager
 import asyncio
 import time
 import os  # CA証明書確認用
+from contextlib import asynccontextmanager
+from fastapi.responses import Response
 
 
 # --- ロギング設定 --- 
@@ -33,22 +33,22 @@ logging.getLogger("urllib3").setLevel(logging.INFO)
 # SQLAlchemyのエンジンログレベルをWARNINGに設定してINFOログを抑制
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
+# httpcore/openai のログレベルを INFO に設定して詳細ログを抑制
+logging.getLogger("httpcore").setLevel(logging.INFO)
+logging.getLogger("httpcore.http11").setLevel(logging.WARNING)  # HTTP/1.1の詳細ログを更に抑制
+logging.getLogger("openai").setLevel(logging.INFO)
+logging.getLogger("openai._base_client").setLevel(logging.WARNING)  # OpenAIクライアントの詳細ログを抑制
+logging.getLogger("httpx").setLevel(logging.INFO)
+
+# アプリケーション内部のログレベル調整
+logging.getLogger("app.database.database").setLevel(logging.INFO)  # データベース関連のDEBUGログを抑制
+logging.getLogger("app.middleware.auth").setLevel(logging.INFO)  # 認証ミドルウェアのDEBUGログを抑制
+logging.getLogger("app.api.deps").setLevel(logging.INFO)  # API依存関係のDEBUGログを抑制
+logging.getLogger("app.api.v1.endpoints.chat").setLevel(logging.INFO)  # チャットエンドポイントのDEBUGログを抑制
+
 # アプリケーション自体のロガー取得
 logger = logging.getLogger(__name__)
 # --- ロギング設定ここまで ---
-
-# データベースセッションコンテキスト
-@contextmanager
-def get_db_session():
-    """
-    データベースセッションのコンテキストマネージャー
-    """
-    from app.database.database import SessionLocal
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 # 期限切れトークンのクリーンアップ
 async def cleanup_expired_tokens():
@@ -57,8 +57,9 @@ async def cleanup_expired_tokens():
     """
     while True:
         try:
-            with get_db_session() as db:
-                removed = remove_expired_tokens(db)
+            from app.database.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as db:
+                removed = await remove_expired_tokens(db)
                 logger.info(f"期限切れトークンのクリーンアップ: {removed}件削除")
         except Exception as e:
             logger.error(f"トークンクリーンアップエラー: {str(e)}")
@@ -66,16 +67,66 @@ async def cleanup_expired_tokens():
         # 1時間に1回実行（本番環境では調整が必要）
         await asyncio.sleep(3600)  # 1時間 = 3600秒
 
+# アプリケーションのライフサイクル管理
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 起動時の処理
+    # 期限切れトークンのクリーンアップタスク
+    cleanup_task = asyncio.create_task(cleanup_expired_tokens())
+    logger.info("バックグラウンド期限切れトークンクリーンアップタスクを開始しました")
+    
+    yield
+    
+    # 終了時の処理
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        logger.info("バックグラウンドタスクが正常に終了しました")
+
 app = FastAPI(
     title="SmartAO API",
     description="志望校管理と志望理由書作成支援のためのAPI",
     version="1.0.0",
     docs_url="/api/v1/docs",  
+    lifespan=lifespan
 )
 
-# ミドルウェアの順序が重要：
-# 1. 認証ミドルウェア（最後に実行される）
-app.add_middleware(AuthMiddleware)
+# ミドルウェアの順序が重要：（後に追加されたものが先に実行される）
+# 1. CORSミドルウェア（最初に実行される）
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3001",  # ローカル開発環境
+        "http://localhost:5050",  # ローカルAPIサーバー
+        "http://backend:5050",    # Docker内部通信
+        "http://frontend:3000",   # Docker内部通信
+        "http://127.0.0.1:3001",  # 代替ローカル開発環境
+        "http://host.docker.internal:3001",  # Docker -> ホスト接続
+        "http://host.docker.internal:5050",  # Docker -> ホスト接続
+        "https://yourdomain.com",  # 本番環境（必要に応じて変更）
+        "https://stg.smartao.jp", # ステージング環境フロントエンド
+        "https://api.smartao.jp", # 本番環境API
+        "https://app.smartao.jp", # 本番環境フロントエンド
+    ],
+    allow_credentials=True,  # 認証情報を許可
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # 明示的なメソッド指定
+    allow_headers=[
+        "Accept",
+        "Accept-Language",
+        "Content-Language",
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "X-CSRF-Token",
+        "X-Auth-Status",
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+    ],  # 具体的なヘッダー指定
+    expose_headers=["Set-Cookie", "X-Auth-Status"],  # 公開するヘッダー
+    max_age=3600,  # プリフライトリクエストのキャッシュ時間
+)
 
 # 2. セッションミドルウェア（認証の前に実行される）
 app.add_middleware(
@@ -88,30 +139,30 @@ app.add_middleware(
     path="/"  # クッキーのパスを明示的に設定
 )
 
-# 3. CORSミドルウェア（最初に実行される）
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # ローカル開発環境
-        "http://localhost:5050",  # ローカルAPIサーバー
-        "http://backend:5050",    # Docker内部通信
-        "http://frontend:3000",   # Docker内部通信
-        "http://127.0.0.1:3000",  # 代替ローカル開発環境
-        "http://host.docker.internal:3000",  # Docker -> ホスト接続
-        "http://host.docker.internal:5050",  # Docker -> ホスト接続
-        "https://yourdomain.com",  # 本番環境（必要に応じて変更）
-        "https://stg.smartao.jp", # ステージング環境フロントエンド
-        "https://api.smartao.jp", # 本番環境API
-        "https://app.smartao.jp", # 本番環境フロントエンド
-    ],
-    allow_credentials=True,  # 認証情報を許可
-    allow_methods=["*"],  # すべてのHTTPメソッドを許可
-    allow_headers=["*"],  # すべてのヘッダーを許可
-    expose_headers=["Set-Cookie", "X-Auth-Status"],  # 公開するヘッダー
-)
+# 3. 認証ミドルウェア（最後に実行される）
+app.add_middleware(AuthMiddleware)
 
 # 修正: v1 の集約ルーターを /api/v1 プレフィックスで追加
 app.include_router(v1_api_router, prefix="/api/v1")
+
+# グローバルOPTIONSハンドラー（すべてのパスでOPTIONSリクエストを処理）
+@app.options("/{full_path:path}")
+async def handle_options(full_path: str):
+    """
+    すべてのパスでOPTIONSリクエストを処理するグローバルハンドラー
+    CORSプリフライトリクエストに対応
+    """
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "http://localhost:3001",  # 具体的なオリジンを指定
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "3600",
+            "Vary": "Origin",  # オリジンによってレスポンスが変わることを示す
+        }
+    )
 
 # APIルーターの設定後に追加
 for route in app.routes:
@@ -119,19 +170,6 @@ for route in app.routes:
 
 # データベースモデルの作成
 # Base.metadata.create_all(bind=engine)  # Alembicを使用する場合はコメントアウト
-
-# 起動時にバックグラウンドタスクを開始
-@app.on_event("startup")
-async def startup_event():
-    # 期限切れトークンのクリーンアップタスク
-    asyncio.create_task(cleanup_expired_tokens())
-    logger.info("バックグラウンド期限切れトークンクリーンアップタスクを開始しました")
-    # 起動時にCA証明書ディレクトリ内容を確認
-    try:
-        certs = os.listdir("/app/certs")
-        logger.debug(f"/app/certs 内容: {certs}")
-    except Exception as e:
-        logger.error(f"/app/certs の一覧取得に失敗: {e}")
 
 @app.get("/")
 def read_root():

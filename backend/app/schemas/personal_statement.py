@@ -1,8 +1,8 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from uuid import UUID
 from typing import Optional, List, Dict
 from datetime import datetime
-from app.models.enums import PersonalStatementStatus
+from app.models.enums import PersonalStatementStatus, ChatType
 from .base import TimestampMixin
 
 class PersonalStatementBase(BaseModel):
@@ -11,6 +11,7 @@ class PersonalStatementBase(BaseModel):
     desired_department_id: Optional[UUID] = None
     title: Optional[str] = None
     keywords: Optional[List[str]] = None
+    self_analysis_chat_id: Optional[UUID] = None
 
 class PersonalStatementCreate(PersonalStatementBase):
     pass
@@ -21,6 +22,7 @@ class PersonalStatementUpdate(BaseModel):
     desired_department_id: Optional[UUID] = None
     title: Optional[str] = None
     keywords: Optional[List[str]] = None
+    self_analysis_chat_id: Optional[UUID] = None
 
 class PersonalStatementResponse(PersonalStatementBase, TimestampMixin):
     id: UUID

@@ -65,7 +65,27 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
-        logger.debug(f"リクエストパス: {request.url.path}")
+        logger.debug(f"リクエストパス: {request.url.path}, メソッド: {request.method}")
+
+        # OPTIONSリクエストは認証をスキップ（CORSプリフライトリクエスト用）
+        if request.method == "OPTIONS":
+            logger.debug(f"OPTIONSリクエストのため認証をスキップ: {request.url.path}")
+            try:
+                response = await call_next(request)
+                logger.debug(f"OPTIONSレスポンス: {request.url.path} - ステータス: {response.status_code}")
+                return response
+            except Exception as e:
+                logger.error(f"OPTIONSリクエスト処理中にエラー: {request.url.path} - {str(e)}", exc_info=True)
+                # OPTIONSリクエストに対してシンプルなレスポンスを返す
+                return Response(
+                    status_code=200,
+                    headers={
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Allow-Credentials": "true"
+                    }
+                )
 
         # 認証不要パスのチェック
         if any(request.url.path.startswith(path) for path in NO_AUTH_PATHS):

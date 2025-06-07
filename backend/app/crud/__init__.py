@@ -17,6 +17,8 @@ from . import desired_school
 # ★ content.py モジュールをインポート
 from . import content
 
+from . import crud_notification_setting
+
 # 特定の関数を直接エクスポートしたい場合は以下のように書くこともできる
 # from .user import (
 #     get_user,

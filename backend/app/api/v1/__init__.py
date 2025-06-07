@@ -19,6 +19,10 @@ from app.api.v1.endpoints.roles import router as roles_router
 from app.api.v1.endpoints.desired_schools import router as desired_schools_router
 from app.api.v1.endpoints.users import router as users_router
 from app.api.v1.endpoints.content_category import router as content_category_router
+from app.api.v1.endpoints.notifications import router as notifications_router
+from app.api.v1.endpoints.push import router as push_router
+from app.api.v1.endpoints.in_app_notification import router as in_app_notification_router
+from app.api.v1.endpoints.admin_notifications import router as admin_notifications_router
 
 # 各ルーターをメインルーターに追加
 api_router.include_router(admin_router, prefix="/admin", tags=["admin"])
@@ -36,4 +40,8 @@ api_router.include_router(permissions_router, prefix="/permissions", tags=["perm
 api_router.include_router(roles_router, prefix="/roles", tags=["roles"])
 api_router.include_router(desired_schools_router, prefix="/desired-schools", tags=["desired-schools"])
 api_router.include_router(users_router, prefix="/users", tags=["users"])
+api_router.include_router(notifications_router, prefix="/notifications", tags=["notifications"])
+api_router.include_router(push_router, prefix="/push", tags=["push"])
+api_router.include_router(in_app_notification_router, prefix="/in-app-notifications", tags=["in-app-notifications"])
+api_router.include_router(admin_notifications_router, prefix="/admin/notification-settings", tags=["admin-notification-settings"])
 

@@ -11,6 +11,14 @@ from app.models.base import Base
 from app.models.user import User
 from app.models.chat import ChatSession, ChatMessage, ChatAttachment, ChatMessageMetadata
 from app.models.checklist import ChecklistEvaluation
+# 自己分析関連モデルをインポート
+from app.models.self_analysis import (
+    SelfAnalysisSession,
+    SelfAnalysisNote,
+    COT,
+    Reflection,
+    Summary,
+)
 # 必要に応じて他のモデルもインポート (例: Subscription, School, etc.)
 # --- ここまでモデルインポート ---
 
