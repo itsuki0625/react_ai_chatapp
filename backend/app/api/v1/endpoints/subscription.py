@@ -511,8 +511,23 @@ async def stripe_webhook(
                                             target_role_name = target_role_obj.name
                                             user_to_update = await crud_user.get_user(db, user_id)
                                             if user_to_update:
+                                                # ★ デバッグ用: 更新前のロール情報をログ出力
+                                                current_primary_role = next((ur for ur in user_to_update.user_roles if ur.is_primary), None)
+                                                current_role_name = current_primary_role.role.name if current_primary_role and current_primary_role.role else "不明"
+                                                logger.info(f"Webhook ロール更新前 - ユーザー: {user_to_update.email}, 現在のロール: {current_role_name}")
+                                                
                                                 await crud_user.update_user(db, db_user=user_to_update, user_in=UserUpdate(role=target_role_name))
                                                 logger.info(f"ユーザー {user_id} のプライマリロールを '{target_role_name}' (ID: {assigned_role_id}) に更新しました。")
+                                                
+                                                # ★ デバッグ用: 更新後の確認（コミット前）
+                                                await db.flush()  # セッションをフラッシュして変更を反映
+                                                updated_user = await crud_user.get_user(db, user_id)
+                                                if updated_user:
+                                                    updated_primary_role = next((ur for ur in updated_user.user_roles if ur.is_primary), None)
+                                                    updated_role_name = updated_primary_role.role.name if updated_primary_role and updated_primary_role.role else "不明"
+                                                    logger.info(f"Webhook ロール更新後（コミット前） - ユーザー: {updated_user.email}, 新しいロール: {updated_role_name}")
+                                                else:
+                                                    logger.error(f"Webhook ロール更新後のユーザー情報再取得に失敗: {user_id}")
                                                 
                                                 # ★ ロール更新後、既存のJWTトークンを無効化してユーザーに再ログインを促す
                                                 try:

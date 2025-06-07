@@ -76,6 +76,8 @@ async def login(
         logger.debug(f"認証成功: {form_data.username}")
         
         # ★ 認証成功後、リレーションを含むユーザー情報を再取得
+        # 新しいDBセッションで最新データを確実に取得
+        await db.expire_all()  # セッションキャッシュをクリア
         user = await crud_user.get_user(db, user_id=authenticated_user.id)
         if not user: # 再取得に失敗した場合 (通常は起こらないはず)
             logger.error(f"認証成功ユーザー {authenticated_user.id} の情報再取得に失敗しました。")
@@ -83,7 +85,7 @@ async def login(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="ユーザー情報の取得に失敗しました。",
             )
-        logger.info(f"User authenticated and re-fetched: {user.id if user else 'USER_NOT_FOUND_POST_AUTH'}")
+        logger.info(f"User authenticated and re-fetched (with cache clear): {user.id if user else 'USER_NOT_FOUND_POST_AUTH'}")
 
         # 成功記録
         try:
@@ -106,8 +108,19 @@ async def login(
                 detail="ユーザーロールの設定に問題があります",
             )
         
+        # ★ デバッグ用: ロール情報をログ出力
+        logger.info(f"ログイン時のロール情報 - ユーザー: {user.email}, ロールID: {primary_user_role.role_id}, ロール名: {primary_user_role.role.name}")
+        
         # ロール権限を取得 (Eager Loadingされているはず)
         role_permissions = [rp.permission.name for rp in primary_user_role.role.role_permissions if rp.is_granted]
+        
+        # ★ デバッグ用: 権限情報をログ出力
+        logger.info(f"ログイン時の権限情報 - ユーザー: {user.email}, 権限数: {len(role_permissions)}, 権限: {role_permissions}")
+        
+        # ★ デバッグ用: 全ロール情報を出力
+        logger.info(f"ログイン時の全ロール情報 - ユーザー: {user.email}")
+        for ur in user.user_roles:
+            logger.info(f"  - ロール: {ur.role.name}, プライマリ: {ur.is_primary}, ID: {ur.role_id}")
         
         # セッション情報をクリア
         request.session.clear()

@@ -204,6 +204,8 @@ async def update_user(
                     logger.info(f"Updating primary role for user {db_user.id} from {current_user_role.role_id} to {new_role_db.id} ({new_role_name})")
                     current_user_role.role_id = new_role_db.id
                     db.add(current_user_role)
+                    # ★ デバッグ用: セッションから最新の値を確認
+                    logger.info(f"Role ID updated in session - User: {db_user.id}, New Role ID: {current_user_role.role_id}")
                 else:
                     logger.info(f"User {db_user.id} already has primary role '{new_role_name}'. No change needed.")
             else:
