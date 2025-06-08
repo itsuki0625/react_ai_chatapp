@@ -67,7 +67,8 @@ async def login(
         if not authenticated_user or not password_match: # デバッグ用に検証結果変数を使用
             logger.warning(f"認証失敗: {form_data.username}")
             if authenticated_user: # ユーザーが存在する場合のみ失敗を記録
-                 await crud_user.record_login_attempt(db=db, user_id=authenticated_user.id, success=False)
+                failed_user_id = authenticated_user.id  # IDを事前に取得
+                await crud_user.record_login_attempt(db=db, user_id=failed_user_id, success=False)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="メールアドレスまたはパスワードが正しくありません",
@@ -76,11 +77,12 @@ async def login(
         logger.debug(f"認証成功: {form_data.username}")
         
         # ★ 認証成功後、リレーションを含むユーザー情報を再取得
-        # 新しいDBセッションで最新データを確実に取得
-        await db.expire_all()  # セッションキャッシュをクリア
-        user = await crud_user.get_user(db, user_id=authenticated_user.id)
+        # IDを事前に保存してからセッションキャッシュをクリア
+        user_id = authenticated_user.id
+        db.expire_all()  # セッションキャッシュをクリア
+        user = await crud_user.get_user(db, user_id=user_id)
         if not user: # 再取得に失敗した場合 (通常は起こらないはず)
-            logger.error(f"認証成功ユーザー {authenticated_user.id} の情報再取得に失敗しました。")
+            logger.error(f"認証成功ユーザー {user_id} の情報再取得に失敗しました。")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="ユーザー情報の取得に失敗しました。",
@@ -89,11 +91,11 @@ async def login(
 
         # 成功記録
         try:
-            logger.info(f"Calling record_login_attempt for user_id: {user.id}")
-            await crud_user.record_login_attempt(db=db, user_id=user.id, success=True)
-            logger.info(f"Successfully called record_login_attempt for user_id: {user.id}")
+            logger.info(f"Calling record_login_attempt for user_id: {user_id}")
+            await crud_user.record_login_attempt(db=db, user_id=user_id, success=True)
+            logger.info(f"Successfully called record_login_attempt for user_id: {user_id}")
         except Exception as e_record_login:
-            logger.error(f"Error calling record_login_attempt for user_id: {user.id}: {e_record_login}", exc_info=True)
+            logger.error(f"Error calling record_login_attempt for user_id: {user_id}: {e_record_login}", exc_info=True)
         
         # リクエストヘッダーの確認
         logger.debug(f"リクエストヘッダー: {{request.headers}}")

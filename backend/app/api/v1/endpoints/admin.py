@@ -40,6 +40,7 @@ from app.crud.subscription import (
     get_plan_by_price_id
 )
 from app.crud.user import get_multi_users, remove_user, create_user, get_user, update_user, get_user_by_email
+from app.models.token_blacklist import TokenBlacklistReason
 from app.schemas.user import (
     UserListResponse,
     UserResponse,
@@ -173,6 +174,21 @@ async def admin_update_user(
 
     # ユーザー更新処理
     updated_user = await crud_user.update_user(db, db_user=db_user, user_in=user_in)
+    
+    # ★ ロール更新時にJWTトークンを無効化
+    if user_in.role is not None:
+        logger.info(f"管理者によるロール更新: ユーザー {updated_user.email} のロールを '{user_in.role}' に変更")
+        try:
+            from app.crud.token_blacklist import add_user_tokens_to_blacklist
+            await add_user_tokens_to_blacklist(
+                db=db,
+                user_id=updated_user.id,
+                reason=TokenBlacklistReason.ROLE_CHANGE
+            )
+            logger.info(f"ユーザー {updated_user.id} の既存JWTトークンを無効化しました（管理者によるロール変更）")
+        except Exception as e_token:
+            logger.error(f"管理者によるロール変更時のトークン無効化に失敗: ユーザー {updated_user.id}, エラー: {e_token}")
+    
     return updated_user
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
