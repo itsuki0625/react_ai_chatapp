@@ -94,12 +94,13 @@ export const NotificationSettings = () => {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
-              <Label>メール通知</Label>
+              <Label htmlFor="email-notifications">メール通知</Label>
               <p className="text-sm text-muted-foreground">
                 メールで通知を受け取ります
               </p>
             </div>
             <Switch
+              id="email-notifications"
               checked={settings.email_notifications}
               onCheckedChange={() => handleToggle('email_notifications')}
             />
@@ -107,12 +108,13 @@ export const NotificationSettings = () => {
 
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
-              <Label>ブラウザ通知</Label>
+              <Label htmlFor="browser-notifications">ブラウザ通知</Label>
               <p className="text-sm text-muted-foreground">
                 ブラウザで通知を受け取ります
               </p>
             </div>
             <Switch
+              id="browser-notifications"
               checked={settings.browser_notifications}
               onCheckedChange={() => handleToggle('browser_notifications')}
             />
@@ -120,12 +122,13 @@ export const NotificationSettings = () => {
 
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
-              <Label>システム通知</Label>
+              <Label htmlFor="system-notifications">システム通知</Label>
               <p className="text-sm text-muted-foreground">
                 システムからの通知を受け取ります
               </p>
             </div>
             <Switch
+              id="system-notifications"
               checked={settings.system_notifications}
               onCheckedChange={() => handleToggle('system_notifications')}
             />
@@ -133,12 +136,13 @@ export const NotificationSettings = () => {
 
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
-              <Label>チャット通知</Label>
+              <Label htmlFor="chat-notifications">チャット通知</Label>
               <p className="text-sm text-muted-foreground">
                 チャットメッセージの通知を受け取ります
               </p>
             </div>
             <Switch
+              id="chat-notifications"
               checked={settings.chat_notifications}
               onCheckedChange={() => handleToggle('chat_notifications')}
             />
@@ -146,12 +150,13 @@ export const NotificationSettings = () => {
 
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
-              <Label>ドキュメント通知</Label>
+              <Label htmlFor="document-notifications">ドキュメント通知</Label>
               <p className="text-sm text-muted-foreground">
                 ドキュメント関連の通知を受け取ります
               </p>
             </div>
             <Switch
+              id="document-notifications"
               checked={settings.document_notifications}
               onCheckedChange={() => handleToggle('document_notifications')}
             />
@@ -161,12 +166,13 @@ export const NotificationSettings = () => {
         <div className="pt-6 border-t">
           <div className="flex items-center justify-between mb-4">
             <div className="space-y-0.5">
-              <Label>通知を一時停止</Label>
+              <Label htmlFor="quiet-hours">通知を一時停止</Label>
               <p className="text-sm text-muted-foreground">
                 指定した時間帯に通知を受け取らないようにします
               </p>
             </div>
             <Switch
+              id="quiet-hours"
               checked={settings.quiet_hours_enabled}
               onCheckedChange={() => handleToggle('quiet_hours_enabled')}
             />
@@ -175,8 +181,9 @@ export const NotificationSettings = () => {
           {settings.quiet_hours_enabled && (
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>開始時間</Label>
+                <Label htmlFor="quiet-hours-start">開始時間</Label>
                 <input
+                  id="quiet-hours-start"
                   type="time"
                   value={settings.quiet_hours_start}
                   onChange={(e) => handleTimeChange('quiet_hours_start', e.target.value)}
@@ -184,8 +191,9 @@ export const NotificationSettings = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label>終了時間</Label>
+                <Label htmlFor="quiet-hours-end">終了時間</Label>
                 <input
+                  id="quiet-hours-end"
                   type="time"
                   value={settings.quiet_hours_end}
                   onChange={(e) => handleTimeChange('quiet_hours_end', e.target.value)}

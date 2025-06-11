@@ -111,7 +111,13 @@ export const CampaignCodeForm: React.FC<CampaignCodeFormProps> = ({
       {!isResultValid(verificationResult) ? (
         <form onSubmit={handleSubmit} className="flex gap-2 items-start">
           <div className="flex-grow">
+            <label htmlFor="campaign-code" className="sr-only">
+              キャンペーンコード
+            </label>
             <Input
+              id="campaign-code"
+              name="campaign-code"
+              autoComplete="off"
               value={campaignCode}
               onChange={handleCodeChange}
               placeholder="コードを入力"

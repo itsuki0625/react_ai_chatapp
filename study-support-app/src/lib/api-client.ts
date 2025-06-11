@@ -26,7 +26,10 @@ export const apiClient = axios.create({
   withCredentials: true,  // 重要: CORSでクッキーを送信するために必要
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',  // AJAXリクエストであることを明示
   },
+  timeout: 30000,  // 30秒のタイムアウト
 });
 
 // ★★★ 変更: リクエストインターセプターのコメントアウトを解除し、実装 ★★★

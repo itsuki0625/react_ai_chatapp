@@ -87,8 +87,8 @@ const TargetSchoolSetupPage = () => {
 
       try {
         const [univResponse, admResponse] = await Promise.all([
-          fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/universities/`, { headers }),
-          fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/admissions/`, { headers })
+          fetch(`/api/v1/universities/`, { headers }),
+          fetch(`/api/v1/admissions/`, { headers })
         ]);
 
         if (univResponse.status === 401 || admResponse.status === 401) {
@@ -232,7 +232,7 @@ const TargetSchoolSetupPage = () => {
       
       // バックエンドに一括登録APIがない場合、個別にPOSTリクエストを送る
       const results = await Promise.all(desiredSchools.map(school => 
-        fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/desired-schools/`, {
+        fetch(`/api/v1/desired-schools/`, {
           method: 'POST',
           headers: headers, // 認証ヘッダーを含む
           body: JSON.stringify(school),
@@ -320,7 +320,8 @@ const TargetSchoolSetupPage = () => {
 
           {/* 学部・入試方式入力 */}
           <div className="space-y-4">
-            <Label>学部・入試方式</Label>
+            <Label htmlFor="departments-section">学部・入試方式</Label>
+            <div id="departments-section">
             {(currentSchool.desired_departments || []).map((dept, index) => (
               <div key={index} className="flex items-center space-x-2 p-2 border rounded">
                 <div className="flex-1 grid grid-cols-2 gap-2">
@@ -362,6 +363,7 @@ const TargetSchoolSetupPage = () => {
             ))}
             {/* 学部追加ボタン */}
             <Button variant="outline" size="sm" onClick={addDepartmentField}>+ 学部/方式を追加</Button>
+            </div>
           </div>
 
           {/* 志望リストに追加ボタン */}
