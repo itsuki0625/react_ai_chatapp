@@ -240,7 +240,11 @@ async def get_db_coupon(db: AsyncSession, coupon_id: UUID) -> Optional[StripeCou
 
 async def get_db_coupon_by_stripe_id(db: AsyncSession, stripe_coupon_id: str) -> Optional[StripeCoupon]:
     """Stripe Coupon IDでStripeCouponレコードを取得"""
-    result = await db.execute(select(StripeCoupon).filter(StripeCoupon.stripe_coupon_id == stripe_coupon_id))
+    result = await db.execute(
+        select(StripeCoupon)
+        .options(selectinload(StripeCoupon.campaign_codes))  # campaign_codesリレーションを事前読み込み
+        .filter(StripeCoupon.stripe_coupon_id == stripe_coupon_id)
+    )
     return result.scalars().first()
 
 async def get_all_db_coupons(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[StripeCoupon]:
