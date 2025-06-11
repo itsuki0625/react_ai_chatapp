@@ -592,7 +592,14 @@ const SettingsPage = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <h3 className="text-sm font-medium text-gray-500">現在のプラン</h3>
-                        <p className="mt-1 font-semibold">{currentSubscription.plan_name || '不明なプラン'}</p>
+                        <p className="mt-1 font-semibold">
+                          {session?.user?.role || currentSubscription.plan_name || '不明なプラン'}
+                          {session?.user?.role && session.user.role !== currentSubscription.plan_name && (
+                            <span className="text-xs text-yellow-600 ml-2">
+                              (データ同期中)
+                            </span>
+                          )}
+                        </p>
                       </div>
                       <div>
                         <h3 className="text-sm font-medium text-gray-500">ステータス</h3>
