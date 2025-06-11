@@ -411,35 +411,57 @@ async def stripe_webhook(
 
     try:
         if event_type == 'checkout.session.completed':
-            session = data
-            logger.info(f"Checkout Session Completed: {session.id}")
-            metadata = session.get('metadata', {})
-            user_id_str = metadata.get('user_id')
-            price_id = metadata.get('price_id')
-            stripe_subscription_id = session.get('subscription')
-            stripe_customer_id = session.get('customer')
-            applied_coupon_id = metadata.get('applied_coupon_id')
-            db_campaign_code: Optional[CampaignCode] = None
-
-            if applied_coupon_id:
-                db_coupon = await crud_subscription.get_db_coupon_by_stripe_id(db, applied_coupon_id)
-                if db_coupon and db_coupon.campaign_codes:
-                    db_campaign_code = db_coupon.campaign_codes[0]
-                    logger.info(f"Checkoutに適用されたDB Campaign Code ID: {db_campaign_code.id} (via Stripe Coupon: {applied_coupon_id})")
-                else:
-                    logger.warning(f"メタデータのStripe Coupon ID {applied_coupon_id} に対応するDB CampaignCodeが見つかりません。")
-
-            if not user_id_str:
-                logger.error("Webhook checkout.session.completed: metadataにuser_idがありません")
-                return {"status": "error", "message": "user_id not found in metadata"}
+            try:
+                session = data
+                logger.info(f"🟢 Checkout Session Completed開始: {session.id}")
+                metadata = session.get('metadata', {})
+                user_id_str = metadata.get('user_id')
+                price_id = metadata.get('price_id')
+                stripe_subscription_id = session.get('subscription')
+                stripe_customer_id = session.get('customer')
+                applied_coupon_id = metadata.get('applied_coupon_id')
+                db_campaign_code: Optional[CampaignCode] = None
+                
+                logger.info(f"📊 Webhook受信データ - user_id: {user_id_str}, price_id: {price_id}, subscription: {stripe_subscription_id}, coupon: {applied_coupon_id}")
+            except Exception as init_error:
+                logger.error(f"🚨 checkout.session.completed 初期処理でエラー: {init_error}", exc_info=True)
+                return {"status": "error", "message": f"初期処理エラー: {str(init_error)}"}
 
             try:
-                user_id = UUID(user_id_str)
-            except ValueError:
-                 logger.error(f"Webhook checkout.session.completed: 無効なuser_id形式です: {user_id_str}")
-                 return {"status": "error", "message": "Invalid user_id format"}
+                logger.info(f"🔍 クーポンコード処理開始 - applied_coupon_id: {applied_coupon_id}")
+                if applied_coupon_id:
+                    db_coupon = await crud_subscription.get_db_coupon_by_stripe_id(db, applied_coupon_id)
+                    if db_coupon and db_coupon.campaign_codes:
+                        db_campaign_code = db_coupon.campaign_codes[0]
+                        logger.info(f"✅ Checkoutに適用されたDB Campaign Code ID: {db_campaign_code.id} (via Stripe Coupon: {applied_coupon_id})")
+                    else:
+                        logger.warning(f"⚠️ メタデータのStripe Coupon ID {applied_coupon_id} に対応するDB CampaignCodeが見つかりません。")
+            except Exception as coupon_error:
+                logger.error(f"🚨 クーポンコード処理でエラー: {coupon_error}", exc_info=True)
+                return {"status": "error", "message": f"クーポンコード処理エラー: {str(coupon_error)}"}
 
-            existing_sub = await crud_subscription.get_subscription_by_stripe_id(db, stripe_subscription_id)
+            try:
+                logger.info(f"🔍 ユーザーID検証開始 - user_id_str: {user_id_str}")
+                if not user_id_str:
+                    logger.error("🚨 Webhook checkout.session.completed: metadataにuser_idがありません")
+                    return {"status": "error", "message": "user_id not found in metadata"}
+
+                user_id = UUID(user_id_str)
+                logger.info(f"✅ ユーザーID検証成功 - user_id: {user_id}")
+            except ValueError as uuid_error:
+                logger.error(f"🚨 Webhook checkout.session.completed: 無効なuser_id形式です: {user_id_str} - {uuid_error}")
+                return {"status": "error", "message": "Invalid user_id format"}
+            except Exception as user_validation_error:
+                logger.error(f"🚨 ユーザーID検証でエラー: {user_validation_error}", exc_info=True)
+                return {"status": "error", "message": f"ユーザーID検証エラー: {str(user_validation_error)}"}
+
+            try:
+                logger.info(f"🔍 既存サブスクリプション検索開始 - stripe_subscription_id: {stripe_subscription_id}")
+                existing_sub = await crud_subscription.get_subscription_by_stripe_id(db, stripe_subscription_id)
+                logger.info(f"📊 既存サブスクリプション検索結果: {'見つかりました' if existing_sub else '見つかりませんでした'}")
+            except Exception as sub_search_error:
+                logger.error(f"🚨 既存サブスクリプション検索でエラー: {sub_search_error}", exc_info=True)
+                return {"status": "error", "message": f"サブスクリプション検索エラー: {str(sub_search_error)}"}
 
             if existing_sub:
                  logger.info(f"既存サブスクリプション更新 (Stripe ID: {stripe_subscription_id})")
@@ -456,22 +478,34 @@ async def stripe_webhook(
                  }
                  await crud_subscription.update_subscription(db, existing_sub.id, update_data)
             else:
-                logger.info(f"新規サブスクリプション作成 (Stripe ID: {stripe_subscription_id})")
-                stripe_sub_data = StripeService.get_subscription(stripe_subscription_id)
-                # plan_data = stripe_sub_data.get('items', {}).get('data', [{}])[0].get('plan', {}) # plan_dataの取得は不要になるか確認
-                # plan_name = plan_data.get('nickname') if plan_data and plan_data.get('nickname') is not None else 'プラン名不明' # plan_nameも不要
-
-                # ★★★ Stripe Price ID から DBのPlan UUIDを取得 ★★★
-                stripe_price_id = stripe_sub_data.get('items', {}).get('data', [{}])[0].get('price', {}).get('id')
-                db_plan = None
-                if stripe_price_id:
-                    db_plan = await crud_subscription.get_plan_by_price_id(db, stripe_price_id)
-                else:
-                    logger.error("Stripe SubscriptionデータからPrice IDを取得できませんでした。")
+                try:
+                    logger.info(f"🟢 新規サブスクリプション作成開始 (Stripe ID: {stripe_subscription_id})")
+                    logger.info(f"🔍 Stripe APIからサブスクリプション情報取得中...")
+                    stripe_sub_data = StripeService.get_subscription(stripe_subscription_id)
+                    logger.info(f"✅ Stripe APIからサブスクリプション情報取得成功")
+                    
+                    # ★★★ Stripe Price ID から DBのPlan UUIDを取得 ★★★
+                    logger.info(f"🔍 Price ID取得開始...")
+                    stripe_price_id = stripe_sub_data.get('items', {}).get('data', [{}])[0].get('price', {}).get('id')
+                    logger.info(f"📊 取得されたPrice ID: {stripe_price_id}")
+                    
+                    db_plan = None
+                    if stripe_price_id:
+                        logger.info(f"🔍 DB内のプラン検索開始 - Price ID: {stripe_price_id}")
+                        db_plan = await crud_subscription.get_plan_by_price_id(db, stripe_price_id)
+                        logger.info(f"📊 DB内のプラン検索結果: {'見つかりました' if db_plan else '見つかりませんでした'}")
+                    else:
+                        logger.error("🚨 Stripe SubscriptionデータからPrice IDを取得できませんでした。")
+                except Exception as stripe_fetch_error:
+                    logger.error(f"🚨 Stripe情報取得でエラー: {stripe_fetch_error}", exc_info=True)
+                    return {"status": "error", "message": f"Stripe情報取得エラー: {str(stripe_fetch_error)}"}
                 
                 if not db_plan:
-                     logger.error(f"Stripe Price ID {stripe_price_id} に対応するDBプランが見つかりません。")
-                     raise HTTPException(status_code=500, detail="プラン情報の紐付けに失敗しました。")
+                     logger.error(f"🚨 Stripe Price ID {stripe_price_id} に対応するDBプランが見つかりません。")
+                     logger.error(f"🚨 利用可能なプランをDBから確認してください: user_id={user_id}, stripe_sub_id={stripe_subscription_id}")
+                     # エラーで停止せず、警告として処理を続行
+                     logger.warning(f"⚠️ プラン紐付けに失敗しましたが、処理を続行します。")
+                     return {"status": "error", "message": f"プラン情報の紐付けに失敗しました: price_id={stripe_price_id}"}
                 # ★★★ ここまで ★★★
 
                 new_sub_data = {
@@ -516,10 +550,11 @@ async def stripe_webhook(
                                                 
                                                 # ★ ロール更新後、既存のJWTトークンを無効化してユーザーに再ログインを促す
                                                 try:
-                                                    from app.crud.token_blacklist import add_to_blacklist
+                                                    # トークン無効化機能は現在実装されていないためコメントアウト
+                                                    # from app.crud.token_blacklist import add_to_blacklist
                                                     # 該当ユーザーのすべてのアクティブトークンを無効化
                                                     # （実装により異なるが、user_idベースで無効化）
-                                                    logger.info(f"ユーザー {user_id} のロール更新により、既存トークンの再検証が必要です。")
+                                                    logger.info(f"ユーザー {user_id} のロール更新により、既存トークンの再検証が必要です。（トークン無効化機能は未実装のためスキップ）")
                                                 except Exception as token_invalidate_error:
                                                     logger.warning(f"トークン無効化処理でエラー（ユーザー: {user_id}）: {token_invalidate_error}")
                                             else:
@@ -549,9 +584,19 @@ async def stripe_webhook(
             if db_campaign_code:
                 await crud_subscription.increment_campaign_code_usage(db, db_campaign_code.id)
 
-            user = await crud_user.get_user(db, user_id)
-            if user and user.status != SchemaUserStatus.ACTIVE:
-                 await crud_user.update_user(db, db_user=user, user_in=UserUpdate(status=SchemaUserStatus.ACTIVE))
+            try:
+                logger.info(f"🔍 ユーザーステータス更新開始 - user_id: {user_id}")
+                user = await crud_user.get_user(db, user_id)
+                if user and user.status != SchemaUserStatus.ACTIVE:
+                    await crud_user.update_user(db, db_user=user, user_in=UserUpdate(status=SchemaUserStatus.ACTIVE))
+                    logger.info(f"✅ ユーザーステータスをACTIVEに更新しました - user_id: {user_id}")
+                else:
+                    logger.info(f"📊 ユーザーは既にACTIVEです - user_id: {user_id}")
+            except Exception as user_status_error:
+                logger.error(f"🚨 ユーザーステータス更新でエラー: {user_status_error}", exc_info=True)
+                # ユーザーステータス更新は重要ではないのでエラーでも処理続行
+                
+            logger.info(f"🎉 checkout.session.completed処理完了 - session_id: {session.id}")
 
         elif event_type == 'invoice.payment_succeeded':
             invoice = data
