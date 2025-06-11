@@ -5,7 +5,6 @@ import { ChatTypeEnum } from '@/types/chat';
 interface ChatSessionPageProps {
   params: {
     sessionId: string;
-    // chatType はパスから取らないので削除 (ChatPageに直接渡すため)
   };
 }
 
@@ -21,7 +20,7 @@ export async function generateMetadata(
 export default function SelfAnalysisChatSessionPage({ params }: ChatSessionPageProps) {
   return (
     <ChatPage
-      key="fixedChatPageKey"
+      key={`self-analysis-${params.sessionId}`}
       initialChatType={ChatTypeEnum.SELF_ANALYSIS}
       initialSessionId={params.sessionId}
     />

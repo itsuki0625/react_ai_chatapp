@@ -1,9 +1,11 @@
-import ChatPage from '@/components/chat/ChatPage';
+import { Metadata } from 'next';
+import GenericLandingPage from '@/components/chat/GenericLandingPage';
 
-export default function Page() {
-  return (
-    <div className="h-full w-full">
-      <ChatPage />
-    </div>
-  );
+export const metadata: Metadata = {
+  title: '一般チャットAI',
+  description: 'AIと自由に対話して、様々なことを相談できます',
+};
+
+export default function GeneralChatPage() {
+  return <GenericLandingPage chatType="general" />;
 }

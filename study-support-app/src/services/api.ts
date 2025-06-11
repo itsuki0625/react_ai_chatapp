@@ -271,4 +271,29 @@ export const contentAPI = {
       throw error;
     }
   },
+};
+
+// チャット関連のAPI機能
+export const chatAPI = {
+  generateSessionTitle: async (sessionId: string): Promise<{ title: string; session_id: string }> => {
+    try {
+      const response = await fetchWithAuth(
+        `${getApiBaseUrl()}/api/v1/chat/sessions/${sessionId}/generate-title`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error(`セッションID: ${sessionId} のタイトル生成に失敗しました:`, error);
+      throw error;
+    }
+  },
 }; 

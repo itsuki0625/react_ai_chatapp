@@ -13,158 +13,246 @@ interface ChatPageProps {
   initialSessionId?: string;
 }
 
-const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }) => {
-  const router = useRouter();
-  const pathname = usePathname();
-
-  const {
-    isLoading: chatIsLoading,
-    isWebSocketConnected: isConnected,
-    sendMessage: sendChatMessage,
-    changeChatType,
-    currentChatType: contextChatType,
-    sessionId: contextSessionId,
-    sessions,
-    archivedSessions,
-    viewingSessionStatus,
-    justStartedNewChat,
-    dispatch,
-  } = useChat();
-
-  const checklistRef = useRef<{ triggerUpdate: () => void }>(null);
-  const prevContextSessionIdRef = useRef<string | null | undefined>(contextSessionId);
-
-  // Derived state from URL
-  const getChatInfoFromPath = useCallback(() => {
+// カスタムフック: URLパス解析
+const useChatPathInfo = (pathname: string) => {
+  return useCallback(() => {
     const pathSegments = pathname.split('/').filter(Boolean);
     const chatSegmentIndex = pathSegments.findIndex(segment => segment === 'chat');
     
-    // Ensure chatSegmentIndex is found and there's a segment after 'chat' for type
     let typeFromUrl = undefined;
     if (chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 1) {
       const rawType = pathSegments[chatSegmentIndex + 1];
       // URLの形式（ハイフン）をEnum値（スネークケース）に変換
       typeFromUrl = rawType.replace(/-/g, '_').toLowerCase() as ChatTypeValue;
-      console.log('[DEBUG] Path parsing:', rawType, '->', typeFromUrl);
     }
     
-    // Ensure there's a segment after type for session ID
-    const sessionIdFromUrl = chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 2 ? pathSegments[chatSegmentIndex + 2] : undefined;
+    const sessionIdFromUrl = chatSegmentIndex !== -1 && pathSegments.length > chatSegmentIndex + 2 ? 
+      pathSegments[chatSegmentIndex + 2] : undefined;
     
     return { typeFromUrl, sessionIdFromUrl };
   }, [pathname]);
+};
 
+// カスタムフック: セッション状態管理
+const useSessionSync = () => {
+  const {
+    currentChatType: contextChatType,
+    sessionId: contextSessionId,
+    sessions,
+    archivedSessions,
+    justStartedNewChat,
+    changeChatType,
+    dispatch,
+  } = useChat();
+
+  const router = useRouter();
+  const pathname = usePathname();
+  const getChatInfoFromPath = useChatPathInfo(pathname);
+  const prevContextSessionIdRef = useRef<string | null | undefined>(contextSessionId);
+
+  // 新しいチャットページに遷移したときのクリア処理
+  const clearPreviousSession = useCallback((typeFromUrl: string) => {
+    if (contextSessionId) {
+      dispatch({ type: 'CLEAR_CHAT', payload: { chatType: contextChatType } });
+    }
+  }, [contextSessionId, contextChatType, dispatch]);
+
+  // 新しいセッション作成時のURL更新
+  const updateUrlForNewSession = useCallback((sessionId: string, chatType: string) => {
+    const newChatPath = `/chat/${chatType.toLowerCase()}/${sessionId}`;
+    router.replace(newChatPath);
+  }, [router]);
+
+  // チャットタイプの同期
+  const syncChatType = useCallback((typeFromUrl: ChatTypeValue) => {
+    if (typeFromUrl !== contextChatType) {
+      changeChatType(typeFromUrl);
+    }
+  }, [contextChatType, changeChatType]);
+
+  // セッションIDの同期
+  const syncSessionId = useCallback((sessionIdFromUrl: string) => {
+    if (sessionIdFromUrl !== contextSessionId) {
+      const foundSession = sessions.find(s => s.id === sessionIdFromUrl) || 
+                           archivedSessions.find(s => s.id === sessionIdFromUrl);
+      const sessionStatus = foundSession?.status;
+      dispatch({ type: 'SET_SESSION_ID', payload: { id: sessionIdFromUrl, status: sessionStatus } });
+    }
+  }, [contextSessionId, sessions, archivedSessions, dispatch]);
+
+  // コンテキストセッションのクリア
+  const clearContextSession = useCallback(() => {
+    dispatch({ type: 'SET_SESSION_ID', payload: { id: null, status: null } });
+  }, [dispatch]);
+
+  return {
+    contextChatType,
+    contextSessionId,
+    justStartedNewChat,
+    prevContextSessionIdRef,
+    getChatInfoFromPath,
+    clearPreviousSession,
+    updateUrlForNewSession,
+    syncChatType,
+    syncSessionId,
+    clearContextSession,
+  };
+};
+
+// チャットタイプの表示名を取得
+const getChatTypeDisplayName = (chatType: ChatTypeValue): string => {
+  switch (chatType) {
+    case ChatTypeEnum.SELF_ANALYSIS:
+      return '自己分析AI';
+    case ChatTypeEnum.ADMISSION:
+      return '総合型選抜AI';
+    case ChatTypeEnum.STUDY_SUPPORT:
+      return '学習サポートAI';
+    case ChatTypeEnum.FAQ:
+      return 'FAQヘルプAI';
+    default:
+      return 'AIチャット';
+  }
+};
+
+// チャットタイプの説明を取得
+const getChatTypeDescription = (chatType: ChatTypeValue): string => {
+  switch (chatType) {
+    case ChatTypeEnum.SELF_ANALYSIS:
+      return '自己分析を深め、自分の強みを見つけましょう';
+    case ChatTypeEnum.ADMISSION:
+      return '総合型選抜に関する相談や志望理由書の添削を行います';
+    case ChatTypeEnum.STUDY_SUPPORT:
+      return '学習に関する質問や課題の解決をサポートします';
+    case ChatTypeEnum.FAQ:
+      return 'よくある質問に回答します';
+    default:
+      return 'AIとチャットして情報を得ましょう';
+  }
+};
+
+// チャットタイプの短縮名を取得
+const getChatTypeShortName = (chatType: ChatTypeValue): string => {
+  switch (chatType) {
+    case ChatTypeEnum.STUDY_SUPPORT:
+      return '学習支援';
+    case ChatTypeEnum.SELF_ANALYSIS:
+      return '自己分析';
+    case ChatTypeEnum.ADMISSION:
+      return '総合型選抜';
+    case ChatTypeEnum.FAQ:
+      return 'FAQ';
+    default:
+      return chatType;
+  }
+};
+
+const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }) => {
+  const {
+    isLoading: chatIsLoading,
+    isWebSocketConnected: isConnected,
+    sendMessage: sendChatMessage,
+  } = useChat();
+
+  const {
+    contextChatType,
+    contextSessionId,
+    justStartedNewChat,
+    prevContextSessionIdRef,
+    getChatInfoFromPath,
+    clearPreviousSession,
+    updateUrlForNewSession,
+    syncChatType,
+    syncSessionId,
+    clearContextSession,
+  } = useSessionSync();
+
+  const checklistRef = useRef<{ triggerUpdate: () => void }>(null);
+
+  // メインの同期効果
   useEffect(() => {
     const { typeFromUrl, sessionIdFromUrl } = getChatInfoFromPath();
     const previousContextSessionId = prevContextSessionIdRef.current;
 
-    console.log(`[DEBUG ChatPage UnifiedEffect] Start. Path: ${pathname}, PrevCtxSessID: ${previousContextSessionId}, Ctx: CType=${contextChatType} CSessID=${contextSessionId} JustNew=${justStartedNewChat}, URL: UType=${typeFromUrl} USessID=${sessionIdFromUrl}`);
-
-    // 新しいチャットページに遷移したとき、以前のセッションをクリア
+    // ケース1: 新しいチャットページに遷移 - 以前のセッションをクリア
     if (typeFromUrl && !sessionIdFromUrl && contextSessionId) {
-      console.log(`[DEBUG ChatPage UnifiedEffect] Detected new chat path /chat/${typeFromUrl}, clearing previous session.`);
-      dispatch({ type: 'CLEAR_CHAT', payload: { chatType: contextChatType } });
+      clearPreviousSession(typeFromUrl);
       return;
     }
 
-    // Priority 1: New Chat URL Update
+    // ケース2: 新しいセッション作成時のURL更新
     if (contextChatType && contextSessionId && !sessionIdFromUrl && 
         (previousContextSessionId === null || previousContextSessionId === undefined)) {
-      const newChatPath = `/chat/${contextChatType.toLowerCase()}/${contextSessionId}`;
-      console.log(`[DEBUG ChatPage UnifiedEffect Priority 1] ContextSessionId changed from ${previousContextSessionId} to ${contextSessionId}. URL has no session. Updating URL to: ${newChatPath}`);
-      router.replace(newChatPath);
-      // prevContextSessionIdRef.current is updated at the end of the effect
-      return; 
-    }
-
-    // Priority 2: Synchronize Context from URL and other cases
-    if (typeFromUrl && typeFromUrl !== contextChatType) {
-      console.log(`[DEBUG ChatPage UnifiedEffect] URL chat type (${typeFromUrl}) differs from context (${contextChatType}). Changing context chat type.`);
-      changeChatType(typeFromUrl);
-      // prevContextSessionIdRef.current is updated at the end
+      updateUrlForNewSession(contextSessionId, contextChatType);
       return;
     }
 
+    // ケース3: チャットタイプの同期
+    if (typeFromUrl && typeFromUrl !== contextChatType) {
+      syncChatType(typeFromUrl);
+      return;
+    }
+
+    // ケース4: セッションIDの同期（同じチャットタイプの場合）
     if (typeFromUrl && typeFromUrl === contextChatType) {
       if (sessionIdFromUrl && sessionIdFromUrl !== contextSessionId) {
-        const foundSession = sessions.find(s => s.id === sessionIdFromUrl) || archivedSessions.find(s => s.id === sessionIdFromUrl);
-        const sessionStatus = foundSession?.status;
-        console.log(`[DEBUG ChatPage UnifiedEffect] URL session ID (${sessionIdFromUrl}) differs from context (${contextSessionId}). Setting context session ID. Status: ${sessionStatus}`);
-        dispatch({ type: 'SET_SESSION_ID', payload: { id: sessionIdFromUrl, status: sessionStatus } });
-        // prevContextSessionIdRef.current is updated at the end
+        syncSessionId(sessionIdFromUrl);
         return;
       } else if (!sessionIdFromUrl && contextSessionId && !justStartedNewChat) {
         if (previousContextSessionId !== null && previousContextSessionId !== undefined) {
-            console.log(`[DEBUG ChatPage UnifiedEffect] URL has no session, context has ${contextSessionId} (was ${previousContextSessionId}). Clearing context session.`);
-            dispatch({ type: 'SET_SESSION_ID', payload: { id: null, status: null } });
-            // prevContextSessionIdRef.current is updated at the end
-            return;
-        } else {
-            console.log(`[DEBUG ChatPage UnifiedEffect] URL has no session, context has ${contextSessionId}, prev was ${previousContextSessionId}. Not clearing, likely new session flow or waiting for URL update.`);
+          clearContextSession();
+          return;
         }
-      } else if (sessionIdFromUrl && !contextSessionId && !justStartedNewChat && typeFromUrl === contextChatType) {
-        const foundSession = sessions.find(s => s.id === sessionIdFromUrl) || archivedSessions.find(s => s.id === sessionIdFromUrl);
-        const sessionStatus = foundSession?.status;
-        console.log(`[DEBUG ChatPage UnifiedEffect] URL has session ${sessionIdFromUrl}, context has no session (not new chat). Setting context session ID. Status: ${sessionStatus}`);
-        dispatch({ type: 'SET_SESSION_ID', payload: { id: sessionIdFromUrl, status: sessionStatus } });
-        // prevContextSessionIdRef.current is updated at the end
+      } else if (sessionIdFromUrl && !contextSessionId && !justStartedNewChat) {
+        syncSessionId(sessionIdFromUrl);
         return;
       }
     }
-    
+
+    // ケース5: 初期チャットタイプの設定
     if (!typeFromUrl && initialChatType && initialChatType !== contextChatType && !contextChatType) {
-        console.log(`[DEBUG ChatPage UnifiedEffect] No URL type, initialChatType (${initialChatType}) provided. Setting context chat type.`);
-        changeChatType(initialChatType);
-        // prevContextSessionIdRef.current is updated at the end
-        return;
-    }
-    
-    if (justStartedNewChat && typeFromUrl && !sessionIdFromUrl && !contextSessionId) {
-        console.log(`[DEBUG ChatPage UnifiedEffect] New chat state: URL is /chat/${typeFromUrl}, context session is null. Waiting for backend session ID.`);
+      syncChatType(initialChatType);
+      return;
     }
 
-    console.log(`[DEBUG ChatPage UnifiedEffect] End. Path: ${pathname}, PrevCtxSessID: ${previousContextSessionId}, Ctx: CType=${contextChatType} CSessID=${contextSessionId} JustNew=${justStartedNewChat}, URL: UType=${typeFromUrl} USessID=${sessionIdFromUrl}`);
-    
+    // 前回のセッションIDを更新
     prevContextSessionIdRef.current = contextSessionId;
-
   }, [
-    pathname, 
-    contextChatType, 
-    contextSessionId, 
-    justStartedNewChat, 
+    contextChatType,
+    contextSessionId,
+    justStartedNewChat,
     initialChatType,
-    sessions, 
-    archivedSessions, 
-    changeChatType, 
-    dispatch, 
-    router,
-    getChatInfoFromPath
+    getChatInfoFromPath,
+    clearPreviousSession,
+    updateUrlForNewSession,
+    syncChatType,
+    syncSessionId,
+    clearContextSession,
   ]);
-  
+
   const activeChatType = contextChatType;
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-slate-50 rounded-lg shadow-sm border border-slate-200">
       <ChatSidebar />
       <div className="flex-1 flex flex-col h-full border-l border-slate-200">
+        {/* ヘッダー部分 */}
         <div className="bg-white py-4 px-6 border-b border-slate-200 hidden sm:block shadow-sm sticky top-0 z-10">
           <div className="max-w-4xl mx-auto">
             <h1 className="text-lg font-semibold text-slate-800">
-              {contextChatType === ChatTypeEnum.SELF_ANALYSIS ? '自己分析AI' :
-               contextChatType === ChatTypeEnum.ADMISSION ? '総合型選抜AI' :
-               contextChatType === ChatTypeEnum.STUDY_SUPPORT ? '学習サポートAI' :
-               contextChatType === ChatTypeEnum.FAQ ? 'FAQヘルプAI' : 'AIチャット'}
+              {activeChatType ? getChatTypeDisplayName(activeChatType) : 'AIチャット'}
             </h1>
             <p className="text-sm text-slate-500">
-              {contextChatType === ChatTypeEnum.SELF_ANALYSIS ? '自己分析を深め、自分の強みを見つけましょう' :
-               contextChatType === ChatTypeEnum.ADMISSION ? '総合型選抜に関する相談や志望理由書の添削を行います' :
-               contextChatType === ChatTypeEnum.STUDY_SUPPORT ? '学習に関する質問や課題の解決をサポートします' :
-               contextChatType === ChatTypeEnum.FAQ ? 'よくある質問に回答します' : 'AIとチャットして情報を得ましょう'}
+              {activeChatType ? getChatTypeDescription(activeChatType) : 'AIとチャットして情報を得ましょう'}
             </p>
           </div>
         </div>
+
+        {/* メインコンテンツ部分 */}
         <div className="flex-1 overflow-hidden relative">
           <ChatWindow />
+          
+          {/* 入力部分 */}
           <div className="absolute bottom-0 left-0 right-0 z-10">
             <div className="px-4 py-3 bg-white border-t border-slate-200 shadow-lg">
               <ChatInput 
@@ -191,10 +279,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }
                 {/* チャットタイプ表示 */}
                 {activeChatType && (
                   <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
-                    {activeChatType === ChatTypeEnum.STUDY_SUPPORT ? '学習支援' :
-                     activeChatType === ChatTypeEnum.SELF_ANALYSIS ? '自己分析' :
-                     activeChatType === ChatTypeEnum.ADMISSION ? '総合型選抜' : 
-                     activeChatType === ChatTypeEnum.FAQ ? 'FAQ' : activeChatType}
+                    {getChatTypeShortName(activeChatType)}
                   </span>
                 )}
               </div>

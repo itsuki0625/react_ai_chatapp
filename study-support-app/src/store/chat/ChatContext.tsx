@@ -73,7 +73,11 @@ export const chatReducer = (state: ChatState, action: ChatAction): ChatState => 
     case 'FETCH_HISTORY_START':
       return { ...state, isLoading: true, error: null, justStartedNewChat: false };
     case 'FETCH_HISTORY_SUCCESS':
-      return { ...state, isLoading: false, messages: action.payload, justStartedNewChat: false };
+      // 空白メッセージをフィルタリング
+      const filteredMessages = action.payload.filter((msg: ChatMessage) => 
+        msg.content && msg.content.trim().length > 0
+      );
+      return { ...state, isLoading: false, messages: filteredMessages, justStartedNewChat: false };
     case 'FETCH_HISTORY_FAILURE':
       return { ...state, isLoading: false, error: action.payload, justStartedNewChat: false };
     case 'SEND_MESSAGE_START':
@@ -208,7 +212,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
 
     switch (wsMessage.type) {
       case 'chunk':
-        if (wsMessage.content) {
+        if (wsMessage.content && wsMessage.content.trim().length > 0) {
           const streamingAiMsgIndex = state.messages.findIndex(m => m.sender === 'AI' && m.isStreaming);
           if (streamingAiMsgIndex !== -1) {
             aiMessage = {
@@ -232,14 +236,20 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       case 'done':
         const finalAiMsgIndex = state.messages.findIndex(m => m.sender === 'AI' && m.isStreaming && ((wsMessage as any).id ? m.id === (wsMessage as any).id : (wsMessage as any).message?.id ? m.id === (wsMessage as any).message.id : true) ); 
         if (finalAiMsgIndex !== -1) {
-          aiMessage = {
-            ...state.messages[finalAiMsgIndex],
-            isStreaming: false,
-            isLoading: false,
-            isError: (wsMessage as any).error,
-            timestamp: now,
-          };
-          if (aiMessage) dispatch({ type: 'ADD_MESSAGE', payload: aiMessage });
+          const finalMessage = state.messages[finalAiMsgIndex];
+          if (!finalMessage.content || finalMessage.content.trim().length === 0) {
+            const filteredMessages = state.messages.filter((_, index) => index !== finalAiMsgIndex);
+            dispatch({ type: 'FETCH_HISTORY_SUCCESS', payload: filteredMessages });
+          } else {
+            aiMessage = {
+              ...finalMessage,
+              isStreaming: false,
+              isLoading: false,
+              isError: (wsMessage as any).error,
+              timestamp: now,
+            };
+            if (aiMessage) dispatch({ type: 'ADD_MESSAGE', payload: aiMessage });
+          }
         }
         if ((wsMessage as any).session_id && state.sessionId !== (wsMessage as any).session_id) {
              console.log(`[WS DONE] WebSocket provided sessionId ${(wsMessage as any).session_id}, context has ${state.sessionId}. Updating context.`);
@@ -431,17 +441,20 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       dispatch({ type: 'FETCH_SESSIONS_FAILURE', payload: "認証されていません。セッションを読み込めません。" });
       return;
     }
+    console.log(`[ChatContext] fetchSessions called with chatType: "${chatType}" (type: ${typeof chatType})`);
     console.log(`Fetching sessions for type: ${chatType} with token: ${authToken ? authToken.substring(0,10) + "..." : "N/A"}`);
     dispatch({ type: 'FETCH_SESSIONS_START' });
     try {
+      const params = { chat_type: chatType, status: 'ACTIVE' };
+      console.log(`[ChatContext] API request params:`, params);
       const response = await apiClient.get<ChatSession[]>('/api/v1/chat/sessions', {
         headers: { Authorization: `Bearer ${authToken}` },
-        params: { chat_type: chatType, status: 'ACTIVE' }
+        params: params
       });
       console.log("Sessions fetched successfully:", response.data);
       dispatch({ type: 'FETCH_SESSIONS_SUCCESS', payload: response.data });
     } catch (err) {
-      console.error("Error fetching sessions:", err);
+      console.error(`Error fetching sessions for type "${chatType}":`, err);
       let errorMessage = "セッションの読み込みに失敗しました。";
       if (err instanceof Error) {
         errorMessage = err.message;
@@ -462,13 +475,15 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       console.log(`[ChatContext] fetchMessages: API response received for ${sessionId}`, response.data);
-      const messages: ChatMessage[] = response.data.map((apiMsg: any) => ({
-        id: apiMsg.id || uuidv4(),
-        content: apiMsg.content,
-        sender: apiMsg.role === 'user' ? 'USER' : 'AI',
-        timestamp: apiMsg.timestamp || apiMsg.created_at || new Date().toISOString(),
-        session_id: sessionId // Ensure messages fetched for a session have that session ID
-      }));
+      const messages: ChatMessage[] = response.data
+        .filter((apiMsg: any) => apiMsg.content && apiMsg.content.trim().length > 0)
+        .map((apiMsg: any) => ({
+          id: apiMsg.id || uuidv4(),
+          content: apiMsg.content,
+          sender: apiMsg.role === 'user' ? 'USER' : 'AI',
+          timestamp: apiMsg.timestamp || apiMsg.created_at || new Date().toISOString(),
+          session_id: sessionId 
+        }));
       console.log(`[ChatContext] fetchMessages: Parsed messages for ${sessionId}`, messages);
       dispatch({ type: 'FETCH_HISTORY_SUCCESS', payload: messages });
     } catch (err) { 

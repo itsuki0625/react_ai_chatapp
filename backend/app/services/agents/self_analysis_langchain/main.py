@@ -493,6 +493,25 @@ def decide_next_step(state: SelfAnalysisState) -> str:
             next_step = get_next_step(current_step)
             if next_step:
                 logger.info(f"Step {current_step} completed, moving to {next_step}")
+                # DB更新もここで実行して一貫性を保つ
+                try:
+                    from sqlalchemy import create_engine
+                    from sqlalchemy.orm import sessionmaker
+                    from app.core.config import settings
+                    
+                    sync_engine = create_engine(settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://"))
+                    SyncSessionLocal = sessionmaker(bind=sync_engine)
+                    
+                    with SyncSessionLocal() as db:
+                        sa = db.get(SelfAnalysisSession, session_id)
+                        if sa:
+                            sa.current_step = next_step
+                            db.add(sa)
+                            db.commit()
+                            logger.info(f"Updated SelfAnalysisSession {session_id}: {current_step} -> {next_step}")
+                except Exception as update_err:
+                    logger.error(f"Failed to update step in decide_next_step: {update_err}")
+                
                 return next_step
             else:
                 logger.info(f"All steps completed for session {session_id}")
@@ -621,42 +640,8 @@ class SelfAnalysisOrchestrator:
             result = await self.orchestrator.ainvoke(initial_state)
             logger.info(f"Orchestrator ainvoke completed. Result: {result}")
             
-            # Update database with next step (only if current step is completed)
-            try:
-                async with AsyncSessionLocal() as db:
-                    sa = await db.get(SelfAnalysisSession, session_id)
-                    if sa:
-                        # 結果から実行されたステップと次のステップを取得
-                        current_response = result.get("current_response", "")
-                        next_step_from_result = result.get("next_step")
-                        
-                        # 現在のステップを取得
-                        current_step = sa.current_step or "FUTURE"
-                        
-                        # ステップが完了したかチェック
-                        step_completed = is_step_completed(current_step, current_response)
-                        
-                        logger.info(f"Database update for session {session_id}: current_step={current_step}, step_completed={step_completed}, next_step_from_result={next_step_from_result}")
-                        
-                        if step_completed and next_step_from_result:
-                            # 完了した場合は次のステップに進む
-                            sa.current_step = next_step_from_result
-                            logger.info(f"Step completed! Updated SelfAnalysisSession for {session_id}: {current_step} -> {next_step_from_result}")
-                        elif not step_completed:
-                            # 完了していない場合は同じステップを継続
-                            logger.info(f"Step {current_step} not yet completed for session {session_id}, staying on current step")
-                        else:
-                            # ステップ完了したが次のステップがない場合（全体完了）
-                            logger.info(f"Session {session_id} completed all steps")
-                            
-                        db.add(sa)
-                        await db.commit()
-                        logger.info(f"Database commit successful for session {session_id}")
-                    else:
-                        logger.warning(f"Session {session_id} not found for step update")
-            except Exception as db_err:
-                logger.error(f"Database error updating session in SelfAnalysisOrchestrator: {db_err}", exc_info=True)
-                # Continue execution even if DB update fails
+            # Note: DB updates are now handled within decide_next_step for consistency
+            logger.info(f"Orchestrator completed for session {session_id}")
             
             # Return user-facing message instead of raw state
             user_message = result.get("user_message")

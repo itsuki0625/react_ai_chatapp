@@ -68,14 +68,13 @@ async def get_or_create_chat_session(
             logger.warning(f"Session with ID {actual_session_uuid} not found for user {user_id}. Creating a new session instead.")
             pass
 
-    initial_title = "新規チャット"
     new_session_uuid = uuid.uuid4()
     logger.info(f"Creating new chat session with ID {new_session_uuid} for user {user_id} and type {chat_type_enum}")
 
     new_session = ChatSession(
         id=new_session_uuid,
         user_id=user_id,
-        title=initial_title,
+        title=None,  # タイトルは最初の投稿時に自動生成
         status=SessionStatus.ACTIVE,
         chat_type=chat_type_enum
     )

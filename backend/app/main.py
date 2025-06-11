@@ -6,7 +6,7 @@ from app.api.v1 import api_router as v1_api_router
 from app.middleware.auth import AuthMiddleware
 import logging
 from app.database.database import Base, engine
-from fastapi.background import BackgroundTasks
+from fastapi import BackgroundTasks
 from app.crud.token import remove_expired_tokens
 import asyncio
 import time
