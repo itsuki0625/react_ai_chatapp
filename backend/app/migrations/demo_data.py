@@ -209,7 +209,6 @@ def create_user_related_data(db: Session):
     # フリープランの権限
     # ★注意: このリスト内の権限名が上記の all_permissions_data に存在するか確認
     free_perms = [
-        "content_read",
         "community_read",
         "chat_session_read",
         "chat_message_send",
@@ -226,6 +225,7 @@ def create_user_related_data(db: Session):
     # スタンダードプランの権限 (フリー + 追加権限)
     # ★注意: このリスト内の権限名が上記の all_permissions_data に存在するか確認
     standard_perms = free_perms + [
+        "content_read",   # コンテンツ閲覧を有料化（スタンダードプラン以上）
         "community_post_create",
         "community_post_delete_own",
         "study_plan_read",
@@ -234,6 +234,7 @@ def create_user_related_data(db: Session):
         "communication_write",
         "forum_post",
         "subscription_manage_own",
+        "statement_manage_own",  # 志望理由書機能を有料化
     ]
     for perm_name in standard_perms:
         add_perm("スタンダード", perm_name)
