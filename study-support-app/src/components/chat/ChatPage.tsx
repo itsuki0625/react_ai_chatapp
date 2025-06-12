@@ -75,35 +75,9 @@ const FreeUserRestriction = () => {
   );
 };
 
-const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }) => {
-  const { data: session } = useSession();
-  const router = useRouter();
-  const pathname = usePathname();
-
-  // ユーザーのプラン判定
-  const userRole = session?.user?.role;
-  const isFreeUser = userRole === 'フリー';
-  const hasAccessToChat = !isFreeUser || session?.user?.isAdmin;
-
-  const {
-    isLoading: chatIsLoading,
-    isWebSocketConnected: isConnected,
-    sendMessage: sendChatMessage,
-    changeChatType,
-    currentChatType: contextChatType,
-    sessionId: contextSessionId,
-    sessions,
-    archivedSessions,
-    viewingSessionStatus,
-    justStartedNewChat,
-    dispatch,
-  } = useChat();
-
-  const checklistRef = useRef<{ triggerUpdate: () => void }>(null);
-  const prevContextSessionIdRef = useRef<string | null | undefined>(contextSessionId);
-
-  // Derived state from URL
-  const getChatInfoFromPath = useCallback(() => {
+// カスタムフック: パス情報から チャット情報を取得
+const useChatPathInfo = (pathname: string) => {
+  return useCallback(() => {
     const pathSegments = pathname.split('/').filter(Boolean);
     const chatSegmentIndex = pathSegments.findIndex(segment => segment === 'chat');
     
@@ -236,6 +210,13 @@ const getChatTypeShortName = (chatType: ChatTypeValue): string => {
 };
 
 const ChatPage: React.FC<ChatPageProps> = ({ initialChatType, initialSessionId }) => {
+  const { data: session } = useSession();
+
+  // ユーザーのプラン判定
+  const userRole = session?.user?.role;
+  const isFreeUser = userRole === 'フリー';
+  const hasAccessToChat = !isFreeUser || session?.user?.isAdmin;
+
   const {
     isLoading: chatIsLoading,
     isWebSocketConnected: isConnected,
