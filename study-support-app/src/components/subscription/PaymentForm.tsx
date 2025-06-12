@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   PaymentElement,
   useStripe,
@@ -31,7 +31,19 @@ export function PaymentForm({
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [requires3DSecure, setRequires3DSecure] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    const checkIsMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkIsMobile();
+    window.addEventListener('resize', checkIsMobile);
+    
+    return () => window.removeEventListener('resize', checkIsMobile);
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -163,38 +175,38 @@ export function PaymentForm({
   };
 
   return (
-    <Card className="w-full max-w-md mx-auto">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+    <Card className={`w-full ${isMobile ? 'mx-4' : 'max-w-md mx-auto'}`}>
+      <CardHeader className={isMobile ? 'p-4' : ''}>
+        <CardTitle className={`flex items-center gap-2 ${isMobile ? 'text-lg' : ''}`}>
           <CreditCard className="h-5 w-5" />
           お支払い情報
         </CardTitle>
-        <CardDescription>
+        <CardDescription className={isMobile ? 'text-lg font-semibold' : ''}>
           お支払い金額: {currency === 'jpy' ? '¥' : currency}{amount.toLocaleString()}
         </CardDescription>
         
         {/* 3Dセキュア説明 */}
-        <div className="flex items-center gap-2 text-sm text-blue-600 bg-blue-50 p-2 rounded-lg">
-          <Shield className="h-4 w-4" />
+        <div className={`flex items-center gap-2 text-blue-600 bg-blue-50 p-2 rounded-lg ${isMobile ? 'text-xs' : 'text-sm'}`}>
+          <Shield className="h-4 w-4 flex-shrink-0" />
           <span>3Dセキュア認証に対応しており、安全に決済できます</span>
         </div>
       </CardHeader>
       
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
+      <CardContent className={isMobile ? 'p-4 pt-0' : ''}>
+        <form onSubmit={handleSubmit} className={`space-y-${isMobile ? '4' : '6'}`}>
           {/* エラー表示 */}
           {error && (
-            <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg border border-red-200">
-              <AlertCircle className="h-4 w-4" />
-              <span>{error}</span>
+            <div className={`flex items-start gap-2 text-red-600 bg-red-50 p-3 rounded-lg border border-red-200 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <span className="break-words">{error}</span>
             </div>
           )}
 
           {/* 3Dセキュア認証中表示 */}
           {requires3DSecure && (
-            <div className="flex items-center gap-2 text-sm text-blue-600 bg-blue-50 p-3 rounded-lg border border-blue-200">
-              <Shield className="h-4 w-4" />
-              <span>3Dセキュア認証が進行中です。ポップアップまたはリダイレクト画面で認証を完了してください。</span>
+            <div className={`flex items-start gap-2 text-blue-600 bg-blue-50 p-3 rounded-lg border border-blue-200 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+              <Shield className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <span className="break-words">3Dセキュア認証が進行中です。ポップアップまたはリダイレクト画面で認証を完了してください。</span>
             </div>
           )}
 
@@ -202,13 +214,13 @@ export function PaymentForm({
           <div className="space-y-4">
             <PaymentElement 
               options={{
-                layout: 'tabs',
+                layout: isMobile ? 'accordion' : 'tabs',
                 fields: {
                   billingDetails: {
                     name: 'auto',
                     email: 'auto',
                     phone: 'never',
-                    address: 'auto',
+                    address: isMobile ? 'never' : 'auto',
                   }
                 },
                 wallets: {
@@ -220,7 +232,7 @@ export function PaymentForm({
           </div>
 
           {/* セキュリティ情報 */}
-          <div className="text-xs text-gray-500 space-y-1">
+          <div className={`text-gray-500 space-y-1 ${isMobile ? 'text-xs' : 'text-xs'}`}>
             <p>• カード情報は暗号化されて安全に処理されます</p>
             <p>• 3Dセキュア認証により不正利用を防止します</p>
             <p>• Stripe社による決済処理で安心してご利用いただけます</p>
@@ -229,7 +241,7 @@ export function PaymentForm({
           {/* 送信ボタン */}
           <Button
             type="submit"
-            className="w-full"
+            className={`w-full ${isMobile ? 'h-12 text-base' : ''}`}
             disabled={!stripe || !elements || isProcessing || loading}
           >
             {isProcessing ? (
@@ -240,7 +252,7 @@ export function PaymentForm({
             ) : (
               <>
                 <CreditCard className="mr-2 h-4 w-4" />
-                ¥{amount.toLocaleString()}を支払う
+                {isMobile ? `¥${amount.toLocaleString()}支払う` : `¥${amount.toLocaleString()}を支払う`}
               </>
             )}
           </Button>

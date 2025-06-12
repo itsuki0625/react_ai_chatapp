@@ -103,8 +103,20 @@ interface MinimalNotification {
 export const Navigation = () => {
   const { data: session, status } = useSession();
   const [currentNavItems, setCurrentNavItems] = useState<NavItem[]>([]);
+  const [isMobile, setIsMobile] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+
+  useEffect(() => {
+    const checkIsMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkIsMobile();
+    window.addEventListener('resize', checkIsMobile);
+    
+    return () => window.removeEventListener('resize', checkIsMobile);
+  }, []);
 
   // ユーザーの権限判定（完全に権限ベース）
   const isAdmin = session?.user?.isAdmin;
@@ -192,20 +204,20 @@ export const Navigation = () => {
   };
 
   if (status === 'loading') {
-    return <div>Loading...</div>;
+    return <div className="flex items-center justify-center p-4">Loading...</div>;
   }
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between p-4">
+      <div className={`flex items-center justify-between ${isMobile ? 'p-3' : 'p-4'}`}>
         <div className="flex items-center gap-2">
           <Link
             href="/notifications"
-            className="relative p-2 hover:bg-muted rounded-full transition-colors"
+            className={`relative p-2 hover:bg-muted rounded-full transition-colors ${isMobile ? 'p-3' : ''}`}
           >
-            <Bell className="w-5 h-5" />
+            <Bell className={`${isMobile ? 'w-6 h-6' : 'w-5 h-5'}`} />
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-xs rounded-full flex items-center justify-center">
+              <span className={`absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs rounded-full flex items-center justify-center ${isMobile ? 'w-5 h-5 text-sm' : 'w-4 h-4'}`}>
                 {unreadCount}
               </span>
             )}
@@ -213,7 +225,7 @@ export const Navigation = () => {
         </div>
       </div>
 
-      <nav className="flex-1 px-4 space-y-1">
+      <nav className={`flex-1 space-y-1 ${isMobile ? 'px-2' : 'px-4'}`}>
         {navItemsState.map((item, index) => {
           const isActive = pathname === item.href ||
                          (item.children && item.children.some(child => pathname?.startsWith(child.href)));
@@ -244,7 +256,8 @@ export const Navigation = () => {
                       }
                     }}
                     className={`
-                      w-full flex items-center justify-between px-4 py-2 text-sm font-medium rounded-md
+                      w-full flex items-center justify-between font-medium rounded-md
+                      ${isMobile ? 'px-3 py-3 text-base' : 'px-4 py-2 text-sm'}
                       ${isActive && !isRestricted
                         ? 'bg-blue-50 text-blue-700'
                         : isRestricted
@@ -253,20 +266,20 @@ export const Navigation = () => {
                       }
                     `}
                   >
-                    <div className="flex items-center">
-                      <Icon className={`mr-3 h-5 w-5 ${isRestricted ? 'text-slate-400' : ''}`} />
-                      {item.name}
+                    <div className="flex items-center min-w-0 flex-1">
+                      <Icon className={`flex-shrink-0 ${isMobile ? 'mr-4 h-6 w-6' : 'mr-3 h-5 w-5'} ${isRestricted ? 'text-slate-400' : ''}`} />
+                      <span className={`truncate ${isMobile ? '' : ''}`}>{item.name}</span>
                       {isRestricted && (
-                        <div className="ml-2 flex items-center gap-1">
-                          <Lock className="h-3 w-3 text-slate-400" />
-                          <Badge variant="outline" className="text-xs px-1 py-0">
+                        <div className="ml-2 flex items-center gap-1 flex-shrink-0">
+                          <Lock className={`text-slate-400 ${isMobile ? 'h-4 w-4' : 'h-3 w-3'}`} />
+                          <Badge variant="outline" className={`px-1 py-0 ${isMobile ? 'text-xs' : 'text-xs'}`}>
                             {item.requiresPremium ? 'プレミアム' : '有料'}
                           </Badge>
                         </div>
                       )}
                     </div>
                     <svg
-                      className={`w-5 h-5 transform transition-transform ${item.expanded ? 'rotate-90' : ''} ${isRestricted ? 'text-slate-400' : ''}`}
+                      className={`transform transition-transform flex-shrink-0 ${item.expanded ? 'rotate-90' : ''} ${isRestricted ? 'text-slate-400' : ''} ${isMobile ? 'w-6 h-6' : 'w-5 h-5'}`}
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -278,7 +291,7 @@ export const Navigation = () => {
                   <div
                     className={`overflow-hidden transition-all duration-300 ease-in-out ${item.expanded && !isRestricted ? 'max-h-96' : 'max-h-0'}`}
                   >
-                    <div className="pl-8 mt-1 space-y-1 py-1">
+                    <div className={`mt-1 space-y-1 py-1 ${isMobile ? 'pl-6' : 'pl-8'}`}>
                       {item.children.map(child => {
                         const isChildActive = pathname === child.href;
                         const ChildIcon = child.icon;
@@ -297,7 +310,8 @@ export const Navigation = () => {
                             href={isChildRestricted ? '/subscription' : child.href}
                             onClick={(e) => handleRestrictedClick(e, child)}
                             className={`
-                              flex items-center px-4 py-2 text-sm font-medium rounded-md
+                              flex items-center font-medium rounded-md
+                              ${isMobile ? 'px-3 py-3 text-base' : 'px-4 py-2 text-sm'}
                               ${isChildActive && !isChildRestricted
                                 ? 'bg-blue-50 text-blue-700'
                                 : isChildRestricted
@@ -306,11 +320,11 @@ export const Navigation = () => {
                               }
                             `}
                           >
-                            <ChildIcon className={`mr-3 h-4 w-4 ${isChildRestricted ? 'text-slate-400' : ''}`} />
-                            {child.name}
+                            <ChildIcon className={`flex-shrink-0 ${isMobile ? 'mr-4 h-5 w-5' : 'mr-3 h-4 w-4'} ${isChildRestricted ? 'text-slate-400' : ''}`} />
+                            <span className="truncate flex-1">{child.name}</span>
                             {isChildRestricted && (
-                              <div className="ml-auto flex items-center">
-                                <Lock className="h-3 w-3 text-slate-400" />
+                              <div className="ml-auto flex items-center flex-shrink-0">
+                                <Lock className={`text-slate-400 ${isMobile ? 'h-4 w-4' : 'h-3 w-3'}`} />
                               </div>
                             )}
                           </Link>
@@ -324,7 +338,8 @@ export const Navigation = () => {
                   href={isRestricted ? '/subscription' : item.href}
                   onClick={(e) => handleRestrictedClick(e, item)}
                   className={`
-                    flex items-center px-4 py-2 text-sm font-medium rounded-md
+                    flex items-center font-medium rounded-md
+                    ${isMobile ? 'px-3 py-3 text-base' : 'px-4 py-2 text-sm'}
                     ${isActive && !isRestricted
                       ? 'bg-blue-50 text-blue-700'
                       : isRestricted
@@ -333,12 +348,12 @@ export const Navigation = () => {
                     }
                   `}
                 >
-                  <Icon className={`mr-3 h-5 w-5 ${isRestricted ? 'text-slate-400' : ''}`} />
-                  {item.name}
+                  <Icon className={`flex-shrink-0 ${isMobile ? 'mr-4 h-6 w-6' : 'mr-3 h-5 w-5'} ${isRestricted ? 'text-slate-400' : ''}`} />
+                  <span className="truncate flex-1">{item.name}</span>
                   {isRestricted && (
-                    <div className="ml-auto flex items-center gap-1">
-                      <Lock className="h-3 w-3 text-slate-400" />
-                      <Badge variant="outline" className="text-xs px-1 py-0">
+                    <div className="ml-auto flex items-center gap-1 flex-shrink-0">
+                      <Lock className={`text-slate-400 ${isMobile ? 'h-4 w-4' : 'h-3 w-3'}`} />
+                      <Badge variant="outline" className={`px-1 py-0 ${isMobile ? 'text-xs' : 'text-xs'}`}>
                         有料
                       </Badge>
                     </div>
@@ -352,17 +367,17 @@ export const Navigation = () => {
 
       {/* フリーユーザー向けプラン案内 */}
       {!isPaidUser && !isAdmin && (
-        <div className="p-4 border-t border-gray-200">
+        <div className={`border-t border-gray-200 ${isMobile ? 'p-3' : 'p-4'}`}>
           <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-2">
-              <Lock className="h-4 w-4 text-blue-600" />
-              <span className="text-sm font-medium text-blue-800">フリープラン</span>
+              <Lock className={`text-blue-600 ${isMobile ? 'h-5 w-5' : 'h-4 w-4'}`} />
+              <span className={`font-medium text-blue-800 ${isMobile ? 'text-base' : 'text-sm'}`}>フリープラン</span>
             </div>
-            <p className="text-xs text-blue-700 mb-2">
+            <p className={`text-blue-700 mb-2 ${isMobile ? 'text-sm' : 'text-xs'}`}>
               AIチャットや志望校管理などの機能をご利用いただくには、有料プランへのアップグレードが必要です。
             </p>
             <Link href="/subscription">
-              <button className="w-full bg-blue-600 text-white text-xs py-1.5 px-3 rounded-md hover:bg-blue-700 transition-colors">
+              <button className={`w-full bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors ${isMobile ? 'text-sm py-2 px-3' : 'text-xs py-1.5 px-3'}`}>
                 プランを確認する
               </button>
             </Link>

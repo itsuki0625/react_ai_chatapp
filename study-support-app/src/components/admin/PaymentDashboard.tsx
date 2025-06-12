@@ -35,7 +35,8 @@ import {
   DollarSign,
   Users,
   Activity,
-  Refresh,
+  RefreshCw,
+  Mail,
 } from 'lucide-react';
 
 interface PaymentStats {
@@ -85,6 +86,18 @@ const fetchPaymentAlerts = async (): Promise<PaymentAlert[]> => {
 
 export function PaymentDashboard() {
   const [refreshKey, setRefreshKey] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkIsMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkIsMobile();
+    window.addEventListener('resize', checkIsMobile);
+    
+    return () => window.removeEventListener('resize', checkIsMobile);
+  }, []);
 
   const {
     data: stats,
@@ -178,23 +191,60 @@ export function PaymentDashboard() {
     }).format(amount / 100); // Stripeは通常セント単位
   };
 
+  // モバイル用決済カードコンポーネント
+  const PaymentCard = ({ payment }: { payment: RecentPayment }) => (
+    <Card className="mb-4">
+      <CardContent className="p-4">
+        <div className="flex justify-between items-start mb-3">
+          <div className="flex-1">
+            <div className="text-sm text-gray-500 mb-1">
+              {format(new Date(payment.payment_date), 'HH:mm:ss', { locale: ja })}
+            </div>
+            <div className="font-semibold text-lg flex items-center gap-2">
+              <DollarSign className="w-4 h-4" />
+              {formatAmount(payment.amount, payment.currency)}
+            </div>
+            <div className="flex items-center gap-2 text-sm text-gray-600 mt-1">
+              <Mail className="w-3 h-3" />
+              <span className="truncate">{payment.user_email}</span>
+            </div>
+          </div>
+          {getStatusBadge(payment.status, payment.requires_3d_secure)}
+        </div>
+        
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm">
+            <CreditCard className="w-4 h-4 text-gray-500" />
+            <span>{payment.payment_method || '不明'}</span>
+          </div>
+          
+          {payment.stripe_payment_intent_id && (
+            <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded font-mono">
+              ID: {payment.stripe_payment_intent_id.substring(0, 25)}...
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">決済監視ダッシュボード</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">決済監視ダッシュボード</h1>
           <p className="text-gray-600 mt-1">
             リアルタイムでの決済状況と3Dセキュア認証の監視
           </p>
         </div>
-        <Button onClick={handleRefresh} variant="outline" size="sm">
-          <Refresh className="w-4 h-4 mr-2" />
+        <Button onClick={handleRefresh} variant="outline" size="sm" className="w-full sm:w-auto">
+          <RefreshCw className="w-4 h-4 mr-2" />
           更新
         </Button>
       </div>
 
-      {/* 統計カード */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      {/* 統計カード - モバイル対応 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">総決済数</CardTitle>
@@ -251,10 +301,16 @@ export function PaymentDashboard() {
       </div>
 
       <Tabs defaultValue="recent" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="recent">最近の決済</TabsTrigger>
-          <TabsTrigger value="alerts">アラート</TabsTrigger>
-          <TabsTrigger value="analytics">分析</TabsTrigger>
+        <TabsList className={`grid w-full ${isMobile ? 'grid-cols-3' : 'grid-cols-3'}`}>
+          <TabsTrigger value="recent" className="text-xs sm:text-sm">
+            {isMobile ? '最近' : '最近の決済'}
+          </TabsTrigger>
+          <TabsTrigger value="alerts" className="text-xs sm:text-sm">
+            アラート
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="text-xs sm:text-sm">
+            分析
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="recent" className="space-y-4">
@@ -276,58 +332,76 @@ export function PaymentDashboard() {
                   <p>データの取得に失敗しました</p>
                 </div>
               ) : (
-                <div className="border rounded-lg">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>時刻</TableHead>
-                        <TableHead>ユーザー</TableHead>
-                        <TableHead>金額</TableHead>
-                        <TableHead>ステータス</TableHead>
-                        <TableHead>決済方法</TableHead>
-                        <TableHead>PaymentIntent ID</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                <>
+                  {isMobile ? (
+                    // モバイル用カードレイアウト
+                    <div>
                       {recentPayments?.length ? (
                         recentPayments.map((payment) => (
-                          <TableRow key={payment.id}>
-                            <TableCell>
-                              {format(new Date(payment.payment_date), 'HH:mm:ss', { locale: ja })}
-                            </TableCell>
-                            <TableCell className="font-medium">
-                              {payment.user_email}
-                            </TableCell>
-                            <TableCell>
-                              {formatAmount(payment.amount, payment.currency)}
-                            </TableCell>
-                            <TableCell>
-                              {getStatusBadge(payment.status, payment.requires_3d_secure)}
-                            </TableCell>
-                            <TableCell>
-                              {payment.payment_method || '不明'}
-                            </TableCell>
-                            <TableCell className="font-mono text-xs">
-                              {payment.stripe_payment_intent_id ? (
-                                <span className="bg-gray-100 px-2 py-1 rounded">
-                                  {payment.stripe_payment_intent_id.substring(0, 15)}...
-                                </span>
-                              ) : (
-                                '−'
-                              )}
-                            </TableCell>
-                          </TableRow>
+                          <PaymentCard key={payment.id} payment={payment} />
                         ))
                       ) : (
-                        <TableRow>
-                          <TableCell colSpan={6} className="text-center py-8 text-gray-500">
-                            最近の決済はありません
-                          </TableCell>
-                        </TableRow>
+                        <div className="text-center py-8 text-gray-500">
+                          最近の決済はありません
+                        </div>
                       )}
-                    </TableBody>
-                  </Table>
-                </div>
+                    </div>
+                  ) : (
+                    // デスクトップ用テーブル
+                    <div className="border rounded-lg overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>時刻</TableHead>
+                            <TableHead>ユーザー</TableHead>
+                            <TableHead>金額</TableHead>
+                            <TableHead>ステータス</TableHead>
+                            <TableHead>決済方法</TableHead>
+                            <TableHead>PaymentIntent ID</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {recentPayments?.length ? (
+                            recentPayments.map((payment) => (
+                              <TableRow key={payment.id}>
+                                <TableCell>
+                                  {format(new Date(payment.payment_date), 'HH:mm:ss', { locale: ja })}
+                                </TableCell>
+                                <TableCell className="font-medium">
+                                  {payment.user_email}
+                                </TableCell>
+                                <TableCell>
+                                  {formatAmount(payment.amount, payment.currency)}
+                                </TableCell>
+                                <TableCell>
+                                  {getStatusBadge(payment.status, payment.requires_3d_secure)}
+                                </TableCell>
+                                <TableCell>
+                                  {payment.payment_method || '不明'}
+                                </TableCell>
+                                <TableCell className="font-mono text-xs">
+                                  {payment.stripe_payment_intent_id ? (
+                                    <span className="bg-gray-100 px-2 py-1 rounded">
+                                      {payment.stripe_payment_intent_id.substring(0, 15)}...
+                                    </span>
+                                  ) : (
+                                    '−'
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          ) : (
+                            <TableRow>
+                              <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                                最近の決済はありません
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
@@ -362,8 +436,8 @@ export function PaymentDashboard() {
                       <div className="flex items-start gap-3">
                         {getAlertIcon(alert.severity)}
                         <div className="flex-1">
-                          <p className="font-medium">{alert.message}</p>
-                          <p className="text-sm text-gray-600 mt-1">
+                          <p className="font-medium text-sm sm:text-base">{alert.message}</p>
+                          <p className="text-xs sm:text-sm text-gray-600 mt-1">
                             {format(new Date(alert.created_at), 'yyyy/MM/dd HH:mm', { locale: ja })}
                           </p>
                         </div>
@@ -382,7 +456,7 @@ export function PaymentDashboard() {
         </TabsContent>
 
         <TabsContent value="analytics" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
                 <CardTitle>決済ステータス分布</CardTitle>
@@ -436,7 +510,7 @@ export function PaymentDashboard() {
               <CardContent>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
-                    <span>3DS認証要求率</span>
+                    <span className="text-sm sm:text-base">3DS認証要求率</span>
                     <span className="font-mono">
                       {stats?.total_payments 
                         ? ((stats.requires_action_count / stats.total_payments) * 100).toFixed(1)
@@ -445,7 +519,7 @@ export function PaymentDashboard() {
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span>認証待ち決済</span>
+                    <span className="text-sm sm:text-base">認証待ち決済</span>
                     <span className="font-mono">
                       {stats?.requires_action_count || 0} 件
                     </span>
