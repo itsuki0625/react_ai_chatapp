@@ -239,3 +239,19 @@ class ManageSubscriptionRequest(BaseModel):
 class WebhookEventValidation(BaseModel):
     signature: str
     payload: str 
+
+# PaymentIntent関連のスキーマ
+class PaymentIntentCreateRequest(BaseModel):
+    price_id: str
+    plan_id: Optional[str] = None
+    coupon_id: Optional[str] = None
+
+class PaymentIntentResponse(BaseModel):
+    client_secret: str
+    amount: int
+    currency: str
+    status: str
+
+class SubscriptionConfirmRequest(BaseModel):
+    payment_intent_id: str
+    price_id: str 

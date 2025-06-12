@@ -16,7 +16,8 @@ import {
   Users,
   DollarSign,
   Bell,
-  Lock
+  Lock,
+  CreditCard
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
@@ -56,6 +57,7 @@ const freeUserNavigation: NavItem[] = [
   { name: 'コンテンツ', href: '/contents', icon: SquarePlay, requiresPaid: true },
   { name: '設定', href: '/settings', icon: Settings },
   { name: 'プラン', href: '/subscription', icon: DollarSign },
+  { name: '決済履歴', href: '/subscription/history', icon: CreditCard },
 ];
 
 // 有料ユーザー向けナビゲーション
@@ -79,6 +81,7 @@ const paidUserNavigation: NavItem[] = [
   { name: 'コンテンツ', href: '/contents', icon: SquarePlay },
   { name: '設定', href: '/settings', icon: Settings },
   { name: 'プラン', href: '/subscription', icon: DollarSign },
+  { name: '決済履歴', href: '/subscription/history', icon: CreditCard },
 ];
 
 const adminNavigation: NavItem[] = [
@@ -86,6 +89,7 @@ const adminNavigation: NavItem[] = [
   { name: 'ユーザー管理', href: '/admin/users', icon: Users },
   { name: 'コンテンツ管理', href: '/admin/content', icon: SquarePlay },
   { name: 'サブスクリプション管理', href: '/admin/subscription', icon: DollarSign },
+  { name: '決済監視', href: '/admin/payments', icon: CreditCard },
   { name: '設定', href: '/settings', icon: Settings },
 ];
 

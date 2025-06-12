@@ -85,11 +85,12 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS512" # JWTアルゴリズムを追加
     
     # メール設定
-    SMTP_SERVER: str = os.getenv("SMTP_SERVER", "smtp.example.com")
+    SMTP_SERVER: str = os.getenv("SMTP_SERVER", "smtp.gmail.com")
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
-    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
-    FROM_EMAIL: str = os.getenv("FROM_EMAIL", "noreply@smartao.example.com")
+    FROM_EMAIL: str = os.getenv("FROM_EMAIL", "noreply@smartao.jp")
+    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@smartao.jp")
     
     class Config:
         env_file = ".env"

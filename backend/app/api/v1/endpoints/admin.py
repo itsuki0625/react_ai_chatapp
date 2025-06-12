@@ -206,6 +206,214 @@ async def admin_delete_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ユーザーが見つかりません")
     return None
 
+# ---------- 決済監視関連のエンドポイント ---------- #
+
+@router.get("/payment-stats")
+async def get_payment_stats(
+    hours: int = 24,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(require_permission('admin_access', 'payment_read')),
+):
+    """
+    決済統計情報を取得します（過去N時間）
+    """
+    try:
+        from datetime import datetime, timedelta
+        from sqlalchemy import func, and_, case, select
+        from app.models.subscription import PaymentHistory
+        
+        # 指定時間前からの統計を取得
+        time_threshold = datetime.utcnow() - timedelta(hours=hours)
+        
+        # 基本統計を取得
+        result = await db.execute(
+            select(
+                func.count(PaymentHistory.id).label('total_payments'),
+                func.sum(
+                    case(
+                        (PaymentHistory.status == 'succeeded', 1),
+                        else_=0
+                    )
+                ).label('successful_payments'),
+                func.sum(
+                    case(
+                        (PaymentHistory.status.in_(['failed', 'canceled']), 1),
+                        else_=0
+                    )
+                ).label('failed_payments'),
+                func.sum(
+                    case(
+                        (PaymentHistory.status == 'processing', 1),
+                        else_=0
+                    )
+                ).label('pending_payments'),
+                func.sum(
+                    case(
+                        (PaymentHistory.status == 'requires_action', 1),
+                        else_=0
+                    )
+                ).label('requires_action_count'),
+                func.sum(
+                    case(
+                        (PaymentHistory.status == 'succeeded', PaymentHistory.amount),
+                        else_=0
+                    )
+                ).label('total_amount')
+            )
+            .where(PaymentHistory.payment_date >= time_threshold)
+        )
+        
+        stats_row = result.fetchone()
+        
+        total_payments = stats_row.total_payments or 0
+        successful_payments = stats_row.successful_payments or 0
+        success_rate = (successful_payments / total_payments * 100) if total_payments > 0 else 0
+        
+        return {
+            "total_payments": total_payments,
+            "successful_payments": successful_payments,
+            "failed_payments": stats_row.failed_payments or 0,
+            "pending_payments": stats_row.pending_payments or 0,
+            "requires_action_count": stats_row.requires_action_count or 0,
+            "total_amount": stats_row.total_amount or 0,
+            "success_rate": round(success_rate, 2)
+        }
+        
+    except Exception as e:
+        logger.error(f"決済統計の取得に失敗: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="決済統計の取得に失敗しました"
+        )
+
+@router.get("/recent-payments")
+async def get_recent_payments(
+    hours: int = 1,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(require_permission('admin_access', 'payment_read')),
+):
+    """
+    最近の決済履歴を取得します（ユーザー情報含む）
+    """
+    try:
+        from datetime import datetime, timedelta
+        from sqlalchemy import select
+        from app.models.subscription import PaymentHistory
+        from app.models.user import User as UserModel
+        
+        time_threshold = datetime.utcnow() - timedelta(hours=hours)
+        
+        result = await db.execute(
+            select(PaymentHistory, UserModel.email)
+            .join(UserModel, PaymentHistory.user_id == UserModel.id)
+            .where(PaymentHistory.payment_date >= time_threshold)
+            .order_by(PaymentHistory.payment_date.desc())
+            .limit(limit)
+        )
+        
+        payments = []
+        for payment_history, user_email in result.fetchall():
+            # 3Dセキュア認証が必要かどうかの判定
+            requires_3d_secure = payment_history.status == 'requires_action'
+            
+            payments.append({
+                "id": str(payment_history.id),
+                "user_email": user_email,
+                "amount": payment_history.amount,
+                "currency": payment_history.currency,
+                "status": payment_history.status,
+                "payment_method": payment_history.payment_method,
+                "payment_date": payment_history.payment_date.isoformat(),
+                "stripe_payment_intent_id": payment_history.stripe_payment_intent_id,
+                "requires_3d_secure": requires_3d_secure
+            })
+        
+        return payments
+        
+    except Exception as e:
+        logger.error(f"最近の決済履歴の取得に失敗: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="決済履歴の取得に失敗しました"
+        )
+
+@router.get("/payment-alerts")
+async def get_payment_alerts(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(require_permission('admin_access', 'payment_read')),
+):
+    """
+    決済アラートを取得します
+    """
+    try:
+        from datetime import datetime, timedelta
+        from sqlalchemy import func, and_, case, select
+        from app.models.subscription import PaymentHistory
+        
+        alerts = []
+        now = datetime.utcnow()
+        one_hour_ago = now - timedelta(hours=1)
+        
+        # 過去1時間の失敗率をチェック
+        result = await db.execute(
+            select(
+                func.count(PaymentHistory.id).label('total'),
+                func.sum(
+                    case(
+                        (PaymentHistory.status.in_(['failed', 'canceled']), 1),
+                        else_=0
+                    )
+                ).label('failed')
+            )
+            .where(PaymentHistory.payment_date >= one_hour_ago)
+        )
+        
+        stats = result.fetchone()
+        total_payments = stats.total or 0
+        failed_payments = stats.failed or 0
+        
+        if total_payments >= 5:  # 最低5件の決済がある場合のみチェック
+            failure_rate = (failed_payments / total_payments) * 100
+            if failure_rate > 20:  # 失敗率が20%を超える場合
+                alerts.append({
+                    "id": f"high_failure_rate_{now.timestamp()}",
+                    "type": "high_failure_rate",
+                    "message": f"過去1時間の決済失敗率が{failure_rate:.1f}%と高くなっています（{failed_payments}/{total_payments}件）",
+                    "severity": "high" if failure_rate > 50 else "medium",
+                    "created_at": now.isoformat()
+                })
+        
+        # 3Dセキュア認証待ちの決済数をチェック
+        result = await db.execute(
+            select(func.count(PaymentHistory.id))
+            .where(
+                and_(
+                    PaymentHistory.status == 'requires_action',
+                    PaymentHistory.payment_date >= now - timedelta(hours=2)
+                )
+            )
+        )
+        
+        requires_action_count = result.scalar() or 0
+        if requires_action_count > 10:
+            alerts.append({
+                "id": f"multiple_3ds_{now.timestamp()}",
+                "type": "multiple_3d_secure_failures",
+                "message": f"3Dセキュア認証待ちの決済が{requires_action_count}件あります",
+                "severity": "medium",
+                "created_at": now.isoformat()
+            })
+        
+        return alerts
+        
+    except Exception as e:
+        logger.error(f"決済アラートの取得に失敗: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="アラートの取得に失敗しました"
+        )
+
 # ---------- 商品関連のエンドポイント ---------- #
 
 @router.get("/products", response_model=List[StripeProductWithPricesResponse])

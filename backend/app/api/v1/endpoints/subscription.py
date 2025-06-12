@@ -11,6 +11,7 @@ from datetime import datetime # datetime をインポート
 from app.core.config import settings
 from app.api.deps import get_async_db, get_current_user, get_current_user_optional
 from app.services.stripe_service import StripeService
+from app.services.email_service import email_service
 from app.crud import subscription as crud_subscription
 from app.crud import user as crud_user # ユーザー情報取得用にインポート
 from app.crud import crud_role # crud_role をインポート
@@ -27,7 +28,10 @@ from app.schemas.subscription import (
     CreateCheckoutRequest,
     CheckoutSessionResponse,
     ManageSubscriptionRequest,
-    SubscriptionPlanResponse
+    SubscriptionPlanResponse,
+    PaymentIntentCreateRequest,
+    PaymentIntentResponse,
+    SubscriptionConfirmRequest
 )
 from app.schemas.user import UserUpdate, UserStatus as SchemaUserStatus # UserUpdate と UserStatus をインポート
 # --- ここまで ---
@@ -158,11 +162,24 @@ async def get_user_subscription(
 async def get_payment_history(
     skip: int = 0,
     limit: int = 10,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_user)
 ):
-    """ユーザーの支払い履歴を取得します。"""
-    history = await crud_subscription.get_user_payment_history(db, user_id=current_user.id, skip=skip, limit=limit)
+    """ユーザーの支払い履歴を取得します（フィルタリング対応）。"""
+    history = await crud_subscription.get_user_payment_history(
+        db, 
+        user_id=current_user.id, 
+        skip=skip, 
+        limit=limit,
+        status=status,
+        search=search,
+        date_from=date_from,
+        date_to=date_to
+    )
     return history
 
 @router.post("/verify-campaign-code", response_model=VerifyCampaignCodeResponse)
@@ -199,6 +216,236 @@ async def verify_campaign_code(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail="キャンペーンコードの検証中にエラーが発生しました。"
+        )
+
+
+# PaymentIntent作成エンドポイント（3Dセキュア対応）
+@router.post("/create-payment-intent", response_model=PaymentIntentResponse)
+async def create_payment_intent(
+    request_data: PaymentIntentCreateRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_user)
+):
+    """
+    PaymentIntentを作成します。（3Dセキュア対応）
+    """
+    try:
+        # プラン情報を取得
+        plan = await crud_subscription.get_plan_by_price_id(db, request_data.price_id)
+        if not plan:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="指定されたプランが見つかりません。")
+
+        # Stripe顧客IDを取得または作成
+        stripe_customer_id = await crud_subscription.get_stripe_customer_id(db, current_user.id)
+        if not stripe_customer_id:
+            stripe_customer_id = StripeService.create_customer(
+                email=current_user.email,
+                name=current_user.full_name,
+                metadata={'user_id': str(current_user.id)}
+            )
+            logger.info(f"新規Stripe Customer作成: {stripe_customer_id} for User: {current_user.id}")
+
+        # PaymentIntentを作成
+        metadata = {
+            'user_id': str(current_user.id),
+            'price_id': request_data.price_id,
+            'plan_id': str(plan.id)
+        }
+
+        # クーポン情報があれば追加
+        if request_data.coupon_id:
+            metadata['applied_coupon_id'] = request_data.coupon_id
+
+        payment_intent = stripe.PaymentIntent.create(
+            amount=plan.amount,
+            currency=plan.currency,
+            customer=stripe_customer_id,
+            metadata=metadata,
+            automatic_payment_methods={'enabled': True},  # 3Dセキュア自動対応
+            setup_future_usage='off_session'  # 将来の決済用にセットアップ
+        )
+
+        return PaymentIntentResponse(
+            client_secret=payment_intent.client_secret,
+            amount=payment_intent.amount,
+            currency=payment_intent.currency,
+            status=payment_intent.status
+        )
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"PaymentIntent作成エラー (User: {current_user.id}, Price: {request_data.price_id}): {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="PaymentIntentの作成に失敗しました。")
+
+
+# サブスクリプション確定エンドポイント（PaymentIntent成功後）
+@router.post("/confirm-subscription")
+async def confirm_subscription(
+    request_data: SubscriptionConfirmRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_user)
+):
+    """
+    PaymentIntent成功後、サブスクリプションを確定します。
+    """
+    try:
+        # PaymentIntentの状態を確認
+        payment_intent = stripe.PaymentIntent.retrieve(request_data.payment_intent_id)
+        
+        if payment_intent.status != 'succeeded':
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail=f"PaymentIntentの状態が無効です: {payment_intent.status}"
+            )
+
+        # PaymentIntentのメタデータからプラン情報を取得
+        metadata = payment_intent.metadata or {}
+        plan_id_from_metadata = metadata.get('plan_id')
+        
+        if not plan_id_from_metadata:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="PaymentIntentにプラン情報が含まれていません"
+            )
+
+        # プラン情報を取得
+        plan = await crud_subscription.get_plan_by_price_id(db, request_data.price_id)
+        if not plan:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="指定されたプランが見つかりません"
+            )
+
+        # Stripe顧客IDを取得
+        stripe_customer_id = await crud_subscription.get_stripe_customer_id(db, current_user.id)
+        if not stripe_customer_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="Stripe顧客情報が見つかりません"
+            )
+
+        # Stripeでサブスクリプションを作成
+        subscription_metadata = {
+            'user_id': str(current_user.id),
+            'payment_intent_id': request_data.payment_intent_id,
+            'plan_id': str(plan.id)
+        }
+
+        stripe_subscription = stripe.Subscription.create(
+            customer=stripe_customer_id,
+            items=[{'price': request_data.price_id}],
+            payment_behavior='default_incomplete',
+            payment_settings={'payment_method_types': ['card']},
+            expand=['latest_invoice.payment_intent'],
+            metadata=subscription_metadata
+        )
+
+        # DBにサブスクリプションを保存
+        subscription_data = {
+            "user_id": current_user.id,
+            "plan_id": plan.id,
+            "price_id": request_data.price_id,
+            "stripe_subscription_id": stripe_subscription.id,
+            "stripe_customer_id": stripe_customer_id,
+            "status": stripe_subscription.status,
+            "current_period_start": datetime.fromtimestamp(stripe_subscription.current_period_start),
+            "current_period_end": datetime.fromtimestamp(stripe_subscription.current_period_end),
+            "is_active": stripe_subscription.status in ['active', 'trialing']
+        }
+
+        db_subscription = await crud_subscription.create_subscription(
+            db, 
+            crud_subscription.SubscriptionCreate(**subscription_data)
+        )
+
+        return {
+            "message": "サブスクリプションが正常に作成されました",
+            "subscription_id": str(db_subscription.id),
+            "stripe_subscription_id": stripe_subscription.id,
+            "status": stripe_subscription.status
+        }
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"サブスクリプション確定エラー (User: {current_user.id}, PaymentIntent: {request_data.payment_intent_id}): {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="サブスクリプションの確定に失敗しました。")
+
+
+# 決済状況確認エンドポイント
+@router.get("/payment-status/{payment_intent_id}")
+async def get_payment_status(
+    payment_intent_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_user)
+):
+    """
+    PaymentIntentの状況を確認します。
+    """
+    try:
+        # Stripe APIからPaymentIntentを取得
+        payment_intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+        
+        # PaymentIntentのメタデータからユーザー情報を確認
+        metadata = payment_intent.metadata or {}
+        payment_user_id = metadata.get('user_id')
+        
+        if payment_user_id != str(current_user.id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="この決済情報にアクセスする権限がありません"
+            )
+
+        # 決済履歴がDBに記録されているかを確認
+        payment_history = await crud_subscription.get_payment_by_stripe_id(db, payment_intent_id)
+        
+        response_data = {
+            "id": payment_intent.id,
+            "status": payment_intent.status,
+            "amount": payment_intent.amount,
+            "currency": payment_intent.currency,
+            "created": payment_intent.created,
+            "client_secret": payment_intent.client_secret if payment_intent.status != 'succeeded' else None,
+            "last_payment_error": None,
+            "next_action": None,
+            "payment_method": payment_intent.payment_method,
+            "db_recorded": payment_history is not None
+        }
+        
+        # エラー情報があれば追加
+        if payment_intent.last_payment_error:
+            response_data["last_payment_error"] = {
+                "type": payment_intent.last_payment_error.type,
+                "code": payment_intent.last_payment_error.code,
+                "message": payment_intent.last_payment_error.message
+            }
+        
+        # 次のアクションが必要な場合（3Dセキュア等）
+        if payment_intent.next_action:
+            response_data["next_action"] = {
+                "type": payment_intent.next_action.type
+            }
+            
+        return response_data
+
+    except stripe.error.InvalidRequestError as e:
+        if "No such payment_intent" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="指定された決済情報が見つかりません"
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail=f"Stripe APIエラー: {str(e)}"
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"決済状況確認エラー (PaymentIntent: {payment_intent_id}, User: {current_user.id}): {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail="決済状況の確認に失敗しました"
         )
 
 
@@ -567,6 +814,152 @@ async def stripe_webhook(
             user = await crud_user.get_user(db, user_id)
             if user and user.status != SchemaUserStatus.ACTIVE:
                  await crud_user.update_user(db, db_user=user, user_in=UserUpdate(status=SchemaUserStatus.ACTIVE))
+
+        # PaymentIntent関連イベント（3Dセキュア対応）
+        elif event_type == 'payment_intent.succeeded':
+            payment_intent = data
+            logger.info(f"PaymentIntent Succeeded: {payment_intent['id']}")
+            
+            # PaymentIntentのメタデータからユーザー情報を取得
+            metadata = payment_intent.get('metadata', {})
+            user_id_str = metadata.get('user_id')
+            price_id = metadata.get('price_id')
+            
+            if user_id_str and price_id:
+                try:
+                    user_id = UUID(user_id_str)
+                    
+                    # 決済履歴に記録
+                    payment_history_data = {
+                        "user_id": user_id,
+                        "stripe_payment_intent_id": payment_intent['id'],
+                        "amount": payment_intent['amount'],
+                        "currency": payment_intent['currency'],
+                        "status": payment_intent['status'],
+                        "payment_method": payment_intent.get('payment_method'),
+                        "payment_date": datetime.fromtimestamp(payment_intent['created'])
+                    }
+                    
+                    await crud_subscription.create_payment_history(
+                        db, 
+                        crud_subscription.PaymentHistoryCreate(**payment_history_data)
+                    )
+                    logger.info(f"PaymentIntent {payment_intent['id']} の決済履歴を記録しました")
+                    
+                    # 決済成功メール通知を送信
+                    try:
+                        user = await crud_user.get_user(db, user_id)
+                        if user:
+                            # プラン名を取得
+                            plan = await crud_subscription.get_plan_by_price_id(db, price_id)
+                            plan_name = plan.name if plan else None
+                            
+                            await email_service.send_payment_success_notification(
+                                user_email=user.email,
+                                user_name=user.display_name or user.email.split('@')[0],
+                                amount=payment_intent['amount'],
+                                currency=payment_intent['currency'],
+                                payment_intent_id=payment_intent['id'],
+                                subscription_name=plan_name
+                            )
+                            logger.info(f"決済成功メールを送信しました: {user.email}")
+                        else:
+                            logger.warning(f"決済成功メール送信: ユーザーが見つかりません (ID: {user_id})")
+                    except Exception as e_email:
+                        logger.error(f"決済成功メール送信に失敗: {e_email}", exc_info=True)
+                    
+                except ValueError:
+                    logger.error(f"Webhook payment_intent.succeeded: 無効なuser_id形式: {user_id_str}")
+                except Exception as e:
+                    logger.error(f"PaymentIntent succeeded処理エラー: {e}", exc_info=True)
+
+        elif event_type == 'payment_intent.requires_action':
+            payment_intent = data
+            logger.info(f"PaymentIntent Requires Action (3D Secure): {payment_intent['id']}")
+            
+            # 3Dセキュア認証が必要な場合の処理
+            metadata = payment_intent.get('metadata', {})
+            user_id_str = metadata.get('user_id')
+            
+            if user_id_str:
+                logger.info(f"User {user_id_str} の決済で3Dセキュア認証が要求されました (PaymentIntent: {payment_intent['id']})")
+                
+                # 3Dセキュア認証リマインダーメールを送信
+                try:
+                    user_id = UUID(user_id_str)
+                    user = await crud_user.get_user(db, user_id)
+                    if user:
+                        await email_service.send_3ds_reminder_notification(
+                            user_email=user.email,
+                            user_name=user.display_name or user.email.split('@')[0],
+                            amount=payment_intent['amount'],
+                            currency=payment_intent['currency'],
+                            payment_intent_id=payment_intent['id']
+                        )
+                        logger.info(f"3Dセキュア認証リマインダーメールを送信しました: {user.email}")
+                    else:
+                        logger.warning(f"3DSリマインダー送信: ユーザーが見つかりません (ID: {user_id})")
+                except Exception as e_email:
+                    logger.error(f"3Dセキュア認証リマインダーメール送信に失敗: {e_email}", exc_info=True)
+
+        elif event_type == 'payment_intent.payment_failed':
+            payment_intent = data
+            logger.info(f"PaymentIntent Failed: {payment_intent['id']}")
+            
+            # 決済失敗時の処理
+            metadata = payment_intent.get('metadata', {})
+            user_id_str = metadata.get('user_id')
+            
+            if user_id_str:
+                try:
+                    user_id = UUID(user_id_str)
+                    
+                    # 失敗した決済履歴も記録
+                    payment_history_data = {
+                        "user_id": user_id,
+                        "stripe_payment_intent_id": payment_intent['id'],
+                        "amount": payment_intent['amount'],
+                        "currency": payment_intent['currency'],
+                        "status": payment_intent['status'],
+                        "payment_method": payment_intent.get('payment_method'),
+                        "payment_date": datetime.fromtimestamp(payment_intent['created'])
+                    }
+                    
+                    await crud_subscription.create_payment_history(
+                        db, 
+                        crud_subscription.PaymentHistoryCreate(**payment_history_data)
+                    )
+                    logger.info(f"PaymentIntent {payment_intent['id']} の失敗記録を保存しました")
+                    
+                    # 決済失敗メール通知を送信
+                    try:
+                        user = await crud_user.get_user(db, user_id)
+                        if user:
+                            # 失敗理由を取得（可能であれば）
+                            failure_reason = None
+                            if 'last_payment_error' in payment_intent and payment_intent['last_payment_error']:
+                                error_info = payment_intent['last_payment_error']
+                                if error_info.get('message'):
+                                    failure_reason = error_info['message']
+                            
+                            await email_service.send_payment_failed_notification(
+                                user_email=user.email,
+                                user_name=user.display_name or user.email.split('@')[0],
+                                amount=payment_intent['amount'],
+                                currency=payment_intent['currency'],
+                                payment_intent_id=payment_intent['id'],
+                                failure_reason=failure_reason
+                            )
+                            logger.info(f"決済失敗メールを送信しました: {user.email}")
+                        else:
+                            logger.warning(f"決済失敗メール送信: ユーザーが見つかりません (ID: {user_id})")
+                    except Exception as e_email:
+                        logger.error(f"決済失敗メール送信に失敗: {e_email}", exc_info=True)
+                    
+                except ValueError:
+                    logger.error(f"Webhook payment_intent.payment_failed: 無効なuser_id形式: {user_id_str}")
+                except Exception as e:
+                    logger.error(f"PaymentIntent failed処理エラー: {e}", exc_info=True)
 
         elif event_type == 'invoice.payment_succeeded':
             invoice = data

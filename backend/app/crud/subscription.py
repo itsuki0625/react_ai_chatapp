@@ -138,11 +138,50 @@ async def get_payment_history(db: AsyncSession, payment_id: UUID) -> Optional[Pa
     )
     return result.scalars().first()
 
-async def get_user_payment_history(db: AsyncSession, user_id: UUID, skip: int = 0, limit: int = 100) -> List[PaymentHistory]:
+async def get_user_payment_history(
+    db: AsyncSession, 
+    user_id: UUID, 
+    skip: int = 0, 
+    limit: int = 100,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None
+) -> List[PaymentHistory]:
+    """
+    指定したユーザーの支払い履歴を取得します（フィルタリング対応）。
+    """
+    query = select(PaymentHistory).filter(PaymentHistory.user_id == user_id)
+    
+    # ステータスフィルタ
+    if status:
+        query = query.filter(PaymentHistory.status == status)
+    
+    # 検索フィルタ（PaymentIntent IDで検索）
+    if search:
+        query = query.filter(
+            PaymentHistory.stripe_payment_intent_id.ilike(f"%{search}%")
+        )
+    
+    # 日付フィルタ
+    if date_from:
+        try:
+            from_date = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+            query = query.filter(PaymentHistory.payment_date >= from_date)
+        except ValueError:
+            pass  # 無効な日付フォーマットは無視
+    
+    if date_to:
+        try:
+            to_date = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
+            # 終了日は23:59:59まで含む
+            to_date = to_date.replace(hour=23, minute=59, second=59)
+            query = query.filter(PaymentHistory.payment_date <= to_date)
+        except ValueError:
+            pass  # 無効な日付フォーマットは無視
+    
     result = await db.execute(
-        select(PaymentHistory)
-        .filter(PaymentHistory.user_id == user_id)
-        .order_by(PaymentHistory.payment_date.desc())
+        query.order_by(PaymentHistory.payment_date.desc())
         .offset(skip)
         .limit(limit)
     )
