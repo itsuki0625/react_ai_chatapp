@@ -1,12 +1,11 @@
 import { Metadata } from 'next';
-import ChatPage from '@/components/chat/ChatPage';
-import { ChatTypeEnum } from '@/types/chat';
+import GenericLandingPage from '@/components/chat/GenericLandingPage';
 
 export const metadata: Metadata = {
-  title: '総合型選抜チャット',
-  description: 'AIが総合型選抜に関する相談に乗ります。',
+  title: '総合型選抜AI',
+  description: '総合型選抜対策をAIがトータルサポートします',
 };
 
-export default function AdmissionChatPage() {
-  return <ChatPage key="fixedChatPageKey" initialChatType={ChatTypeEnum.ADMISSION} />;
+export default function AdmissionPage() {
+  return <GenericLandingPage chatType="admission" />;
 } 

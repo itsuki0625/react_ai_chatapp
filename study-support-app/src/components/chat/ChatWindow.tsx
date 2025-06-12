@@ -146,8 +146,8 @@ const ChatWindow: React.FC = () => {
     );
   }
 
-  // 会話履歴読み込み中
-  if (isLoading && messages.length === 0) {
+  // 会話履歴読み込み中（メッセージが空の時のみ）
+  if (isLoading && messages.length === 0 && sessionId) {
     return (
       <div className="flex flex-col flex-1 items-center justify-center h-full p-8 bg-white">
         <div className="animate-pulse flex flex-col items-center">
@@ -161,94 +161,80 @@ const ChatWindow: React.FC = () => {
     );
   }
   
-  // メッセージが空の場合の初期表示
-  if (messages.length === 0) {
-    // SELF_ANALYSIS用の初期AIメッセージを表示
-    if (currentChatType === (ChatTypeEnum.SELF_ANALYSIS as any)) {
-      return (
-        <div className="flex flex-col flex-1 overflow-hidden h-full w-full">
-          <div className="flex-1 overflow-y-auto h-full space-y-6 bg-white pb-40 p-4 pt-6">
-            <ChatMessageItemDisplay message={{
-              id: 'initial-self-analysis',
-              sender: 'AI',
-              content: 'こんにちは、今日から自己分析を始めましょう！　まずは将来やってみたいことを 1〜2 行で教えていただけますか？',
-              timestamp: new Date().toISOString(),
-            }} />
-          </div>
-        </div>
-      );
-    }
-    
-    let welcomeMessage = "AIチャットへようこそ";
-    let welcomeDescription = "下の入力欄からメッセージを送信して会話を始めましょう";
-    
-    switch(currentChatType) {
-      case ChatTypeEnum.SELF_ANALYSIS:
-        welcomeMessage = "自己分析チャットへようこそ";
-        welcomeDescription = "あなた自身についての質問をして、自己理解を深めましょう";
-        break;
-      case ChatTypeEnum.ADMISSION:
-        welcomeMessage = "総合型選抜チャットへようこそ";
-        welcomeDescription = "入試に関する質問や相談に答えます";
-        break;
-      case ChatTypeEnum.STUDY_SUPPORT:
-        welcomeMessage = "学習支援チャットへようこそ";
-        welcomeDescription = "学習に関するサポートや質問に答えます";
-        break;
-      case ChatTypeEnum.FAQ:
-        welcomeMessage = "FAQチャットへようこそ";
-        welcomeDescription = "よくある質問に答えます";
-        break;
-    }
-    
+  // メッセージが存在する場合は通常のメッセージリストを表示
+  if (messages.length > 0) {
     return (
-      <div className="flex flex-col flex-1 items-center justify-center h-full p-8 bg-white">
-        <div className="max-w-md text-center">
-          <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6">
-            <MessageSquare className="h-10 w-10 text-blue-500" />
+      <div className="flex flex-col flex-1 overflow-hidden h-full w-full"> 
+        {error && (
+          <div className="p-3 bg-red-50 border-b border-red-200 text-red-700 text-sm flex items-center justify-center shadow-sm">
+            <AlertCircle className="h-4 w-4 mr-2" />
+            <span>エラー: {typeof error === 'string' ? error : error.message}</span>
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-3">{welcomeMessage}</h2>
-          <p className="text-slate-600 mb-8">
-            {welcomeDescription}
-          </p>
-          
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-            <h3 className="font-medium text-slate-900 mb-3">チャットの始め方</h3>
-            <ul className="text-left text-sm text-slate-600 space-y-2">
-              <li className="flex items-start">
-                <span className="flex-shrink-0 h-5 w-5 rounded-full bg-blue-100 flex items-center justify-center mr-2 mt-0.5">
-                  <span className="text-xs font-bold text-blue-600">1</span>
-                </span>
-                下の入力欄にメッセージを入力
-              </li>
-              <li className="flex items-start">
-                <span className="flex-shrink-0 h-5 w-5 rounded-full bg-blue-100 flex items-center justify-center mr-2 mt-0.5">
-                  <span className="text-xs font-bold text-blue-600">2</span>
-                </span>
-                送信ボタンをクリックまたはEnterキーを押す
-              </li>
-              <li className="flex items-start">
-                <span className="flex-shrink-0 h-5 w-5 rounded-full bg-blue-100 flex items-center justify-center mr-2 mt-0.5">
-                  <span className="text-xs font-bold text-blue-600">3</span>
-                </span>
-                AIからの応答を待つ
-              </li>
-            </ul>
-          </div>
-        </div>
+        )}
+        <MessageList />
       </div>
     );
   }
 
+  // メッセージが空の場合の初期表示
+  // チャットタイプに応じて異なるウェルカムメッセージを表示
+  let welcomeMessage = "AIチャットへようこそ";
+  let welcomeDescription = "下の入力欄からメッセージを送信して会話を始めましょう";
+  
+  switch(currentChatType) {
+    case ChatTypeEnum.SELF_ANALYSIS:
+      welcomeMessage = "自己分析チャットへようこそ";
+      welcomeDescription = "あなた自身についての質問をして、自己理解を深めましょう";
+      break;
+    case ChatTypeEnum.ADMISSION:
+      welcomeMessage = "総合型選抜チャットへようこそ";
+      welcomeDescription = "入試に関する質問や相談に答えます";
+      break;
+    case ChatTypeEnum.STUDY_SUPPORT:
+      welcomeMessage = "学習支援チャットへようこそ";
+      welcomeDescription = "学習に関するサポートや質問に答えます";
+      break;
+    case ChatTypeEnum.FAQ:
+      welcomeMessage = "FAQチャットへようこそ";
+      welcomeDescription = "よくある質問に答えます";
+      break;
+  }
+  
   return (
-    <div className="flex flex-col flex-1 overflow-hidden h-full w-full"> 
-      {error && (
-        <div className="p-3 bg-red-50 border-b border-red-200 text-red-700 text-sm flex items-center justify-center shadow-sm">
-          <AlertCircle className="h-4 w-4 mr-2" />
-          <span>エラー: {typeof error === 'string' ? error : error.message}</span>
+    <div className="flex flex-col flex-1 items-center justify-center h-full p-8 bg-white">
+      <div className="max-w-md text-center">
+        <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6">
+          <MessageSquare className="h-10 w-10 text-blue-500" />
         </div>
-      )}
-      <MessageList />
+        <h2 className="text-2xl font-bold text-slate-900 mb-3">{welcomeMessage}</h2>
+        <p className="text-slate-600 mb-8">
+          {welcomeDescription}
+        </p>
+        
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+          <h3 className="font-medium text-slate-900 mb-3">チャットの始め方</h3>
+          <ul className="text-left text-sm text-slate-600 space-y-2">
+            <li className="flex items-start">
+              <span className="flex-shrink-0 h-5 w-5 rounded-full bg-blue-100 flex items-center justify-center mr-2 mt-0.5">
+                <span className="text-xs font-bold text-blue-600">1</span>
+              </span>
+              下の入力欄にメッセージを入力
+            </li>
+            <li className="flex items-start">
+              <span className="flex-shrink-0 h-5 w-5 rounded-full bg-blue-100 flex items-center justify-center mr-2 mt-0.5">
+                <span className="text-xs font-bold text-blue-600">2</span>
+              </span>
+              送信ボタンをクリックまたはEnterキーを押す
+            </li>
+            <li className="flex items-start">
+              <span className="flex-shrink-0 h-5 w-5 rounded-full bg-blue-100 flex items-center justify-center mr-2 mt-0.5">
+                <span className="text-xs font-bold text-blue-600">3</span>
+              </span>
+              AIからの応答を待つ
+            </li>
+          </ul>
+        </div>
+      </div>
     </div>
   );
 };

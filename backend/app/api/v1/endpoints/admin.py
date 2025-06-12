@@ -773,7 +773,7 @@ async def admin_delete_campaign_code(
 
     **必要な権限:** `admin_access`, `campaign_code_write`
     """
-    deleted = await delete_campaign_code(db=db, code_id=code_id)
+    deleted = await delete_campaign_code(db=db, campaign_code_id=code_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign code not found")
     return None

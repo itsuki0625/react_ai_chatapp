@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     INSTRUCTION: str = load_instruction()
 
     # JWT設定
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 15分から24時間(1440分)に変更
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 240  # 4時間（240分）に変更 - ロール変更時の待機時間を短縮
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30    # 30日
     JWT_ALGORITHM: str = "HS512" # JWTアルゴリズムを追加
     

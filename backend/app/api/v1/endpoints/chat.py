@@ -121,13 +121,14 @@ async def websocket_chat_endpoint(
             actual_session_id = str(chat_session.id)
             logger.info(f"Using chat session ID: {actual_session_id}")
 
-            if not chat_request.session_id and chat_request.message:
+            # タイトルが未設定または"新規チャット"の場合は自動生成
+            if (not chat_session.title or chat_session.title == "新規チャット" or chat_session.title == "無題のチャット") and chat_request.message:
                 try:
                     user_message_prefix = chat_request.message.replace('\n', ' ').strip()
                     title = user_message_prefix[:30].strip() + "..." if len(user_message_prefix) > 30 else user_message_prefix.strip()
                     if title:
                         await update_session_title(db, chat_session.id, current_user.id, title)
-                        logger.info(f"Session title updated to '{title}' for new session {actual_session_id}")
+                        logger.info(f"Session title updated to '{title}' for session {actual_session_id}")
                 except Exception as e:
                     logger.error(f"Failed to update session title for {actual_session_id}: {e}", exc_info=True)
             
@@ -923,3 +924,99 @@ async def read_chat_messages(
     # messages = messages[skip : skip + limit]
 
     return messages
+
+@router.patch("/sessions/{session_id}/generate-title")
+async def generate_session_title(
+    session_id: str,
+    current_user: User = Depends(require_permission('chat_session_read')),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    チャットセッションの内容を基にAIがタイトルを自動生成する
+    """
+    try:
+        # セッションの存在確認
+        session = await get_chat_session_by_id(db, session_id, current_user.id)
+        if not session:
+            raise HTTPException(status_code=404, detail="セッションが見つかりません")
+
+        # セッションのメッセージを取得
+        messages = await get_chat_messages_history(db, session_id)
+        if not messages or len(messages) == 0:
+            raise HTTPException(status_code=400, detail="メッセージがないためタイトルを生成できません")
+
+        # 最初の数個のメッセージを抽出してタイトル生成用のプロンプトを作成
+        conversation_summary = ""
+        message_count = 0
+        for msg in messages[:6]:  # 最初の3往復程度
+            if isinstance(msg, dict):
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")
+                if role == "user":
+                    conversation_summary += f"ユーザー: {content[:100]}\n"
+                elif role in ["ai", "assistant"]:
+                    conversation_summary += f"AI: {content[:100]}\n"
+                message_count += 1
+            if message_count >= 6:
+                break
+
+        if not conversation_summary.strip():
+            # フォールバック：最初のユーザーメッセージからタイトル生成
+            first_user_message = None
+            for msg in messages:
+                if isinstance(msg, dict) and msg.get("role") == "user":
+                    first_user_message = msg.get("content", "")
+                    break
+            
+            if first_user_message:
+                title = first_user_message[:25].strip() + ("..." if len(first_user_message) > 25 else "")
+            else:
+                title = f"{session.chat_type}セッション"
+        else:
+            # OpenAI APIを使ってタイトルを生成
+            try:
+                client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+                title_prompt = f"""以下の会話の内容を基に、適切なタイトルを15文字以内で生成してください。
+タイトルは会話の主要なトピックを表現し、ユーザーが後で見返した時に内容が分かりやすいものにしてください。
+
+会話内容:
+{conversation_summary}
+
+タイトルのみを出力してください（説明や追加のテキストは不要）。"""
+
+                response = await client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": title_prompt}],
+                    max_tokens=50,
+                    temperature=0.7
+                )
+                
+                generated_title = response.choices[0].message.content.strip()
+                # タイトルの長さ制限とサニタイズ
+                title = generated_title[:30] if generated_title else f"{session.chat_type}セッション"
+                
+            except Exception as e:
+                logger.error(f"Failed to generate title using OpenAI: {e}")
+                # フォールバック：最初のユーザーメッセージから生成
+                first_user_message = None
+                for msg in messages:
+                    if isinstance(msg, dict) and msg.get("role") == "user":
+                        first_user_message = msg.get("content", "")
+                        break
+                
+                if first_user_message:
+                    title = first_user_message[:25].strip() + ("..." if len(first_user_message) > 25 else "")
+                else:
+                    title = f"{session.chat_type}セッション"
+
+        # タイトルを更新
+        await update_session_title(db, UUID(session_id), current_user.id, title)
+        logger.info(f"Session title updated to '{title}' for session {session_id}")
+
+        return {"title": title, "session_id": session_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating title for session {session_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="タイトル生成中にエラーが発生しました")

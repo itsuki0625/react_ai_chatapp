@@ -1,12 +1,13 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from app.core.config import settings
 from app.api.v1 import api_router as v1_api_router
 from app.middleware.auth import AuthMiddleware
 import logging
 from app.database.database import Base, engine
-from fastapi.background import BackgroundTasks
+from fastapi import BackgroundTasks
 from app.crud.token import remove_expired_tokens
 import asyncio
 import time
@@ -106,6 +107,7 @@ app.add_middleware(
         "http://host.docker.internal:5050",  # Docker -> ホスト接続
         "https://yourdomain.com",  # 本番環境（必要に応じて変更）
         "https://stg.smartao.jp", # ステージング環境フロントエンド
+        "https://stg-api.smartao.jp", # ステージング環境API（追加）
         "https://api.smartao.jp", # 本番環境API
         "https://app.smartao.jp", # 本番環境フロントエンド
         "https://smartao.jp",     # 本番環境メインドメイン
@@ -143,6 +145,52 @@ app.add_middleware(
 # 3. 認証ミドルウェア（最後に実行される）
 app.add_middleware(AuthMiddleware)
 
+# グローバル例外ハンドラー（CORSヘッダーを含むエラーレスポンス）
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    全ての例外をキャッチしてCORSヘッダーを含むエラーレスポンスを返す
+    """
+    logger.error(f"グローバル例外ハンドラー: {request.url.path} - {str(exc)}", exc_info=True)
+    
+    # オリジンを取得してCORSヘッダーを設定
+    origin = request.headers.get("origin")
+    allowed_origins = [
+        "http://localhost:3001",
+        "http://localhost:5050",
+        "http://127.0.0.1:3001",
+        "https://app.smartao.jp",
+        "https://api.smartao.jp",
+        "https://stg.smartao.jp",
+        "https://stg-api.smartao.jp",
+        "https://smartao.jp"
+    ]
+    
+    cors_headers = {}
+    if origin and origin in allowed_origins:
+        cors_headers.update({
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+            "Vary": "Origin"
+        })
+    
+    # HTTPExceptionの場合は元のステータスコードを保持
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=cors_headers
+        )
+    
+    # その他の例外は500エラーとして返す
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "内部サーバーエラーが発生しました"},
+        headers=cors_headers
+    )
+
 # 修正: v1 の集約ルーターを /api/v1 プレフィックスで追加
 app.include_router(v1_api_router, prefix="/api/v1")
 
@@ -163,6 +211,7 @@ async def handle_options(full_path: str, request: Request):
         "https://app.smartao.jp",
         "https://api.smartao.jp",
         "https://stg.smartao.jp",
+        "https://stg-api.smartao.jp",
         "https://smartao.jp"
     ]
     

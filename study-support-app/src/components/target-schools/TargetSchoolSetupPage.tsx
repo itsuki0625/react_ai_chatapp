@@ -87,8 +87,8 @@ const TargetSchoolSetupPage = () => {
 
       try {
         const [univResponse, admResponse] = await Promise.all([
-          fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/universities/`, { headers }),
-          fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/admissions/`, { headers })
+          fetch(`/api/v1/universities/`, { headers }),
+          fetch(`/api/v1/admissions/`, { headers })
         ]);
 
         if (univResponse.status === 401 || admResponse.status === 401) {
@@ -232,7 +232,7 @@ const TargetSchoolSetupPage = () => {
       
       // バックエンドに一括登録APIがない場合、個別にPOSTリクエストを送る
       const results = await Promise.all(desiredSchools.map(school => 
-        fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/desired-schools/`, {
+        fetch(`/api/v1/desired-schools/`, {
           method: 'POST',
           headers: headers, // 認証ヘッダーを含む
           body: JSON.stringify(school),

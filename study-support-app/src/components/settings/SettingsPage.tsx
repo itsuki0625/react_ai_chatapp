@@ -562,10 +562,44 @@ const SettingsPage = () => {
                   <p className="text-red-500">契約情報の取得に失敗しました。</p>
                 ) : currentSubscription ? (
                   <div className="space-y-4">
+                    {/* ロール同期の警告表示 */}
+                    {session?.user?.role === 'フリー' && currentSubscription.plan_name !== 'フリー' && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                        <div className="flex items-start">
+                          <div className="flex-shrink-0">
+                            <Settings className="h-5 w-5 text-amber-400" />
+                          </div>
+                          <div className="ml-3">
+                            <h3 className="text-sm font-medium text-amber-800">
+                              アカウント情報の更新が必要です
+                            </h3>
+                            <div className="mt-2 text-sm text-amber-700">
+                              <p>
+                                プランのアップグレードが完了しましたが、一部の機能を正常に利用するには再ログインが必要です。
+                              </p>
+                              <p className="mt-1">
+                                お手数ですが、一度ログアウトして再度ログインしてください。
+                              </p>
+                            </div>
+                            <div className="mt-3">
+                              <LogoutButton />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <h3 className="text-sm font-medium text-gray-500">現在のプラン</h3>
-                        <p className="mt-1 font-semibold">{currentSubscription.plan_name || '不明なプラン'}</p>
+                        <p className="mt-1 font-semibold">
+                          {session?.user?.role || currentSubscription.plan_name || '不明なプラン'}
+                          {session?.user?.role && session.user.role !== currentSubscription.plan_name && (
+                            <span className="text-xs text-yellow-600 ml-2">
+                              (データ同期中)
+                            </span>
+                          )}
+                        </p>
                       </div>
                       <div>
                         <h3 className="text-sm font-medium text-gray-500">ステータス</h3>

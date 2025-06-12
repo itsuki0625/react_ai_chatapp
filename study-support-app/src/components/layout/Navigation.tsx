@@ -29,6 +29,7 @@ interface NavItem {
   children?: NavItem[];
   expanded?: boolean;
   requiresPaid?: boolean; // 有料プラン限定機能かどうか
+  requiresPremium?: boolean; // プレミアムプラン限定機能かどうか
   disabled?: boolean;
 }
 
@@ -49,10 +50,10 @@ const freeUserNavigation: NavItem[] = [
       { name: 'FAQチャット', href: '/chat/faq', icon: CircleHelp, requiresPaid: true, disabled: true },
     ] 
   },
-  { name: 'コミュニケーション', href: '/communication', icon: Users },
-  { name: '志望校管理', href: '/application', icon: User, requiresPaid: true },
+  { name: 'コミュニケーション', href: '/communication', icon: Users, requiresPaid: true },
+  { name: '志望校管理', href: '/application', icon: User },
   { name: '志望理由書', href: '/statement', icon: FileText, requiresPaid: true },
-  { name: 'コンテンツ', href: '/contents', icon: SquarePlay },
+  { name: 'コンテンツ', href: '/contents', icon: SquarePlay, requiresPaid: true },
   { name: '設定', href: '/settings', icon: Settings },
   { name: 'プラン', href: '/subscription', icon: DollarSign },
 ];
@@ -101,28 +102,35 @@ export const Navigation = () => {
   const pathname = usePathname();
   const router = useRouter();
 
-  // ユーザーのプラン判定
+  // ユーザーの権限判定（完全に権限ベース）
   const isAdmin = session?.user?.isAdmin;
-  const userRole = session?.user?.role;
-  const isFreeUser = userRole === 'フリー';
-  const isPaidUser = userRole === 'スタンダード' || userRole === 'プレミアム';
+  const userPermissions = session?.user?.permissions || [];
+  
+  // 権限ベースで機能利用可否を判定
+  const canUseCommunication = userPermissions.includes('communication_read') || userPermissions.includes('communication_write');
+  const canUseChat = userPermissions.includes('chat_session_read') || userPermissions.includes('chat_message_send');
+  const canUseStatement = userPermissions.includes('statement_review_request') || userPermissions.includes('statement_manage_own');
+  const canUseContent = userPermissions.includes('content_read');
+  const canUseDesiredSchool = userPermissions.includes('desired_school_manage_own') || userPermissions.includes('application_read');
+  
+  // 表示用の判定（後方互換性のため）
+  const isPaidUser = canUseCommunication || canUseChat || canUseStatement;
+  const isPremiumUser = userPermissions.includes('statement_review_request');
 
   useEffect(() => {
     if (status === 'authenticated') {
       if (isAdmin) {
         setCurrentNavItems(adminNavigation);
-      } else if (isFreeUser) {
-        setCurrentNavItems(freeUserNavigation);
       } else if (isPaidUser) {
         setCurrentNavItems(paidUserNavigation);
       } else {
-        // デフォルトはフリー扱い
+        // 有料プラン権限がない場合はフリー扱い
         setCurrentNavItems(freeUserNavigation);
       }
     } else if (status === 'unauthenticated') {
       setCurrentNavItems([]);
     }
-  }, [session, status, isAdmin, isFreeUser, isPaidUser]);
+  }, [session, status, isAdmin, isPaidUser, isPremiumUser, userPermissions]);
 
   const [navItemsState, setNavItemsState] = useState<NavItem[]>([]);
 
@@ -162,9 +170,20 @@ export const Navigation = () => {
 
   // 制限されたアイテムのクリックハンドラー
   const handleRestrictedClick = (e: React.MouseEvent, item: NavItem) => {
-    if (item.requiresPaid && isFreeUser) {
-      e.preventDefault();
-      router.push('/subscription');
+    if (!isAdmin) {
+      let restricted = false;
+      if (item.href === '/communication' && !canUseCommunication) restricted = true;
+      else if (item.href === '/chat' && !canUseChat) restricted = true;
+      else if (item.href === '/statement' && !canUseStatement) restricted = true;
+      else if (item.href === '/contents' && !canUseContent) restricted = true;
+      else if (item.href === '/application' && !canUseDesiredSchool) restricted = true;
+      else if (item.requiresPaid && !isPaidUser) restricted = true;
+      else if (item.requiresPremium && !isPremiumUser) restricted = true;
+      
+      if (restricted) {
+        e.preventDefault();
+        router.push('/subscription');
+      }
     }
   };
 
@@ -195,7 +214,18 @@ export const Navigation = () => {
           const isActive = pathname === item.href ||
                          (item.children && item.children.some(child => pathname?.startsWith(child.href)));
           const Icon = item.icon;
-          const isRestricted = item.requiresPaid && isFreeUser;
+          
+          // 権限ベースで制限判定
+          let isRestricted = false;
+          if (!isAdmin) {
+            if (item.href === '/communication' && !canUseCommunication) isRestricted = true;
+            else if (item.href === '/chat' && !canUseChat) isRestricted = true;
+            else if (item.href === '/statement' && !canUseStatement) isRestricted = true;
+            else if (item.href === '/contents' && !canUseContent) isRestricted = true;
+            else if (item.href === '/application' && !canUseDesiredSchool) isRestricted = true;
+            else if (item.requiresPaid && !isPaidUser) isRestricted = true;
+            else if (item.requiresPremium && !isPremiumUser) isRestricted = true;
+          }
 
           return (
             <div key={item.name}>
@@ -226,7 +256,7 @@ export const Navigation = () => {
                         <div className="ml-2 flex items-center gap-1">
                           <Lock className="h-3 w-3 text-slate-400" />
                           <Badge variant="outline" className="text-xs px-1 py-0">
-                            有料
+                            {item.requiresPremium ? 'プレミアム' : '有料'}
                           </Badge>
                         </div>
                       )}
@@ -248,7 +278,14 @@ export const Navigation = () => {
                       {item.children.map(child => {
                         const isChildActive = pathname === child.href;
                         const ChildIcon = child.icon;
-                        const isChildRestricted = child.requiresPaid && isFreeUser;
+                        
+                        // 子アイテムの権限ベース制限判定
+                        let isChildRestricted = false;
+                        if (!isAdmin) {
+                          if (child.href.startsWith('/chat') && !canUseChat) isChildRestricted = true;
+                          else if (child.requiresPaid && !isPaidUser) isChildRestricted = true;
+                          else if (child.requiresPremium && !isPremiumUser) isChildRestricted = true;
+                        }
 
                         return (
                           <Link
@@ -310,7 +347,7 @@ export const Navigation = () => {
       </nav>
 
       {/* フリーユーザー向けプラン案内 */}
-      {isFreeUser && (
+      {!isPaidUser && !isAdmin && (
         <div className="p-4 border-t border-gray-200">
           <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-2">

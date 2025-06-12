@@ -272,7 +272,12 @@ export const SubscriptionPlansPage: React.FC = () => {
         <div className="bg-white rounded-lg shadow-lg p-6 border border-gray-200">
           <StyledH2 className="mb-4">現在のサブスクリプション</StyledH2>
           <p className="mb-2">
-            <span className="font-semibold">プラン:</span> {currentSubscription.plan_name}
+            <span className="font-semibold">プラン:</span> {session?.user?.role || currentSubscription.plan_name}
+            {session?.user?.role && session.user.role !== currentSubscription.plan_name && (
+              <span className="text-xs text-yellow-600 ml-2">
+                (データ同期中)
+              </span>
+            )}
           </p>
           <p className="mb-2">
             <span className="font-semibold">ステータス:</span> {currentSubscription.status === 'active' ? '有効' : currentSubscription.status}

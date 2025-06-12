@@ -1,12 +1,11 @@
 import { Metadata } from 'next';
-import ChatPage from '@/components/chat/ChatPage';
-import { ChatTypeEnum } from '@/types/chat';
+import GenericLandingPage from '@/components/chat/GenericLandingPage';
 
 export const metadata: Metadata = {
-  title: '学習支援チャット',
-  description: 'AIがあなたの学習をサポートします。',
+  title: '学習支援AI',
+  description: 'あなたの学習をAIがパーソナライズしてサポートします',
 };
 
-export default function StudySupportChatPage() {
-  return <ChatPage key="fixedChatPageKey" initialChatType={ChatTypeEnum.STUDY_SUPPORT} />;
+export default function StudySupportPage() {
+  return <GenericLandingPage chatType="study_support" />;
 } 

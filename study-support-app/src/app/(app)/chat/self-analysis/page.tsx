@@ -1,6 +1,5 @@
 import { Metadata } from 'next';
-import ChatPage from '@/components/chat/ChatPage';
-import { ChatTypeEnum } from '@/types/chat';
+import SelfAnalysisLandingPage from '@/components/chat/SelfAnalysisLandingPage';
 
 export const metadata: Metadata = {
   title: '自己分析チャット',
@@ -8,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function SelfAnalysisChatPage() {
-  return <ChatPage key="fixedChatPageKey" initialChatType={ChatTypeEnum.SELF_ANALYSIS} />;
+  return <SelfAnalysisLandingPage />;
 } 

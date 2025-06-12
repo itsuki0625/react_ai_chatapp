@@ -223,6 +223,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 
                 # エラーレスポンスにもCORSヘッダーを追加
                 origin = request.headers.get("origin")
+                allowed_origins = [
+                    "http://localhost:3001",
+                    "http://localhost:5050", 
+                    "http://127.0.0.1:3001",
+                    "https://app.smartao.jp",
+                    "https://api.smartao.jp",
+                    "https://stg.smartao.jp",
+                    "https://smartao.jp"
+                ]
+                
                 cors_headers = {}
                 if origin and origin in allowed_origins:
                     cors_headers.update({

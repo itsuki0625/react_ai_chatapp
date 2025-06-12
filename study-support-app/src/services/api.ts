@@ -6,7 +6,7 @@ import { ContentCategoryInfo, ContentCategoryCreate, ContentCategoryUpdate } fro
 // ブラウザ環境かサーバー環境かによって適切なAPIのベースURLを取得
 export const getApiBaseUrl = () => {
   return typeof window !== 'undefined'
-    ? process.env.NEXT_PUBLIC_BROWSER_API_URL || 'http://localhost:5050'
+    ? '' // ブラウザ側では相対パス（Next.jsのrewritesを使用）
     : process.env.NEXT_PUBLIC_API_BASE_URL || 'http://backend:5050';
 };
 
@@ -268,6 +268,31 @@ export const contentAPI = {
       return data as ContentCategoryInfo[];
     } catch (error) {
       console.error('コンテンツカテゴリーの取得に失敗しました:', error);
+      throw error;
+    }
+  },
+};
+
+// チャット関連のAPI機能
+export const chatAPI = {
+  generateSessionTitle: async (sessionId: string): Promise<{ title: string; session_id: string }> => {
+    try {
+      const response = await fetchWithAuth(
+        `${getApiBaseUrl()}/api/v1/chat/sessions/${sessionId}/generate-title`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error(`セッションID: ${sessionId} のタイトル生成に失敗しました:`, error);
       throw error;
     }
   },

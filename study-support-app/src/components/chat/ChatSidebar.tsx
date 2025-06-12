@@ -7,10 +7,11 @@ import { useSession } from 'next-auth/react';
 // import { apiClient } from '@/lib/api-client'; // ChatProvider側でAPIコール
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, ChevronLeft, ChevronRight, Archive, ArchiveRestore, Inbox } from 'lucide-react';
+import { PlusCircle, ChevronLeft, ChevronRight, Archive, ArchiveRestore, Inbox, Wand2 } from 'lucide-react';
 // import { cn } from "@/lib/utils"; // 未使用
 import { useChat } from '@/store/chat/ChatContext'; // useChat をインポート
 import { ChatTypeEnum, type ChatTypeValue, type ChatSession } from '@/types/chat'; // ChatSession を追加インポート
+import { chatAPI } from '@/services/api';
 
 const ChatSidebar: React.FC = () => {
   const router = useRouter();
@@ -185,7 +186,36 @@ const ChatSidebar: React.FC = () => {
     setShowArchived(!showArchived);
   };
 
-  const sessionsToDisplay = showArchived ? archivedSessions : sessions;
+  const handleGenerateTitle = async (sessionId: string, event: React.MouseEvent) => {
+    event.stopPropagation(); // セッション選択を防ぐ
+    try {
+      const result = await chatAPI.generateSessionTitle(sessionId);
+      console.log(`Session title generated: ${result.title} for session ${sessionId}`);
+      
+      // セッションリストを更新してタイトル変更を反映
+      if (currentChatType) {
+        if (showArchived) {
+          fetchArchivedSessions(currentChatType);
+        } else {
+          fetchSessions(currentChatType);
+        }
+      }
+    } catch (error) {
+      console.error(`Failed to generate title for session ${sessionId}:`, error);
+      // エラー通知 (必要に応じてtoastなど実装)
+    }
+  };
+
+  // セッション一覧を更新時間でソート（最新順）
+  const sessionsToDisplay = (showArchived ? archivedSessions : sessions)
+    .slice() // 元の配列を変更しないようにコピーを作成
+    .sort((a, b) => {
+      // updated_at または created_at を比較（更新時間優先、なければ作成時間）
+      const timeA = new Date(a.updated_at || a.created_at).getTime();
+      const timeB = new Date(b.updated_at || b.created_at).getTime();
+      return timeB - timeA; // 降順（最新が上）
+    });
+  
   const isLoadingDisplay = showArchived ? isLoadingArchivedSessions : isLoadingSessions;
   const errorDisplay = showArchived ? errorArchivedSessions : errorSessions;
 
@@ -249,6 +279,15 @@ const ChatSidebar: React.FC = () => {
               <div className="flex justify-between items-center">
                 <span className="truncate text-sm font-medium">{session.title || "無題のチャット"}</span>
                 <div className="flex space-x-1">
+                  {(!session.title || session.title === "無題のチャット" || session.title === "新規チャット" || session.title.includes("セッション")) && (
+                    <button 
+                      onClick={(e) => handleGenerateTitle(session.id, e)}
+                      className="p-1 hover:bg-slate-200 rounded text-slate-600"
+                      title="タイトルを自動生成"
+                    >
+                      <Wand2 size={14} />
+                    </button>
+                  )}
                   {showArchived ? (
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleUnarchiveSession(session.id); }}
