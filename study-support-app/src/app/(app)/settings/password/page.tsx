@@ -97,12 +97,17 @@ const PasswordChangePage = () => {
     setIsLoading(true);
     
     try {
-      await axios.post(`${API_BASE_URL}/api/v1/change-password`, {
+      console.log('パスワード変更リクエスト開始:', {
+        hasAccessToken: !!session?.user?.accessToken,
+        userEmail: session?.user?.email
+      });
+      
+      await axios.post(`${API_BASE_URL}/api/v1/auth/change-password`, {
         current_password: formData.currentPassword,
         new_password: formData.newPassword
       }, {
         headers: {
-          'Authorization': `Bearer ${(session as any)?.token?.accessToken || ''}`
+          'Authorization': `Bearer ${session?.user?.accessToken || ''}`
         }
       });
       
@@ -122,6 +127,13 @@ const PasswordChangePage = () => {
       
     } catch (error: any) {
       console.error('パスワード変更エラー:', error);
+      console.error('エラー詳細:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        headers: error.response?.headers,
+        config: error.config
+      });
       
       if (error.response?.status === 400) {
         toast.error('現在のパスワードが正しくありません');
@@ -129,6 +141,9 @@ const PasswordChangePage = () => {
           ...prev,
           currentPassword: '現在のパスワードが正しくありません'
         }));
+      } else if (error.response?.status === 401) {
+        toast.error('認証に失敗しました。再度ログインしてください。');
+        router.push('/login');
       } else {
         toast.error('パスワードの変更に失敗しました');
       }
