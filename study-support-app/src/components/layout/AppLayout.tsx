@@ -6,10 +6,14 @@ import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import { Menu, X } from 'lucide-react';
 import { Navigation } from './Navigation';
+import { useAuthError } from '@/hooks/useAuthError';
 
 export const AppLayout = ({ children }: { children: React.ReactNode }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { status } = useSession();
+  
+  // 認証エラーの自動処理を有効化
+  useAuthError();
 
   if (status === 'loading') {
     return <div className="flex justify-center items-center min-h-screen">Loading...</div>;
