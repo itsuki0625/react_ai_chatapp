@@ -1,5 +1,5 @@
 from typing import Optional, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from app.models.enums import NotificationType
 import uuid
@@ -7,8 +7,8 @@ import uuid
 class InAppNotificationBase(BaseModel):
     title: str
     message: str
-    link: str | None = None # 通知に関連するリンク（オプショナル）
-    notification_type: str | None = None # 通知の種類（例: 'system', 'chat', 'document'）
+    data: Optional[Dict[str, Any]] = None # JSON型のデータ（モデルと一致させる）
+    notification_type: Optional[str] = None # 通知の種類（例: 'system', 'chat', 'document'）
 
 class InAppNotificationCreate(InAppNotificationBase):
     user_id: uuid.UUID
@@ -19,11 +19,10 @@ class InAppNotificationResponse(InAppNotificationBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True # Pydantic V2 では orm_mode の代わりに from_attributes を使用
+    model_config = ConfigDict(from_attributes=True)
 
 class InAppNotificationUpdate(BaseModel):
-    read: bool | None = None
+    read: Optional[bool] = None
 
 class InAppNotificationInDB(InAppNotificationBase):
     id: str
@@ -32,5 +31,4 @@ class InAppNotificationInDB(InAppNotificationBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True 
+    model_config = ConfigDict(from_attributes=True) 
