@@ -431,10 +431,10 @@ async def get_user_settings(
         sub_data = None
         if subscription:
             try:
-                sub_response_obj = SubscriptionResponse.from_orm(subscription)
-                logger.info(f"SubscriptionResponse.from_orm 成功")
-                sub_data = sub_response_obj.dict()
-                logger.info(f"Subscription データ変換 (.dict()) 完了")
+                sub_response_obj = SubscriptionResponse.model_validate(subscription)
+                logger.info(f"SubscriptionResponse.model_validate 成功")
+                sub_data = sub_response_obj.model_dump()
+                logger.info(f"Subscription データ変換 (.model_dump()) 完了")
             except Exception as conversion_error:
                 logger.error(f"SubscriptionResponse 変換エラー: {str(conversion_error)}", exc_info=True)
                 raise HTTPException(status_code=500, detail="Subscription data conversion failed.")
@@ -689,18 +689,13 @@ async def delete_account(
 async def change_password(
     request: Request,
     password_data: dict,
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
 ) -> Any:
     """
     ユーザーのパスワードを変更
     """
     try:
-        if "user_id" not in request.session:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="認証が必要です"
-            )
-        
         # 必須フィールドの確認
         if "current_password" not in password_data or "new_password" not in password_data:
             raise HTTPException(
@@ -715,9 +710,8 @@ async def change_password(
                 detail="パスワードは8文字以上である必要があります"
             )
         
-        # ユーザーの取得
-        user_id = request.session["user_id"]
-        user = await crud_user.get_user(db, user_id)
+        # ユーザーの取得（JWT認証から）
+        user = current_user
         
         if not user:
             raise HTTPException(

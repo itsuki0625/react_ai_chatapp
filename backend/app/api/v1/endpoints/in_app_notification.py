@@ -19,7 +19,7 @@ async def get_in_app_notifications(
     db: AsyncSession = Depends(get_async_db)
 ):
     stmt = select(InAppNotification).filter(
-        InAppNotification.user_id == str(current_user.id)
+        InAppNotification.user_id == current_user.id
     ).order_by(InAppNotification.created_at.desc())
     result = await db.execute(stmt)
     return result.scalars().all()
@@ -47,7 +47,7 @@ async def mark_as_read(
 ):
     stmt = select(InAppNotification).filter(
         InAppNotification.id == notification_id,
-        InAppNotification.user_id == str(current_user.id)
+        InAppNotification.user_id == current_user.id
     )
     result = await db.execute(stmt)
     notification = result.scalars().first()

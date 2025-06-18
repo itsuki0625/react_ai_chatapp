@@ -37,7 +37,7 @@ import { getSession } from 'next-auth/react';
 
 // ブラウザ環境かサーバー環境かによって適切なAPIのベースURLを使用
 const API_URL = typeof window !== 'undefined' 
-  ? '/api/v1' // ブラウザ側では相対パス（Next.jsのrewritesを使用）
+  ? `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5050'}/api/v1` // ブラウザ側では直接バックエンドにアクセス
   : `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://backend:5050'}/api/v1`;
 
 // axios リクエスト用の共通設定
