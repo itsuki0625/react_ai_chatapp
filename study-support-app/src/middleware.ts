@@ -20,13 +20,27 @@ export default auth((req) => {
     // セッションを完全にクリアするために、レスポンスのCookieを削除
     const response = NextResponse.redirect(new URL('/login?error=session_expired', nextUrl.origin));
     
-    // NextAuthのセッションCookieを削除
-    response.cookies.delete('next-auth.session-token');
-    response.cookies.delete('__Secure-next-auth.session-token');
-    response.cookies.delete('next-auth.csrf-token');
-    response.cookies.delete('__Host-next-auth.csrf-token');
-    response.cookies.delete('next-auth.callback-url');
-    response.cookies.delete('__Secure-next-auth.callback-url');
+    // NextAuthのセッションCookieを削除（より網羅的に）
+    const cookiesToDelete = [
+      'next-auth.session-token',
+      '__Secure-next-auth.session-token', 
+      'next-auth.csrf-token',
+      '__Host-next-auth.csrf-token',
+      'next-auth.callback-url',
+      '__Secure-next-auth.callback-url',
+      'next-auth.pkce.code_verifier',
+      '__Secure-next-auth.pkce.code_verifier'
+    ];
+    
+    cookiesToDelete.forEach(cookieName => {
+      response.cookies.set(cookieName, '', {
+        expires: new Date(0),
+        path: '/',
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax'
+      });
+    });
     
     return response;
   }

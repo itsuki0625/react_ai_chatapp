@@ -230,6 +230,26 @@ export const authConfig: NextAuthConfig = {
             return { ...token, error: "RefreshAccessTokenError" };
         }
 
+        // 既にリフレッシュトークンが無効化されている場合（463エラーで処理済み）
+        if (token.accessTokenExpires === 0 && token.error === "RefreshAccessTokenError") {
+            console.warn("JWT Callback: Token already marked as invalid, skipping refresh", { tokenId: token.jti });
+            return token; // そのまま返す（無限ループ防止）
+        }
+
+        // 連続リフレッシュ失敗の防止
+        const failureCount = (token.refreshFailureCount as number) || 0;
+        if (failureCount >= 3) {
+            console.error("JWT Callback: Too many refresh failures, marking token as permanently invalid", { tokenId: token.jti, failureCount });
+            return {
+                ...token,
+                error: "RefreshAccessTokenError",
+                errorDetail: "Too many refresh failures",
+                accessToken: undefined,
+                refreshToken: undefined,
+                accessTokenExpires: 0,
+            };
+        }
+
         try {
             console.debug("JWT Callback: Sending request to refresh token endpoint...");
             const refreshUrl = `${process.env.INTERNAL_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/refresh-token`;
@@ -253,8 +273,31 @@ export const authConfig: NextAuthConfig = {
                     error: refreshedTokens,
                     headers: Object.fromEntries(response.headers.entries())
                 });
+                
+                // 463エラー（トークン無効）の場合は完全にセッションを破棄
+                if (response.status === 463) {
+                    console.warn("JWT Callback: 463 error - refresh token invalid, forcing session destruction");
+                    return { 
+                        ...token, 
+                        error: "RefreshAccessTokenError",
+                        errorDetail: "Refresh token is invalid or expired (463)",
+                        // すべてのトークン情報をクリア
+                        accessToken: undefined,
+                        refreshToken: undefined,
+                        accessTokenExpires: 0,
+                        // 強制無効化フラグ
+                        forceDestroy: true,
+                        refreshFailureCount: ((token.refreshFailureCount as number) || 0) + 1,
+                    };
+                }
+                
                 const errorDetail = refreshedTokens?.detail || `Refresh token failed (${response.status})`;
-                return { ...token, error: "RefreshAccessTokenError", errorDetail: errorDetail };
+                return { 
+                    ...token, 
+                    error: "RefreshAccessTokenError", 
+                    errorDetail: errorDetail,
+                    refreshFailureCount: ((token.refreshFailureCount as number) || 0) + 1,
+                };
             }
 
             const refreshedTokens = await response.json();
@@ -316,10 +359,27 @@ export const authConfig: NextAuthConfig = {
                 errorDetail = error.message;
             }
             
+            // 463エラーの場合は完全にセッションを破棄
+            if (error.message && error.message.includes('463')) {
+                console.warn("JWT Callback: 463 error detected, forcing session destruction");
+                return {
+                    ...token,
+                    error: "RefreshAccessTokenError",
+                    errorDetail: "Refresh token is invalid or expired (463)",
+                    // すべてのトークン情報をクリア
+                    accessToken: undefined,
+                    refreshToken: undefined,
+                    accessTokenExpires: 0,
+                    // 強制無効化フラグ
+                    forceDestroy: true,
+                };
+            }
+            
             return {
                 ...token,
                 error: "RefreshAccessTokenError",
                 errorDetail: errorDetail,
+                refreshFailureCount: ((token.refreshFailureCount as number) || 0) + 1,
             };
         }
     },
