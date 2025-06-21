@@ -58,6 +58,9 @@ export const authConfig: NextAuthConfig = {
         password: { label: "パスワード", type: "password" }
       },
       async authorize(credentials): Promise<User | null> {
+        console.log('=== NEXTAUTH AUTHORIZE START ===');
+        console.log('受信した認証情報:', credentials);
+        
         if (!credentials?.email || !credentials?.password) {
           console.warn('[Authorize] Missing email or password');
           return null;
@@ -70,13 +73,21 @@ export const authConfig: NextAuthConfig = {
         // ★ サーバーサイド用の内部API URLを使用
         const apiUrl = `${process.env.INTERNAL_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/login`;
         // (INTERNAL_API_BASE_URL が未定義の場合のフォールバックとして NEXT_PUBLIC も残しておく)
-        console.log('>>> [Authorize] Attempting to fetch internal API:', apiUrl); // ログも修正
+        console.log('>>> [Authorize] API URL:', apiUrl);
+        console.log('>>> [Authorize] 環境変数確認:');
+        console.log('   INTERNAL_API_BASE_URL:', process.env.INTERNAL_API_BASE_URL);
+        console.log('   NEXT_PUBLIC_API_BASE_URL:', process.env.NEXT_PUBLIC_API_BASE_URL);
 
         try {
+          console.log('[Authorize] リクエスト準備中...');
+          
           // データ形式を application/x-www-form-urlencoded に変更
           const body = new URLSearchParams();
           body.append('username', email);
           body.append('password', password);
+
+          console.log('[Authorize] リクエストボディ準備完了');
+          console.log('[Authorize] APIリクエスト送信中...');
 
           const response = await fetch(apiUrl, { // ★ apiUrl を使用
             method: 'POST',
@@ -87,6 +98,13 @@ export const authConfig: NextAuthConfig = {
             body: body, // ★ URLSearchParams オブジェクトを送信
             // ★ タイムアウトとエラーハンドリングを追加
             signal: AbortSignal.timeout(10000), // 10秒タイムアウト
+          });
+
+          console.log('[Authorize] レスポンス受信:', {
+            status: response.status,
+            statusText: response.statusText,
+            url: response.url,
+            headers: Object.fromEntries(response.headers.entries())
           });
 
           if (!response.ok) {
@@ -120,9 +138,11 @@ export const authConfig: NextAuthConfig = {
               refreshToken: data.token.refresh_token,
               accessTokenExpires: Date.now() + data.token.expires_in * 1000,
           };
-          console.debug("Authorize Callback: User object created", { userId: user.id, role: user.role, grade: user.grade, profile_image_url: user.profile_image_url }); // ★ ログ追加
+          console.debug("Authorize Callback: User object created", { userId: user.id, role: user.role }); // ★ ログ追加
+          console.log('=== NEXTAUTH AUTHORIZE SUCCESS ===');
           return user;
         } catch (error: any) { // ★ エラーの型を any にして詳細をログ出力
+          console.error("=== NEXTAUTH AUTHORIZE ERROR ===");
           console.error("[Authorize] Error in authorize callback:", error);
           // ★ ネットワークエラーと他のエラーを区別
           if (error.name === 'AbortError') {
@@ -232,12 +252,6 @@ export const authConfig: NextAuthConfig = {
         }
 
         // 既にエラー状態の場合は再リフレッシュを試行しない（無限ループ防止）
-        if (token.error === "RefreshAccessTokenError") {
-            console.warn("JWT Callback: Token already marked as invalid, skipping refresh", { tokenId: token.jti });
-            return token;
-        }
-
-        // 連続リフレッシュ失敗の防止
         const failureCount = (token.refreshFailureCount as number) || 0;
         if (failureCount >= 3) {
             console.error("JWT Callback: Too many refresh failures", { tokenId: token.jti, failureCount });

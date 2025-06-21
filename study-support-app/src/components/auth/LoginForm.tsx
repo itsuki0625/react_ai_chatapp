@@ -89,6 +89,9 @@ export const LoginForm: React.FC = () => {
     setSessionExpiredMessage(null);
     setDebugInfo('');
 
+    console.log('=== LOGIN FORM SUBMIT START ===');
+    setDebugInfo('フォーム送信開始');
+
     try {
       // テスト用の固定資格情報
       const testCredentials = {
@@ -101,6 +104,9 @@ export const LoginForm: React.FC = () => {
       const loginEmail = useTestCredentials ? testCredentials.email : email;
       const loginPassword = useTestCredentials ? testCredentials.password : password;
       
+      console.log('ログイン情報:', { loginEmail, useTestCredentials });
+      setDebugInfo(prev => prev + `\nログイン情報: ${loginEmail} (テストモード: ${useTestCredentials})`);
+      
       if (useTestCredentials) {
         setDebugInfo(prev => prev + `\nテストモード: ${testCredentials.email}`);
       }
@@ -109,10 +115,14 @@ export const LoginForm: React.FC = () => {
       let redirectUrl = searchParams?.get('redirect') || searchParams?.get('redirect_to') || '/dashboard';
       redirectUrl = decodeURIComponent(redirectUrl);
       
-      console.log('ログイン試行:', loginEmail);
-      setDebugInfo(prev => prev + `\nログイン試行: ${loginEmail}`);
+      console.log('リダイレクト先:', redirectUrl);
+      setDebugInfo(prev => prev + `\nリダイレクト先: ${redirectUrl}`);
+      
+      console.log('signIn関数呼び出し直前');
+      setDebugInfo(prev => prev + '\nsignIn関数呼び出し直前');
       
       // NextAuthによるログイン
+      console.log('signIn関数を呼び出し中...');
       const result = await signIn('credentials', {
         email: loginEmail,
         password: loginPassword,
@@ -120,11 +130,13 @@ export const LoginForm: React.FC = () => {
         callbackUrl: redirectUrl
       });
       
-      console.log('ログイン結果:', result);
+      console.log('signIn関数呼び出し完了、結果:', result);
+      setDebugInfo(prev => prev + `\nsignIn関数呼び出し完了`);
       setDebugInfo(prev => prev + `\nログイン結果: ${JSON.stringify(result)}`);
       
       if (result?.error) {
         console.error('ログインエラー:', result.error);
+        setDebugInfo(prev => prev + `\nエラー発生: ${result.error}`);
         
         if (result.error === 'CredentialsSignin') {
           setError('ログイン情報が正しくありません。メールアドレスとパスワードを確認してください。');
@@ -136,7 +148,9 @@ export const LoginForm: React.FC = () => {
       }
       
       if (!result?.ok) {
+        console.log('ログイン結果がOKではない:', result);
         setError('ログイン処理中にエラーが発生しました。もう一度お試しください。');
+        setDebugInfo(prev => prev + '\nログイン結果がOKではない');
         return;
       }
       
@@ -145,18 +159,24 @@ export const LoginForm: React.FC = () => {
       
       // リダイレクト処理
       if (result?.url) {
+        console.log('リダイレクト実行:', result.url);
+        setDebugInfo(prev => prev + `\nリダイレクト実行: ${result.url}`);
         router.push(result.url);
       } else {
         // フォールバック
+        console.log('フォールバックリダイレクト: /dashboard');
+        setDebugInfo(prev => prev + '\nフォールバックリダイレクト: /dashboard');
         router.push('/dashboard');
       }
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error('Login error in catch block:', err);
       setError('ログインに失敗しました: ' + errorMessage);
-      console.error('Login error:', err);
       setDebugInfo(prev => prev + `\n例外発生: ${errorMessage}`);
     } finally {
+      console.log('=== LOGIN FORM SUBMIT END ===');
+      setDebugInfo(prev => prev + '\nログイン処理終了');
       setIsLoading(false);
     }
   };
