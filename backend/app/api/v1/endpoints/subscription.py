@@ -1,6 +1,6 @@
 # backend/app/api/v1/endpoints/subscription.py
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Header, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any, Optional
 import stripe
@@ -253,6 +253,43 @@ async def create_checkout_session(
     except Exception as e:
         logger.error(f"チェックアウトセッション作成エラー (User: {current_user.id}, Price: {request_data.price_id}): {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="チェックアウトセッションの作成に失敗しました。")
+
+
+@router.options("/create-checkout")
+async def create_checkout_session_options(request: Request):
+    """
+    OPTIONSリクエスト（CORSプリフライト）を処理します。
+    """
+    origin = request.headers.get("origin")
+    allowed_origins = [
+        "http://localhost:3001",
+        "http://localhost:5050", 
+        "http://127.0.0.1:3001",
+        "https://app.smartao.jp",
+        "https://api.smartao.jp",
+        "https://stg.smartao.jp",
+        "https://stg-api.smartao.jp",
+        "https://smartao.jp"
+    ]
+    
+    # オリジンが許可リストに含まれているかチェック
+    allow_origin = "*"  # デフォルト
+    if origin and origin in allowed_origins:
+        allow_origin = origin
+    
+    logger.info(f"OPTIONSリクエスト処理: /create-checkout - オリジン: {origin}")
+    
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": allow_origin,
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "3600",
+            "Vary": "Origin"
+        }
+    )
 
 
 @router.post("/create-portal-session")

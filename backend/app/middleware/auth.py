@@ -93,33 +93,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if origin and origin in allowed_origins:
                 allow_origin = origin
             
-            try:
-                response = await call_next(request)
-                logger.debug(f"OPTIONSレスポンス: {request.url.path} - ステータス: {response.status_code}")
-                
-                # CORSヘッダーを追加/更新
-                response.headers["Access-Control-Allow-Origin"] = allow_origin
-                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-                response.headers["Access-Control-Allow-Headers"] = "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
-                response.headers["Access-Control-Allow-Credentials"] = "true"
-                response.headers["Access-Control-Max-Age"] = "3600"
-                response.headers["Vary"] = "Origin"
-                
-                return response
-            except Exception as e:
-                logger.error(f"OPTIONSリクエスト処理中にエラー: {request.url.path} - {str(e)}", exc_info=True)
-                # OPTIONSリクエストに対してフォールバックレスポンスを返す
-                return Response(
-                    status_code=200,
-                    headers={
-                        "Access-Control-Allow-Origin": allow_origin,
-                        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-                        "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
-                        "Access-Control-Allow-Credentials": "true",
-                        "Access-Control-Max-Age": "3600",
-                        "Vary": "Origin"
-                    }
-                )
+            # OPTIONSリクエストは直接成功レスポンスを返して、後続処理をスキップ
+            logger.debug(f"OPTIONSレスポンス: {request.url.path} - ステータス: 200 (直接返却)")
+            return Response(
+                status_code=200,
+                headers={
+                    "Access-Control-Allow-Origin": allow_origin,
+                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+                    "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+                    "Access-Control-Allow-Credentials": "true",
+                    "Access-Control-Max-Age": "3600",
+                    "Vary": "Origin"
+                }
+            )
 
         # 認証不要パスのチェック
         if any(request.url.path.startswith(path) for path in NO_AUTH_PATHS):
