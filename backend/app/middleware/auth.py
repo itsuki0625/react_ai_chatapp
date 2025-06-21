@@ -34,6 +34,7 @@ NO_AUTH_PATHS = [
     "/api/v1/subscriptions/stripe-plans",
     "/api/v1/subscriptions/webhook",
     "/api/auth/session",
+    "/health",  # ELBヘルスチェック用エンドポイント
 ]
 
 # --- JWEトークンをデコードするヘルパー関数 --- << 削除
