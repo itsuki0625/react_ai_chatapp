@@ -107,12 +107,12 @@ resource "aws_lb_target_group" "frontend" {
     enabled             = true
     healthy_threshold   = 2
     interval            = 30
-    matcher             = "200"
+    matcher             = "200,404"
     path                = "/"
     port                = "traffic-port"
     protocol            = "HTTP"
-    timeout             = 5
-    unhealthy_threshold = 2
+    timeout             = 10
+    unhealthy_threshold = 3
   }
 }
 
@@ -127,12 +127,12 @@ resource "aws_lb_target_group" "backend" {
     enabled             = true
     healthy_threshold   = 2
     interval            = 30
-    matcher             = "200"
+    matcher             = "200,404"
     path                = "/health"
     port                = "traffic-port"
     protocol            = "HTTP"
-    timeout             = 5
-    unhealthy_threshold = 2
+    timeout             = 10
+    unhealthy_threshold = 3
   }
 }
 
