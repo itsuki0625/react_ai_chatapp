@@ -4,6 +4,7 @@ import React, { useState, FormEvent, useEffect } from 'react';
 import { Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
+import { API_BASE_URL } from '@/lib/config';
 
 const SignupPage = () => {
   const router = useRouter();
@@ -56,39 +57,67 @@ const SignupPage = () => {
 
     if (formData.password !== formData.confirmPassword) {
       setError('パスワードが一致しません');
-      setIsLoading(false);
       return;
     }
 
     const strength = validatePassword(formData.password);
     if (strength !== 'strong') {
       setError(strength || 'パスワードが要件を満たしていません。');
-      setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
 
-          const signupApiUrl = `/api/v1/auth/signup`;
+    const signupApiUrl = `/api/v1/auth/signup`;
     console.log('>>> [SignupPage] Attempting to fetch signup API:', signupApiUrl);
 
     try {
+      // リクエストの詳細をログ出力
+      const requestBody = {
+        email: formData.email,
+        password: formData.password,
+        full_name: formData.name
+      };
+      
+      console.log('Signup request details:', {
+        url: signupApiUrl,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: { ...requestBody, password: '[REDACTED]' }, // パスワードは隠す
+      });
+
       const response = await fetch(signupApiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
-        credentials: 'include',
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-          full_name: formData.name
-        }),
+        body: JSON.stringify(requestBody),
+      });
+
+      console.log('Response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+        url: response.url
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         let errorMessage = 'アカウントの作成に失敗しました。もう一度お試しください。';
+        
+        // エラーレスポンスの詳細をログ出力
+        console.error('Signup API Error:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData: errorData,
+          headers: Object.fromEntries(response.headers.entries()),
+          url: response.url
+        });
+        
         if (typeof errorData?.detail === 'string') {
           errorMessage = errorData.detail;
         } else if (Array.isArray(errorData?.detail)) {
@@ -99,11 +128,23 @@ const SignupPage = () => {
         } else if (typeof errorData?.message === 'string') {
           errorMessage = errorData.message;
         }
-        console.error('Signup API Error:', errorData);
+        
+        // 特定のエラーステータスに対するメッセージ
+        if (response.status === 463) {
+          errorMessage = 'アカウント作成中にエラーが発生しました。少し時間をおいてから再度お試しください。';
+        } else if (response.status === 409) {
+          errorMessage = 'このメールアドレスは既に登録されています。';
+        } else if (response.status >= 500) {
+          errorMessage = 'サーバーエラーが発生しました。しばらく時間をおいてから再度お試しください。';
+        } else if (response.status === 422) {
+          errorMessage = '入力内容に問題があります。すべての項目を正しく入力してください。';
+        }
+        
         setError(errorMessage);
-        setIsLoading(false);
         return;
       }
+
+      console.log('Signup successful, attempting auto login...');
       
       const signInResult = await signIn('credentials', {
         email: formData.email,
@@ -113,20 +154,24 @@ const SignupPage = () => {
       });
 
       if (signInResult?.error) {
+        console.log('Auto login failed, redirecting to login page');
         router.push('/login');
         return;
       }
 
       await new Promise(resolve => setTimeout(resolve, 500));
-      
       router.push('/profile/setup');
 
     } catch (err) {
       console.error("Signup error:", err);
-      if (err instanceof Error && 'cause' in err) {
-           console.error("Signup error cause:", (err as any).cause);
+      if (err instanceof Error) {
+        console.error("Error details:", {
+          name: err.name,
+          message: err.message,
+          cause: (err as any).cause
+        });
       }
-      setError('アカウントの作成に失敗しました。もう一度お試しください。');
+      setError('ネットワークエラーが発生しました。インターネット接続を確認してから再度お試しください。');
     } finally {
       setIsLoading(false);
     }

@@ -28,18 +28,13 @@ env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
 
 jobs:
-  wake-up-stg:
+  check-if-already-running:
     runs-on: ubuntu-latest
     environment: Preview
+    outputs:
+      is_running: ${{ steps.check_status.outputs.status }}
     
     steps:
-      - name: 🚀 STG Wake Up Summary
-        run: |
-          echo "🎯 STG環境起動開始"
-          echo "⏰ 起動時間: ${{ github.event.inputs.duration || '4' }}時間"
-          echo "📝 使用目的: ${{ github.event.inputs.purpose || 'API経由起動' }}"
-          echo "💰 想定コスト: ~$0.10-2"
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -77,8 +72,39 @@ jobs:
             echo "🛑 STG環境は停止中です"
           fi
 
+  already-running:
+    runs-on: ubuntu-latest
+    needs: check-if-already-running
+    if: needs.check-if-already-running.outputs.is_running == 'running'
+    
+    steps:
+      - name: ℹ️ Already Running
+        run: |
+          echo "✅ STG環境は既に起動中です"
+          echo "現在のサービス状態を確認してください"
+
+  wake-up-stg:
+    runs-on: ubuntu-latest
+    environment: Preview
+    needs: check-if-already-running
+    if: needs.check-if-already-running.outputs.is_running == 'stopped'
+    
+    steps:
+      - name: 🚀 STG Wake Up Summary
+        run: |
+          echo "🎯 STG環境起動開始"
+          echo "⏰ 起動時間: ${{ github.event.inputs.duration || '4' }}時間"
+          echo "📝 使用目的: ${{ github.event.inputs.purpose || 'API経由起動' }}"
+          echo "💰 想定コスト: ~$0.10-2"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
       - name: 🚀 Start ECS Services
-        if: steps.check_status.outputs.status == 'stopped'
         run: |
           echo "🚀 ECSサービス起動中..."
           
@@ -99,7 +125,6 @@ jobs:
           echo "✅ ECSサービス起動コマンド完了"
 
       - name: ⏳ Wait for Services to Start
-        if: steps.check_status.outputs.status == 'stopped'
         run: |
           echo "⏳ サービス起動完了まで待機中..."
           
@@ -119,55 +144,25 @@ jobs:
             --cli-read-timeout 300 \
             --cli-connect-timeout 60 || echo "Backend timeout (続行)"
 
-      - name: 🔍 Get Service URLs
+      - name: 🔍 Get ALB DNS Name
         id: get_urls
         run: |
-          echo "🔍 サービスURLを取得中..."
+          echo "🔍 ALB DNS名を取得中..."
           
-          # Get Frontend task public IP
-          FRONTEND_TASK_ARN=$(aws ecs list-tasks \
-            --cluster stg-front \
-            --service-name stg-front-service \
-            --query 'taskArns[0]' \
+          # ALB DNS名を取得
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names stg-main-alb \
+            --query 'LoadBalancers[0].DNSName' \
             --output text 2>/dev/null || echo "")
           
-          if [ "$FRONTEND_TASK_ARN" != "" ] && [ "$FRONTEND_TASK_ARN" != "None" ]; then
-            FRONTEND_ENI=$(aws ecs describe-tasks \
-              --cluster stg-front \
-              --tasks $FRONTEND_TASK_ARN \
-              --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' \
-              --output text 2>/dev/null || echo "")
-            
-            if [ "$FRONTEND_ENI" != "" ]; then
-              FRONTEND_IP=$(aws ec2 describe-network-interfaces \
-                --network-interface-ids $FRONTEND_ENI \
-                --query 'NetworkInterfaces[0].Association.PublicIp' \
-                --output text 2>/dev/null || echo "")
-              echo "frontend_ip=$FRONTEND_IP" >> $GITHUB_OUTPUT
-            fi
-          fi
+          echo "ALB DNS: $ALB_DNS"
           
-          # Get Backend task public IP
-          BACKEND_TASK_ARN=$(aws ecs list-tasks \
-            --cluster stg-api \
-            --service-name stg-api-service \
-            --query 'taskArns[0]' \
-            --output text 2>/dev/null || echo "")
-          
-          if [ "$BACKEND_TASK_ARN" != "" ] && [ "$BACKEND_TASK_ARN" != "None" ]; then
-            BACKEND_ENI=$(aws ecs describe-tasks \
-              --cluster stg-api \
-              --tasks $BACKEND_TASK_ARN \
-              --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' \
-              --output text 2>/dev/null || echo "")
-            
-            if [ "$BACKEND_ENI" != "" ]; then
-              BACKEND_IP=$(aws ec2 describe-network-interfaces \
-                --network-interface-ids $BACKEND_ENI \
-                --query 'NetworkInterfaces[0].Association.PublicIp' \
-                --output text 2>/dev/null || echo "")
-              echo "backend_ip=$BACKEND_IP" >> $GITHUB_OUTPUT
-            fi
+          if [ "$ALB_DNS" != "" ] && [ "$ALB_DNS" != "None" ] && [ "$ALB_DNS" != "null" ]; then
+            echo "✅ ALB DNS取得成功: $ALB_DNS"
+            echo "alb_dns=$ALB_DNS" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ ALB DNS取得に失敗"
+            echo "alb_dns=" >> $GITHUB_OUTPUT
           fi
 
       - name: 📋 Wake Up Complete
@@ -178,34 +173,33 @@ jobs:
           echo "📝 使用目的: ${{ github.event.inputs.purpose || 'API経由起動' }}"
           echo ""
           
-          if [ "${{ steps.get_urls.outputs.frontend_ip }}" != "" ]; then
-            echo "🌐 Frontend URL: http://${{ steps.get_urls.outputs.frontend_ip }}:3000"
-          else
-            echo "⚠️ Frontend IP取得に失敗（起動中の可能性）"
-          fi
+          ALB_DNS="${{ steps.get_urls.outputs.alb_dns }}"
           
-          if [ "${{ steps.get_urls.outputs.backend_ip }}" != "" ]; then
-            echo "🌐 Backend URL: http://${{ steps.get_urls.outputs.backend_ip }}:5050"
+          if [ "$ALB_DNS" != "" ] && [ "$ALB_DNS" != "null" ]; then
+            echo "🌐 Frontend URL: https://stg.smartao.jp"
+            echo "🌐 Backend API URL: https://api-stg.smartao.jp"
+            echo "🌐 ALB DNS Name: $ALB_DNS"
           else
-            echo "⚠️ Backend IP取得に失敗（起動中の可能性）"
+            echo "⚠️ ALB DNS取得に失敗"
+            echo "📋 手動確認コマンド:"
+            echo "aws elbv2 describe-load-balancers --names stg-main-alb"
           fi
           
           echo ""
           echo "📋 CloudFlare設定更新:"
           echo "1. CloudFlareダッシュボードにログイン"
-          echo "2. DNS設定でstg.smartao.jpのAレコードを更新"
-          echo "3. 新しいIP: ${{ steps.get_urls.outputs.frontend_ip || 'IP取得失敗' }}"
+          echo "2. DNS設定で以下のCNAMEレコードを設定:"
+          if [ "$ALB_DNS" != "" ] && [ "$ALB_DNS" != "null" ]; then
+            echo "   - stg.smartao.jp → $ALB_DNS"
+            echo "   - api-stg.smartao.jp → $ALB_DNS"
+          else
+            echo "   - CNAME: 手動で確認が必要"
+          fi
           echo ""
           echo "🛑 使用後は必ず停止してください:"
           echo "GitHub Actions: 'STG Environment Sleep' ワークフロー実行"
           echo ""
-          echo "💰 想定コスト: ${{ github.event.inputs.duration || '4' }}時間で約$0.40-2"
-
-  already-running:
-    runs-on: ubuntu-latest
-    if: ${{ steps.check_status.outputs.status == 'running' }}
-    steps:
-      - name: ℹ️ Already Running
-        run: |
-          echo "✅ STG環境は既に起動中です"
-          echo "現在のサービス状態を確認してください" 
+          echo "💰 想定コスト: ${{ github.event.inputs.duration || '4' }}時間で約$1.10-3 (ALB込み)"
+          echo ""
+          echo "🔧 トラブルシューティング:"
+          echo "ALBが応答しない場合は、ECSタスクの起動完了まで数分待機してください" 

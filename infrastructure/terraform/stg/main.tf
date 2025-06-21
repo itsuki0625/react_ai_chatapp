@@ -86,55 +86,79 @@ resource "aws_security_group" "rds" {
   tags = { Environment = var.environment }
 }
 
-# Application Load Balancer削除 (STG環境はALBなしでコスト削減)
-# resource "aws_lb" "main" {
-#   name               = "${var.environment}-main-alb"
-#   internal           = false
-#   load_balancer_type = "application"
-#   subnets            = module.vpc.public_subnets
-#   security_groups    = [aws_security_group.app.id]
-#   tags = { Environment = var.environment }
-# }
+# Application Load Balancer (STG環境でCloudFlare連携のため復活)
+resource "aws_lb" "main" {
+  name               = "${var.environment}-main-alb"
+  internal           = false
+  load_balancer_type = "application"
+  subnets            = module.vpc.public_subnets
+  security_groups    = [aws_security_group.app.id]
+  tags = { Environment = var.environment }
+}
 
-# resource "aws_lb_target_group" "frontend" {
-#   name        = "${var.environment}-front-tg"
-#   port        = 3000
-#   protocol    = "HTTP"
-#   vpc_id      = module.vpc.vpc_id
-#   target_type = "ip"
-# }
+resource "aws_lb_target_group" "frontend" {
+  name        = "${var.environment}-front-tg"
+  port        = 3000
+  protocol    = "HTTP"
+  vpc_id      = module.vpc.vpc_id
+  target_type = "ip"
+  
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    interval            = 30
+    matcher             = "200,404"
+    path                = "/"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 10
+    unhealthy_threshold = 3
+  }
+}
 
-# resource "aws_lb_target_group" "backend" {
-#   name        = "${var.environment}-api-tg"
-#   port        = 5050
-#   protocol    = "HTTP"
-#   vpc_id      = module.vpc.vpc_id
-#   target_type = "ip"
-# }
+resource "aws_lb_target_group" "backend" {
+  name        = "${var.environment}-api-tg"
+  port        = 5050
+  protocol    = "HTTP"
+  vpc_id      = module.vpc.vpc_id
+  target_type = "ip"
+  
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    interval            = 30
+    matcher             = "200,404"
+    path                = "/health"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 10
+    unhealthy_threshold = 3
+  }
+}
 
-# resource "aws_lb_listener" "main_http" {
-#   load_balancer_arn = aws_lb.main.arn
-#   port              = 80
-#   protocol          = "HTTP"
-#   default_action {
-#     type             = "forward"
-#     target_group_arn = aws_lb_target_group.frontend.arn
-#   }
-# }
+resource "aws_lb_listener" "main_http" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = 80
+  protocol          = "HTTP"
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.frontend.arn
+  }
+}
 
-# resource "aws_lb_listener_rule" "backend" {
-#   listener_arn = aws_lb_listener.main_http.arn
-#   priority     = 100
-#   action {
-#     type             = "forward"
-#     target_group_arn = aws_lb_target_group.backend.arn
-#   }
-#   condition {
-#     path_pattern {
-#       values = ["/api/*"]
-#     }
-#   }
-# }
+resource "aws_lb_listener_rule" "backend" {
+  listener_arn = aws_lb_listener.main_http.arn
+  priority     = 100
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.backend.arn
+  }
+  condition {
+    host_header {
+      values = ["stg-api.smartao.jp"]
+    }
+  }
+}
 
 # ECR リポジトリ
 resource "aws_ecr_repository" "backend" {
@@ -341,4 +365,10 @@ resource "aws_s3_bucket_public_access_block" "icon_images" {
 output "icon_images_bucket_name" {
   description = "S3 bucket name for icon images"
   value       = aws_s3_bucket.icon_images.bucket
+}
+
+# ALB DNS名を出力
+output "alb_dns_name" {
+  description = "DNS name of the Application Load Balancer"
+  value       = aws_lb.main.dns_name
 } 

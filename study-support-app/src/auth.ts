@@ -58,6 +58,9 @@ export const authConfig: NextAuthConfig = {
         password: { label: "パスワード", type: "password" }
       },
       async authorize(credentials): Promise<User | null> {
+        console.log('=== NEXTAUTH AUTHORIZE START ===');
+        console.log('受信した認証情報:', credentials);
+        
         if (!credentials?.email || !credentials?.password) {
           console.warn('[Authorize] Missing email or password');
           return null;
@@ -70,13 +73,21 @@ export const authConfig: NextAuthConfig = {
         // ★ サーバーサイド用の内部API URLを使用
         const apiUrl = `${process.env.INTERNAL_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/login`;
         // (INTERNAL_API_BASE_URL が未定義の場合のフォールバックとして NEXT_PUBLIC も残しておく)
-        console.log('>>> [Authorize] Attempting to fetch internal API:', apiUrl); // ログも修正
+        console.log('>>> [Authorize] API URL:', apiUrl);
+        console.log('>>> [Authorize] 環境変数確認:');
+        console.log('   INTERNAL_API_BASE_URL:', process.env.INTERNAL_API_BASE_URL);
+        console.log('   NEXT_PUBLIC_API_BASE_URL:', process.env.NEXT_PUBLIC_API_BASE_URL);
 
         try {
+          console.log('[Authorize] リクエスト準備中...');
+          
           // データ形式を application/x-www-form-urlencoded に変更
           const body = new URLSearchParams();
           body.append('username', email);
           body.append('password', password);
+
+          console.log('[Authorize] リクエストボディ準備完了');
+          console.log('[Authorize] APIリクエスト送信中...');
 
           const response = await fetch(apiUrl, { // ★ apiUrl を使用
             method: 'POST',
@@ -87,6 +98,13 @@ export const authConfig: NextAuthConfig = {
             body: body, // ★ URLSearchParams オブジェクトを送信
             // ★ タイムアウトとエラーハンドリングを追加
             signal: AbortSignal.timeout(10000), // 10秒タイムアウト
+          });
+
+          console.log('[Authorize] レスポンス受信:', {
+            status: response.status,
+            statusText: response.statusText,
+            url: response.url,
+            headers: Object.fromEntries(response.headers.entries())
           });
 
           if (!response.ok) {
@@ -120,9 +138,11 @@ export const authConfig: NextAuthConfig = {
               refreshToken: data.token.refresh_token,
               accessTokenExpires: Date.now() + data.token.expires_in * 1000,
           };
-          console.debug("Authorize Callback: User object created", { userId: user.id, role: user.role, grade: user.grade, profile_image_url: user.profile_image_url }); // ★ ログ追加
+          console.debug("Authorize Callback: User object created", { userId: user.id, role: user.role }); // ★ ログ追加
+          console.log('=== NEXTAUTH AUTHORIZE SUCCESS ===');
           return user;
         } catch (error: any) { // ★ エラーの型を any にして詳細をログ出力
+          console.error("=== NEXTAUTH AUTHORIZE ERROR ===");
           console.error("[Authorize] Error in authorize callback:", error);
           // ★ ネットワークエラーと他のエラーを区別
           if (error.name === 'AbortError') {
@@ -220,18 +240,33 @@ export const authConfig: NextAuthConfig = {
         if (token.accessTokenExpires && Date.now() < (token.accessTokenExpires * 1000 - 60 * 1000)) {
             // 有効期限の60秒前までは何もしない
             console.debug("JWT Callback: Access token is still valid", { tokenId: token.jti });
-            return token; // Return early if valid
+            return token;
         }
 
         // 3. トークンが無効または有効期限が近い場合 (リフレッシュ実行)
         console.info("JWT Callback: Access token expired or nearing expiry, attempting refresh", { tokenId: token.jti });
+        
         if (!token.refreshToken) {
-            console.error("JWT Callback: No refresh token available, cannot refresh. Returning error.", { tokenId: token.jti });
+            console.error("JWT Callback: No refresh token available", { tokenId: token.jti });
             return { ...token, error: "RefreshAccessTokenError" };
         }
 
+        // 既にエラー状態の場合は再リフレッシュを試行しない（無限ループ防止）
+        const failureCount = (token.refreshFailureCount as number) || 0;
+        if (failureCount >= 3) {
+            console.error("JWT Callback: Too many refresh failures", { tokenId: token.jti, failureCount });
+            return {
+                ...token,
+                error: "RefreshAccessTokenError",
+                errorDetail: "Too many refresh failures",
+                accessToken: undefined,
+                refreshToken: undefined,
+                accessTokenExpires: 0,
+            };
+        }
+
         try {
-            console.debug("JWT Callback: Sending request to refresh token endpoint...");
+            console.debug("JWT Callback: Attempting to refresh token...");
             const refreshUrl = `${process.env.INTERNAL_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/refresh-token`;
             
             const response = await fetch(refreshUrl, {
@@ -242,40 +277,55 @@ export const authConfig: NextAuthConfig = {
                 },
                 body: JSON.stringify({ refresh_token: token.refreshToken }),
                 credentials: 'include',
-                // ★ タイムアウトを追加
                 signal: AbortSignal.timeout(10000), // 10秒タイムアウト
             });
 
             if (!response.ok) {
-                const refreshedTokens = await response.json().catch(() => ({}));
-                console.error("JWT Callback: Failed to refresh token from API", { 
+                const errorData = await response.json().catch(() => ({}));
+                console.error("JWT Callback: Failed to refresh token", { 
                     status: response.status, 
-                    error: refreshedTokens,
-                    headers: Object.fromEntries(response.headers.entries())
+                    error: errorData
                 });
-                const errorDetail = refreshedTokens?.detail || `Refresh token failed (${response.status})`;
-                return { ...token, error: "RefreshAccessTokenError", errorDetail: errorDetail };
+                
+                // 463エラー（トークン無効）の場合は完全にセッションを破棄
+                if (response.status === 463) {
+                    console.warn("JWT Callback: 463 error - refresh token invalid");
+                    return { 
+                        ...token, 
+                        error: "RefreshAccessTokenError",
+                        errorDetail: "Refresh token is invalid or expired (463)",
+                        accessToken: undefined,
+                        refreshToken: undefined,
+                        accessTokenExpires: 0,
+                    };
+                }
+                
+                return { 
+                    ...token, 
+                    error: "RefreshAccessTokenError", 
+                    errorDetail: errorData?.detail || `Refresh failed (${response.status})`,
+                    refreshFailureCount: failureCount + 1,
+                };
             }
 
             const refreshedTokens = await response.json();
 
-            // リフレッシュ成功
-            // --- リフレッシュ後のトークンもデコード ---
+            // リフレッシュ成功時の処理
             let refreshedDecoded: DecodedToken = {};
             let refreshedRoles: string[] | undefined = undefined;
             let refreshedPermissions: string[] | undefined = undefined;
+            
             try {
-               refreshedDecoded = jwtDecode<DecodedToken>(refreshedTokens.access_token);
-               refreshedRoles = refreshedDecoded.roles;
-               refreshedPermissions = refreshedDecoded.permissions;
-               console.debug("JWT Callback: Decoded refreshed token", { roles: refreshedRoles, permissions: refreshedPermissions });
+                refreshedDecoded = jwtDecode<DecodedToken>(refreshedTokens.access_token);
+                refreshedRoles = refreshedDecoded.roles;
+                refreshedPermissions = refreshedDecoded.permissions;
+                console.debug("JWT Callback: Successfully decoded refreshed token");
             } catch(e) {
                 console.error("JWT Callback: Failed to decode refreshed access token", e);
             }
-            // --- ここまで追加 ---
 
-            const defaultExpireMinutesOnRefresh = process.env.ACCESS_TOKEN_EXPIRE_MINUTES ? parseInt(process.env.ACCESS_TOKEN_EXPIRE_MINUTES) : 15;
-            const newExpiresInSeconds = refreshedTokens.expires_in || defaultExpireMinutesOnRefresh * 60;
+            const defaultExpireMinutes = parseInt(process.env.ACCESS_TOKEN_EXPIRE_MINUTES || '15');
+            const newExpiresInSeconds = refreshedTokens.expires_in || defaultExpireMinutes * 60;
             const newExpiresAt = Math.floor(Date.now() / 1000) + newExpiresInSeconds;
 
             const refreshedTokenData: JWT = {
@@ -283,31 +333,26 @@ export const authConfig: NextAuthConfig = {
                 accessToken: refreshedTokens.access_token,
                 refreshToken: refreshedTokens.refresh_token ?? token.refreshToken,
                 accessTokenExpires: newExpiresAt,
-                // --- デコード結果を反映 ---
-                role: refreshedRoles || token.role, // デコードした roles (配列) を優先、なければ以前の role
-                permissions: refreshedPermissions || token.permissions, // デコードした permissions を優先
-                // --- ここまで修正 ---
-                profile_image_url: token.profile_image_url,
+                role: refreshedRoles || token.role,
+                permissions: refreshedPermissions || token.permissions,
                 iat: Math.floor(Date.now() / 1000),
                 exp: newExpiresAt,
                 jti: crypto.randomUUID(),
                 error: undefined,
                 errorDetail: undefined,
+                refreshFailureCount: 0, // 成功時はリセット
             };
 
-            console.info("JWT Callback: Token refreshed successfully", { newTokenId: refreshedTokenData.jti, newRole: refreshedTokenData.role, profile_image_url: refreshedTokenData.profile_image_url }); // ★ ログ追加
+            console.info("JWT Callback: Token refreshed successfully", { newTokenId: refreshedTokenData.jti });
             return refreshedTokenData;
 
         } catch (error: any) {
-            console.error("JWT Callback: Catch block error during refresh token fetch", {
+            console.error("JWT Callback: Error during token refresh", {
                 errorMessage: error.message,
                 errorName: error.name,
-                errorDetails: error,
-                refreshTokenUsed: token.refreshToken?.substring(0, 10) + '...'
             });
             
-            // ★ ネットワークエラーのハンドリング
-            let errorDetail = "Network error or failed to parse response";
+            let errorDetail = "Network error during token refresh";
             if (error.name === 'AbortError') {
                 errorDetail = "Request timeout during token refresh";
             } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
@@ -320,25 +365,27 @@ export const authConfig: NextAuthConfig = {
                 ...token,
                 error: "RefreshAccessTokenError",
                 errorDetail: errorDetail,
+                refreshFailureCount: failureCount + 1,
             };
         }
     },
     async session({ session, token }: { session: Session; token: JWT }): Promise<Session> {
-      console.debug("Session Callback: Start", { userId: token?.id, tokenJti: token?.jti, tokenRole: token.role }); // token.role をログに追加
+      console.debug("Session Callback: Start", { userId: token?.id, tokenJti: token?.jti });
 
-      // エラーがあればセッションにエラー情報をセット (エラー詳細も)
+      // エラーがあればセッションにエラー情報をセット
       if (token.error) {
-        console.error("Session Callback: Token contains error, propagating to session", { error: token.error, errorDetail: token.errorDetail });
+        console.error("Session Callback: Token contains error", { error: token.error, errorDetail: token.errorDetail });
         session.error = token.error;
         session.errorDetail = token.errorDetail;
-        // ★ エラー時は必須プロパティにデフォルト値を設定したオブジェクトにする
+        
+        // エラー時はデフォルト値を持つユーザーオブジェクトを設定
         session.user = {
           id: String(token.id ?? ''),
           name: null,
           email: null,
           image: null,
-          role: '不明', // または適切なデフォルトロール
-          status: 'error', // エラー状態を示すステータス
+          role: '不明',
+          status: 'error',
           isAdmin: false,
           isTeacher: false,
           isStudent: false,
@@ -352,57 +399,46 @@ export const authConfig: NextAuthConfig = {
 
       // トークンからセッションに情報をコピー
       if (token && session.user) {
-        session.user.id = typeof token.id === 'string' ? token.id : String(token.id ?? ''); 
-        session.user.name = token.name ?? null; 
-        session.user.email = token.email ?? null; 
-        session.user.image = token.picture ?? null; 
-
-        // --- ★★★ ここで profile_image_url を設定 ★★★ ---
-        const userProfileImageUrl = token.profile_image_url as string | null | undefined;
-        // --- role の正規化 ---
+        // role の正規化
         const normalizeRole = (roleInput: string | string[] | undefined): string => {
             if (Array.isArray(roleInput) && roleInput.length > 0) {
-                return roleInput[0]; // 配列の場合、最初の要素を返す (プライマリロールと想定)
+                return roleInput[0]; // 配列の場合、最初の要素を返す
             }
             if (typeof roleInput === 'string') {
                 return roleInput;
             }
-            return '不明'; // デフォルトまたはエラー時の値
+            return '不明';
         };
+        
         const userRole = normalizeRole(token.role);
-        // --- ここまで追加 ---
-
-        // --- ★ isAdmin, isTeacher, isStudent を計算 ---
         const isAdmin = userRole === '管理者';
         const isTeacher = userRole === '教員';
-        // 管理者でも教員でもない場合は生徒とみなす（'不明' の場合も含む）
         const isStudent = !isAdmin && !isTeacher;
-        // --- ★ ここまで追加 ---
 
         session.user = {
-            ...session.user, // 既存のセッション情報 (name, email, image) を保持
-            id: String(token.id || token.sub), // id を token から取得
-            // ★ role は正規化した単一の文字列を割り当て
+            ...session.user,
+            id: String(token.id || token.sub),
+            name: token.name ?? null,
+            email: token.email ?? null,
+            image: token.picture ?? null,
             role: userRole,
-            // --- ★ 計算したフラグを設定 ---
             isAdmin: isAdmin,
             isTeacher: isTeacher,
             isStudent: isStudent,
-            // --- ★ ここまで追加 ---
-            status: (token.status as string | undefined) ?? 'pending', // ★ 修正: undefined の場合に 'pending' を設定
+            status: (token.status as string | undefined) ?? 'pending',
             permissions: token.permissions as string[] | undefined,
             grade: token.grade as string | undefined,
             prefecture: token.prefecture as string | undefined,
-            // ★★★ 修正: token から取得したオブジェクトキー（またはnull）をそのまま設定 ★★★
-            profile_image_url: userProfileImageUrl,
-            accessToken: token.accessToken as string | undefined, // 必要に応じて型アサーション
+            profile_image_url: token.profile_image_url as string | null | undefined,
+            accessToken: token.accessToken as string | undefined,
             refreshToken: token.refreshToken as string | undefined,
             accessTokenExpires: token.accessTokenExpires as number | undefined
         };
-        console.debug("Session Callback: Session populated from token", { userId: session.user.id, role: session.user.role, profileImageUrl: session.user.profile_image_url }); // ★ ログ修正
+        
+        console.debug("Session Callback: Session populated", { userId: session.user.id, role: session.user.role });
       } else {
-        console.warn("Session Callback: Token or session.user is missing, cannot populate session user data.");
-        // ★ エラー時と同様にデフォルト値を持つ user オブジェクトを設定
+        console.warn("Session Callback: Token or session.user is missing");
+        
         if (!session.user) {
              session.user = {
                 id: String(token?.id ?? ''),
@@ -422,7 +458,6 @@ export const authConfig: NextAuthConfig = {
         }
       }
 
-      console.debug("Session Callback: Session data populated", { userId: session.user?.id, role: session.user?.role, profile_image_url: session.user?.profile_image_url }); // ★ ログ追加
       return session;
     },
     // authorized コールバックはミドルウェアに移行したため、ここでは不要な場合がある

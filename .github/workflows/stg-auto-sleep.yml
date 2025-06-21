@@ -72,6 +72,11 @@ jobs:
           else
             echo "is_running=false" >> $GITHUB_OUTPUT
             echo "🛑 STG環境は停止中です - 自動停止タイマー不要"
+            echo ""
+            echo "📋 STG環境は既に停止中です"
+            echo "自動停止タイマーは不要です"
+            echo "🚀 起動方法: GitHub Actions > 'STG Environment Wake Up'"
+            exit 0
           fi
 
       - name: ⏳ Wait for Scheduled Time
@@ -168,11 +173,4 @@ jobs:
           echo "🚀 次回起動方法:"
           echo "GitHub Actions: 'STG Environment Wake Up' ワークフロー実行"
 
-  already-stopped:
-    runs-on: ubuntu-latest
-    if: ${{ steps.verify_running.outputs.is_running == 'false' }}
-    steps:
-      - name: ℹ️ Already Stopped
-        run: |
-          echo "✅ STG環境は既に停止中です"
-          echo "自動停止タイマーは不要です" 
+ 

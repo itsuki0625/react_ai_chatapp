@@ -205,6 +205,40 @@ export const SubscriptionPlansPage: React.FC = () => {
     }
   };
 
+  // デバッグ用のテスト関数
+  const handleDebugTest = async () => {
+    if (!session) {
+      toast({ variant: 'destructive', title: "エラー", description: 'ログインが必要です。' });
+      return;
+    }
+
+    try {
+      console.log('[DEBUG] デバッグテスト開始');
+      
+      // subscriptionServiceを使って統一的にAPIコールする
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://stg-api.smartao.jp'}/api/v1/subscriptions/debug-test`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(session as any).accessToken}`, // 型キャストで解決
+        },
+      });
+      
+      const data = await response.json();
+      
+      console.log('[DEBUG] デバッグテスト結果:', data);
+      
+      if (response.ok) {
+        toast({ title: "成功", description: `デバッグテスト成功: ユーザーID ${data.user_id}` });
+      } else {
+        toast({ variant: 'destructive', title: "エラー", description: `デバッグテスト失敗: ${data.detail || 'Unknown error'}` });
+      }
+    } catch (error) {
+      console.error('[DEBUG] デバッグテストエラー:', error);
+      toast({ variant: 'destructive', title: "エラー", description: `デバッグテストエラー: ${error instanceof Error ? error.message : 'Unknown error'}` });
+    }
+  };
+
   const handleCancelSubscription = async () => {
     if (!currentSubscription || !currentSubscription.stripe_subscription_id) {
       toast({ variant: "destructive", title: "エラー", description: "解約対象のサブスクリプションが見つかりません。" });
@@ -332,7 +366,7 @@ export const SubscriptionPlansPage: React.FC = () => {
           )}
 
           <Button
-            onClick={() => router.push('/settings/profile')}
+            onClick={() => router.push('/settings')}
             className="mt-6 w-full"
             variant="outline"
           >
@@ -499,6 +533,18 @@ export const SubscriptionPlansPage: React.FC = () => {
               'ログインして続ける'
             )}
           </button>
+
+          {/* デバッグ用ボタン（開発環境でのみ表示） */}
+          {process.env.NODE_ENV === 'development' && session && (
+            <Button
+              onClick={handleDebugTest}
+              variant="outline"
+              className="w-full mt-2 text-xs"
+              disabled={checkoutLoading || isPageLoading}
+            >
+              🔧 API接続テスト（デバッグ用）
+            </Button>
+          )}
         </div>
       )}
     </div>

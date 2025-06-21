@@ -49,13 +49,12 @@ resource "aws_ecs_service" "backend" {
     security_groups = [aws_security_group.app.id]
     assign_public_ip = true
   }
-  # ALB削除のためload_balancerブロックをコメントアウト
-  # load_balancer {
-  #   target_group_arn = aws_lb_target_group.backend.arn
-  #   container_name   = "backend"
-  #   container_port   = 5050
-  # }
-  # depends_on = [ aws_lb_listener.main_http ]
+  load_balancer {
+    target_group_arn = aws_lb_target_group.backend.arn
+    container_name   = "backend"
+    container_port   = 5050
+  }
+  depends_on = [ aws_lb_listener.main_http ]
 }
 
 # Frontend task definition
@@ -109,11 +108,10 @@ resource "aws_ecs_service" "frontend" {
     security_groups = [aws_security_group.app.id]
     assign_public_ip = true
   }
-  # ALB削除のためload_balancerブロックをコメントアウト
-  # load_balancer {
-  #   target_group_arn = aws_lb_target_group.frontend.arn
-  #   container_name   = "frontend"
-  #   container_port   = 3000
-  # }
-  # depends_on = [ aws_lb_listener.main_http ]
+  load_balancer {
+    target_group_arn = aws_lb_target_group.frontend.arn
+    container_name   = "frontend"
+    container_port   = 3000
+  }
+  depends_on = [ aws_lb_listener.main_http ]
 } 
