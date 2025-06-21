@@ -518,6 +518,17 @@ async def update_user_settings(
         # 名前の更新
         if "name" in settings_data:
             user.name = settings_data["name"]
+        # full_nameもnameとして処理
+        if "full_name" in settings_data:
+            user.name = settings_data["full_name"]
+        
+        # grade の更新
+        if "grade" in settings_data:
+            user.grade = settings_data["grade"]
+        
+        # prefecture の更新
+        if "prefecture" in settings_data:
+            user.prefecture = settings_data["prefecture"]
         
         # 通知設定の更新
         notification_types = {
@@ -618,6 +629,8 @@ async def update_user_settings(
             "message": "設定を更新しました",
             "email": user.email,
             "name": user.name,
+            "grade": user.grade,
+            "prefecture": user.prefecture,
             "emailNotifications": settings_data.get("emailNotifications", True),
             "browserNotifications": settings_data.get("browserNotifications", False),
             "systemNotifications": settings_data.get("systemNotifications", True),

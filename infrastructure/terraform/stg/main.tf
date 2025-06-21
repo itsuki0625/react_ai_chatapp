@@ -21,8 +21,8 @@ module "vpc" {
   azs                  = var.azs
   public_subnets       = var.public_subnets
   private_subnets      = var.private_subnets
-  enable_nat_gateway   = true
-  single_nat_gateway   = true
+  enable_nat_gateway   = false  # STG環境ではコスト削減のため無効
+  single_nat_gateway   = false  # NAT Gateway無効のため無効
   enable_dns_hostnames = true
   manage_default_network_acl = false
 
@@ -86,65 +86,55 @@ resource "aws_security_group" "rds" {
   tags = { Environment = var.environment }
 }
 
-# Application Load Balancer (Frontend)
-resource "aws_lb" "frontend" {
-  name               = "${var.environment}-front-alb"
-  internal           = false
-  load_balancer_type = "application"
-  subnets            = module.vpc.public_subnets
-  security_groups    = [aws_security_group.app.id]
+# Application Load Balancer削除 (STG環境はALBなしでコスト削減)
+# resource "aws_lb" "main" {
+#   name               = "${var.environment}-main-alb"
+#   internal           = false
+#   load_balancer_type = "application"
+#   subnets            = module.vpc.public_subnets
+#   security_groups    = [aws_security_group.app.id]
+#   tags = { Environment = var.environment }
+# }
 
-  tags = { Environment = var.environment }
-}
+# resource "aws_lb_target_group" "frontend" {
+#   name        = "${var.environment}-front-tg"
+#   port        = 3000
+#   protocol    = "HTTP"
+#   vpc_id      = module.vpc.vpc_id
+#   target_type = "ip"
+# }
 
-resource "aws_lb_target_group" "frontend" {
-  name        = "${var.environment}-front-tg"
-  port        = 3000
-  protocol    = "HTTP"
-  vpc_id      = module.vpc.vpc_id
-  target_type = "ip"
-}
+# resource "aws_lb_target_group" "backend" {
+#   name        = "${var.environment}-api-tg"
+#   port        = 5050
+#   protocol    = "HTTP"
+#   vpc_id      = module.vpc.vpc_id
+#   target_type = "ip"
+# }
 
-resource "aws_lb_listener" "frontend_http" {
-  load_balancer_arn = aws_lb.frontend.arn
-  port              = 80
-  protocol          = "HTTP"
+# resource "aws_lb_listener" "main_http" {
+#   load_balancer_arn = aws_lb.main.arn
+#   port              = 80
+#   protocol          = "HTTP"
+#   default_action {
+#     type             = "forward"
+#     target_group_arn = aws_lb_target_group.frontend.arn
+#   }
+# }
 
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.frontend.arn
-  }
-}
-
-# Application Load Balancer (Backend)
-resource "aws_lb" "backend" {
-  name               = "${var.environment}-api-alb"
-  internal           = false
-  load_balancer_type = "application"
-  subnets            = module.vpc.public_subnets
-  security_groups    = [aws_security_group.app.id]
-
-  tags = { Environment = var.environment }
-}
-
-resource "aws_lb_target_group" "backend" {
-  name        = "${var.environment}-api-tg"
-  port        = 5050
-  protocol    = "HTTP"
-  vpc_id      = module.vpc.vpc_id
-  target_type = "ip"
-}
-
-resource "aws_lb_listener" "backend_http" {
-  load_balancer_arn = aws_lb.backend.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.backend.arn
-  }
-}
+# resource "aws_lb_listener_rule" "backend" {
+#   listener_arn = aws_lb_listener.main_http.arn
+#   priority     = 100
+#   action {
+#     type             = "forward"
+#     target_group_arn = aws_lb_target_group.backend.arn
+#   }
+#   condition {
+#     path_pattern {
+#       values = ["/api/*"]
+#     }
+#   }
+# }
 
 # ECR リポジトリ
 resource "aws_ecr_repository" "backend" {
@@ -218,101 +208,101 @@ resource "aws_secretsmanager_secret" "backend_env" {
   tags = { Environment = var.environment, Application = "backend" }
 }
 
-# Secrets Manager VPC Endpoint
-resource "aws_vpc_endpoint" "secretsmanager" {
-  vpc_id            = module.vpc.vpc_id
-  service_name      = "com.amazonaws.${var.aws_region}.secretsmanager" # リージョンを適切に指定
-  vpc_endpoint_type = "Interface"
+# Secrets Manager VPC Endpoint - STG環境ではコスト削減のため削除
+# resource "aws_vpc_endpoint" "secretsmanager" {
+#   vpc_id            = module.vpc.vpc_id
+#   service_name      = "com.amazonaws.${var.aws_region}.secretsmanager" # リージョンを適切に指定
+#   vpc_endpoint_type = "Interface"
 
-  # タスクが実行されるプライベートサブネットを指定
-  subnet_ids = module.vpc.private_subnets
+#   # タスクが実行されるプライベートサブネットを指定
+#   subnet_ids = module.vpc.private_subnets
 
-  # VPCエンドポイント用のセキュリティグループ (インバウンドHTTPSを許可)
-  security_group_ids = [aws_security_group.vpc_endpoint.id] # 新しく作成するSGを指定
+#   # VPCエンドポイント用のセキュリティグループ (インバウンドHTTPSを許可)
+#   security_group_ids = [aws_security_group.vpc_endpoint.id] # 新しく作成するSGを指定
 
-  private_dns_enabled = true # これにより、タスクは通常のエンドポイント名でアクセス可能
+#   private_dns_enabled = true # これにより、タスクは通常のエンドポイント名でアクセス可能
 
-  tags = {
-    Name        = "${var.environment}-secretsmanager-vpce"
-    Environment = var.environment
-  }
-}
+#   tags = {
+#     Name        = "${var.environment}-secretsmanager-vpce"
+#     Environment = var.environment
+#   }
+# }
 
-# VPCエンドポイント用のセキュリティグループ
-resource "aws_security_group" "vpc_endpoint" {
-  name        = "${var.environment}-vpce-sg"
-  description = "Allow HTTPS from App SG for VPC Endpoint"
-  vpc_id      = module.vpc.vpc_id
+# VPCエンドポイント用のセキュリティグループ - 使用しないためコメントアウト
+# resource "aws_security_group" "vpc_endpoint" {
+#   name        = "${var.environment}-vpce-sg"
+#   description = "Allow HTTPS from App SG for VPC Endpoint"
+#   vpc_id      = module.vpc.vpc_id
 
-  ingress {
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    # タスクが使用するappセキュリティグループからのアクセスを許可
-    security_groups = [aws_security_group.app.id]
-  }
+#   ingress {
+#     from_port       = 443
+#     to_port         = 443
+#     protocol        = "tcp"
+#     # タスクが使用するappセキュリティグループからのアクセスを許可
+#     security_groups = [aws_security_group.app.id]
+#   }
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+#   egress {
+#     from_port   = 0
+#     to_port     = 0
+#     protocol    = "-1"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
 
-  tags = { Environment = var.environment }
-}
+#   tags = { Environment = var.environment }
+# }
 
-# ECR API VPC Endpoint
-resource "aws_vpc_endpoint" "ecr_api" {
-  vpc_id            = module.vpc.vpc_id
-  service_name      = "com.amazonaws.${var.aws_region}.ecr.api"
-  vpc_endpoint_type = "Interface"
+# ECR API VPC Endpoint - STG環境ではコスト削減のため削除
+# resource "aws_vpc_endpoint" "ecr_api" {
+#   vpc_id            = module.vpc.vpc_id
+#   service_name      = "com.amazonaws.${var.aws_region}.ecr.api"
+#   vpc_endpoint_type = "Interface"
 
-  subnet_ids         = module.vpc.private_subnets # プライベートサブネットを指定
-  security_group_ids = [aws_security_group.vpc_endpoint.id] # Secrets Managerと同じSGを再利用可能
-  private_dns_enabled = true
+#   subnet_ids         = module.vpc.private_subnets # プライベートサブネットを指定
+#   security_group_ids = [aws_security_group.vpc_endpoint.id] # Secrets Managerと同じSGを再利用可能
+#   private_dns_enabled = true
 
-  tags = {
-    Name        = "${var.environment}-ecr-api-vpce"
-    Environment = var.environment
-  }
-}
+#   tags = {
+#     Name        = "${var.environment}-ecr-api-vpce"
+#     Environment = var.environment
+#   }
+# }
 
-# ECR DKR VPC Endpoint
-resource "aws_vpc_endpoint" "ecr_dkr" {
-  vpc_id            = module.vpc.vpc_id
-  service_name      = "com.amazonaws.${var.aws_region}.ecr.dkr"
-  vpc_endpoint_type = "Interface"
+# ECR DKR VPC Endpoint - STG環境ではコスト削減のため削除
+# resource "aws_vpc_endpoint" "ecr_dkr" {
+#   vpc_id            = module.vpc.vpc_id
+#   service_name      = "com.amazonaws.${var.aws_region}.ecr.dkr"
+#   vpc_endpoint_type = "Interface"
 
-  subnet_ids         = module.vpc.private_subnets # プライベートサブネットを指定
-  security_group_ids = [aws_security_group.vpc_endpoint.id] # Secrets Managerと同じSGを再利用可能
-  private_dns_enabled = true
+#   subnet_ids         = module.vpc.private_subnets # プライベートサブネットを指定
+#   security_group_ids = [aws_security_group.vpc_endpoint.id] # Secrets Managerと同じSGを再利用可能
+#   private_dns_enabled = true
 
-  tags = {
-    Name        = "${var.environment}-ecr-dkr-vpce"
-    Environment = var.environment
-  }
-}
+#   tags = {
+#     Name        = "${var.environment}-ecr-dkr-vpce"
+#     Environment = var.environment
+#   }
+# }
 
-# CloudWatch Logs VPC Endpoint
-resource "aws_vpc_endpoint" "logs" {
-  vpc_id            = module.vpc.vpc_id
-  service_name      = "com.amazonaws.${var.aws_region}.logs"
-  vpc_endpoint_type = "Interface"
+# CloudWatch Logs VPC Endpoint - STG環境ではコスト削減のため削除
+# resource "aws_vpc_endpoint" "logs" {
+#   vpc_id            = module.vpc.vpc_id
+#   service_name      = "com.amazonaws.${var.aws_region}.logs"
+#   vpc_endpoint_type = "Interface"
 
-  subnet_ids         = module.vpc.private_subnets # プライベートサブネットを指定
-  security_group_ids = [aws_security_group.vpc_endpoint.id] # 既存のSGを再利用
-  private_dns_enabled = true
+#   subnet_ids         = module.vpc.private_subnets # プライベートサブネットを指定
+#   security_group_ids = [aws_security_group.vpc_endpoint.id] # 既存のSGを再利用
+#   private_dns_enabled = true
 
-  tags = {
-    Name        = "${var.environment}-logs-vpce"
-    Environment = var.environment
-  }
-}
+#   tags = {
+#     Name        = "${var.environment}-logs-vpce"
+#     Environment = var.environment
+#   }
+# }
 
 # The following S3 Gateway VPC Endpoint block is removed as it's now managed by the VPC module
 # Restore the external definition
-# S3 Gateway VPC Endpoint
+# S3 Gateway VPC Endpoint - 無料なので残す
 resource "aws_vpc_endpoint" "s3_gateway" {
   vpc_id       = module.vpc.vpc_id
   service_name = "com.amazonaws.${var.aws_region}.s3"

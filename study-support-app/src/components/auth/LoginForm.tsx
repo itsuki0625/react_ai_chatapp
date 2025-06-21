@@ -14,6 +14,46 @@ export const LoginForm: React.FC = () => {
   const [debugInfo, setDebugInfo] = useState<string>('');
   const [sessionExpiredMessage, setSessionExpiredMessage] = useState<string | null>(null);
 
+  // セッション期限切れの自動検出と処理
+  const handleSessionExpired = () => {
+    setSessionExpiredMessage('セッションの有効期限が切れました。お手数ですが、再度ログインしてください。');
+    
+    console.log('Session expired detected, forcing sign out...');
+    
+    // 既存のセッションを完全にクリア
+    signOut({ 
+      redirect: false,
+      callbackUrl: '/login'
+    }).then(() => {
+      // ローカルストレージやセッションストレージのクリア
+      if (typeof window !== 'undefined') {
+        localStorage.clear();
+        sessionStorage.clear();
+      }
+      
+      // URLからerrorパラメータを削除してクリーンな状態にする
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('error');
+      newUrl.searchParams.set('status', 'logged_out');
+      
+      // ブラウザの履歴を置き換える
+      window.history.replaceState({}, '', newUrl.toString());
+      
+      console.log('Session expired, signed out and cleaned up.');
+    }).catch(err => {
+      console.error('Error during signOut for session_expired:', err);
+      
+      // エラーが発生した場合でも、強制的にページをリロード
+      if (typeof window !== 'undefined') {
+        localStorage.clear();
+        sessionStorage.clear();
+        window.location.href = '/login?status=logged_out';
+      }
+    });
+    
+    setError('');
+  };
+
   // セッション状態を監視
   useEffect(() => {
     console.log('セッション状態:', status, session);
@@ -37,22 +77,9 @@ export const LoginForm: React.FC = () => {
   useEffect(() => {
     const errorParam = searchParams?.get('error');
     if (errorParam === 'session_expired') {
-      setSessionExpiredMessage('セッションの有効期限が切れました。お手数ですが、再度ログインしてください。');
-      // signOut を呼び出す前に、まず session の状態を確認
-      if (status === 'authenticated') { // 認証されている場合のみ signOut を実行
-        signOut({ redirect: false }).then(() => {
-          // signOut が完了した後に、明示的にログインページへ遷移させる
-          // これにより、middleware による意図しないリダイレクトを防ぐことを期待
-          // また、status=logged_out パラメータを付与して、LoginForm 側で再リダイレクトを防ぐ
-          router.push('/login?status=logged_out', { scroll: false });
-          console.log('Session expired, signed out and redirected to login.');
-        }).catch(err => {
-          console.error('Error during signOut for session_expired:', err);
-        });
-      }
-      setError(''); // 他のエラーメッセージをクリア
+      handleSessionExpired();
     }
-  }, [searchParams, status, router]); // status と router を依存配列に追加
+  }, [searchParams, router]);
 
   // ユーザーロールに基づいてダッシュボードURLを取得
   const getDashboardByRole = (role: string): string => {

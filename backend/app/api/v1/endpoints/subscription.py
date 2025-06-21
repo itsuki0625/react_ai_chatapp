@@ -205,6 +205,7 @@ async def verify_campaign_code(
 @router.post("/create-checkout", response_model=CheckoutSessionResponse)
 async def create_checkout_session(
     request_data: CreateCheckoutRequest, # ★ 修正: スキーマを使用
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_user)
 ):
@@ -212,6 +213,9 @@ async def create_checkout_session(
     Stripeチェックアウトセッションを作成します。
     """
     try:
+        # デバッグ用ログ追加
+        origin = request.headers.get("origin")
+        logger.info(f"チェックアウトセッション作成リクエスト - オリジン: {origin}, ユーザー: {current_user.id}, プライス: {request_data.price_id}")
         # Stripe顧客IDを取得または作成
         stripe_customer_id = await crud_subscription.get_stripe_customer_id(db, current_user.id)
         if not stripe_customer_id:

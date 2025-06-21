@@ -1,0 +1,141 @@
+name: STG Environment Sleep
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_stop:
+        description: 'STG環境を停止しますか？'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+        - 'false'
+        - 'true'
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  sleep-stg:
+    runs-on: ubuntu-latest
+    environment: Preview
+    if: ${{ github.event.inputs.confirm_stop == 'true' }}
+    
+    steps:
+      - name: 🛑 STG Sleep Summary
+        run: |
+          echo "🛑 STG環境停止開始"
+          echo "💰 コスト削減効果: 停止後は月額$5のみ"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: 🔍 Check Current Status
+        id: check_status
+        run: |
+          echo "現在のSTG環境状態を確認中..."
+          
+          # Frontend service status
+          FRONTEND_COUNT=$(aws ecs describe-services \
+            --cluster stg-front \
+            --services stg-front-service \
+            --query 'services[0].desiredCount' \
+            --output text 2>/dev/null || echo "0")
+          
+          # Backend service status  
+          BACKEND_COUNT=$(aws ecs describe-services \
+            --cluster stg-api \
+            --services stg-api-service \
+            --query 'services[0].desiredCount' \
+            --output text 2>/dev/null || echo "0")
+          
+          echo "Frontend desired count: $FRONTEND_COUNT"
+          echo "Backend desired count: $BACKEND_COUNT"
+          
+          if [ "$FRONTEND_COUNT" = "0" ] && [ "$BACKEND_COUNT" = "0" ]; then
+            echo "status=stopped" >> $GITHUB_OUTPUT
+            echo "🛑 STG環境は既に停止中です"
+          else
+            echo "status=running" >> $GITHUB_OUTPUT
+            echo "✅ STG環境は起動中です"
+          fi
+
+      - name: 🛑 Stop ECS Services
+        if: steps.check_status.outputs.status == 'running'
+        run: |
+          echo "🛑 ECSサービス停止中..."
+          
+          # Stop Frontend service
+          echo "Frontend service停止中..."
+          aws ecs update-service \
+            --cluster stg-front \
+            --service stg-front-service \
+            --desired-count 0
+          
+          # Stop Backend service
+          echo "Backend service停止中..."
+          aws ecs update-service \
+            --cluster stg-api \
+            --service stg-api-service \
+            --desired-count 0
+          
+          echo "✅ ECSサービス停止コマンド完了"
+
+      - name: ⏳ Wait for Services to Stop
+        if: steps.check_status.outputs.status == 'running'
+        run: |
+          echo "⏳ サービス停止完了まで待機中..."
+          
+          # Wait for services to scale down
+          sleep 30
+          
+          # Check if tasks are stopped
+          FRONTEND_RUNNING=$(aws ecs describe-services \
+            --cluster stg-front \
+            --services stg-front-service \
+            --query 'services[0].runningCount' \
+            --output text 2>/dev/null || echo "0")
+          
+          BACKEND_RUNNING=$(aws ecs describe-services \
+            --cluster stg-api \
+            --services stg-api-service \
+            --query 'services[0].runningCount' \
+            --output text 2>/dev/null || echo "0")
+          
+          echo "Frontend running tasks: $FRONTEND_RUNNING"
+          echo "Backend running tasks: $BACKEND_RUNNING"
+          
+          if [ "$FRONTEND_RUNNING" = "0" ] && [ "$BACKEND_RUNNING" = "0" ]; then
+            echo "✅ 全サービス停止完了"
+          else
+            echo "⏳ 一部サービスがまだ停止中..."
+          fi
+
+      - name: 📋 Sleep Complete
+        run: |
+          echo ""
+          echo "🎉 STG環境停止完了!"
+          echo "💰 コスト削減効果:"
+          echo "  - ECS Fargate: $0/月 (停止中)"
+          echo "  - 残存コスト: $5/月 (RDS、VPC等)"
+          echo ""
+          echo "📋 CloudFlare設定更新推奨:"
+          echo "1. CloudFlareダッシュボードにログイン"
+          echo "2. stg.smartao.jpをメンテナンスページに変更"
+          echo "3. または127.0.0.1にポイント"
+          echo ""
+          echo "🚀 次回起動方法:"
+          echo "GitHub Actions: 'STG Environment Wake Up' ワークフロー実行"
+
+  already-stopped:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.confirm_stop == 'false' }}
+    steps:
+      - name: ℹ️ Stop Cancelled
+        run: |
+          echo "🔄 STG環境停止がキャンセルされました"
+          echo "現在のサービス状態を確認してください" 

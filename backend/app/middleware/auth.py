@@ -73,6 +73,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             
             # リクエストのオリジンを取得
             origin = request.headers.get("origin")
+            logger.info(f"OPTIONSリクエストのオリジン: {origin} パス: {request.url.path}")
             
             # 許可されたオリジンのリスト
             allowed_origins = [
@@ -82,6 +83,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 "https://app.smartao.jp",
                 "https://api.smartao.jp",
                 "https://stg.smartao.jp",
+                "https://stg-api.smartao.jp",
                 "https://smartao.jp"
             ]
             
@@ -197,6 +199,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 
                 # CORSヘッダーを確実に設定
                 origin = request.headers.get("origin")
+                logger.info(f"通常リクエストのオリジン: {origin} パス: {request.url.path}")
                 allowed_origins = [
                     "http://localhost:3001",
                     "http://localhost:5050", 
@@ -204,6 +207,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     "https://app.smartao.jp",
                     "https://api.smartao.jp",
                     "https://stg.smartao.jp",
+                    "https://stg-api.smartao.jp",
                     "https://smartao.jp"
                 ]
                 
@@ -230,6 +234,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     "https://app.smartao.jp",
                     "https://api.smartao.jp",
                     "https://stg.smartao.jp",
+                    "https://stg-api.smartao.jp",
                     "https://smartao.jp"
                 ]
                 

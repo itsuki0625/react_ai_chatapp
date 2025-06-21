@@ -84,19 +84,26 @@ apiClient.interceptors.request.use(
 );
 // ★★★ 変更ここまで ★★★
 
-// レスポンスインターセプター - 401時のリダイレクトを一旦コメントアウト
+// レスポンスインターセプター - 認証エラーの自動処理
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
-    // if (error.response?.status === 401) {
-    //   // 認証エラー時の処理
-    //   // リフレッシュトークンの使用は auth.ts で行われるため
-    //   // ここではログインページへのリダイレクトのみ
-    //   if (typeof window !== 'undefined') {
-    //     // window.location.href = '/login'; // 一旦コメントアウト
-    //     console.error("API Response Error: 401 Unauthorized. Redirect disabled for debugging.");
-    //   }
-    // }
+    if (error.response?.status === 401) {
+      console.error("API Response Error: 401 Unauthorized - Session expired");
+      
+      // クライアントサイドでの認証エラー処理
+      if (typeof window !== 'undefined') {
+        // カスタムイベントを発行して、useAuthErrorフックで処理させる
+        const authErrorEvent = new CustomEvent('auth-error', {
+          detail: {
+            status: 401,
+            error: 'Unauthorized',
+            originalError: error
+          }
+        });
+        window.dispatchEvent(authErrorEvent);
+      }
+    }
     return Promise.reject(error);
   }
 );

@@ -75,8 +75,8 @@ const ProfileSetupPage = () => {
            'Authorization': `Bearer ${accessToken}`
          },
         body: JSON.stringify({ 
-            // UserUpdate スキーマではなく、現在のエンドポイントが受け付ける形式で送信
-            full_name: session?.user?.name, // 例: sessionから名前を取得 (必要なら別途入力フォームを設ける)
+            // エンドポイントが受け付ける形式で送信
+            name: session?.user?.name, // nameフィールドを使用
             grade: grade || null,
             prefecture: prefecture || null
          })
@@ -93,7 +93,8 @@ const ProfileSetupPage = () => {
 
       if (!response.ok) {
          const errorData = await response.json().catch(() => ({ detail: '不明なエラーが発生しました。' }));
-         throw new Error(errorData.detail || 'プロフィールの更新に失敗しました。');
+         console.error('API エラーレスポンス:', response.status, errorData);
+         throw new Error(errorData.detail || `プロフィールの更新に失敗しました。(${response.status})`);
       }
 
       const updatedUserData = await response.json(); // 更新後のユーザーデータを取得
