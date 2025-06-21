@@ -1,0 +1,52 @@
+name: STG Webhook Wake
+
+on:
+  repository_dispatch:
+    types: [wake-stg]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  webhook-wake:
+    runs-on: ubuntu-latest
+    environment: Preview
+    
+    steps:
+      - name: 🌐 Webhook Wake Up
+        run: |
+          echo "🌐 Webhook経由でSTG環境起動"
+          echo "💰 想定コスト: ~$0.10-2/時間"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: 🚀 Quick Start ECS Services
+        run: |
+          echo "🚀 ECSサービス起動中..."
+          
+          # Start both services in parallel
+          aws ecs update-service \
+            --cluster stg-front \
+            --service stg-front-service \
+            --desired-count 1 &
+          
+          aws ecs update-service \
+            --cluster stg-api \
+            --service stg-api-service \
+            --desired-count 1 &
+          
+          wait
+          echo "✅ ECSサービス起動コマンド完了"
+
+      - name: 📋 Quick Wake Complete
+        run: |
+          echo "🎉 STG環境起動開始完了!"
+          echo "⏳ サービス起動には2-3分かかります"
+          echo "🌐 起動後のIP確認: GitHub Actions > STG Environment Wake Up"
+          echo "🛑 使用後は必ず停止: GitHub Actions > STG Environment Sleep" 

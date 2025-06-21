@@ -1,0 +1,178 @@
+name: STG Auto Sleep
+
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: '何時間後に停止するか'
+        required: true
+        default: '4'
+        type: choice
+        options:
+        - '1'
+        - '2'
+        - '4'
+        - '8'
+        - '12'
+        - '24'
+      purpose:
+        description: '停止理由'
+        required: false
+        type: string
+        default: '自動停止タイマー'
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  schedule-auto-sleep:
+    runs-on: ubuntu-latest
+    environment: Preview
+    
+    steps:
+      - name: ⏰ Auto Sleep Timer Start
+        run: |
+          echo "⏰ STG環境自動停止タイマー開始"
+          echo "🕐 停止予定時刻: $(date -d '+${{ github.event.inputs.hours }} hours' '+%Y-%m-%d %H:%M:%S')"
+          echo "📝 停止理由: ${{ github.event.inputs.purpose }}"
+          echo "💰 コスト削減: ${{ github.event.inputs.hours }}時間後に自動停止"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: 🔍 Verify STG is Running
+        id: verify_running
+        run: |
+          echo "STG環境の動作状態を確認中..."
+          
+          # Frontend service status
+          FRONTEND_COUNT=$(aws ecs describe-services \
+            --cluster stg-front \
+            --services stg-front-service \
+            --query 'services[0].desiredCount' \
+            --output text 2>/dev/null || echo "0")
+          
+          # Backend service status  
+          BACKEND_COUNT=$(aws ecs describe-services \
+            --cluster stg-api \
+            --services stg-api-service \
+            --query 'services[0].desiredCount' \
+            --output text 2>/dev/null || echo "0")
+          
+          echo "Frontend desired count: $FRONTEND_COUNT"
+          echo "Backend desired count: $BACKEND_COUNT"
+          
+          if [ "$FRONTEND_COUNT" = "1" ] && [ "$BACKEND_COUNT" = "1" ]; then
+            echo "is_running=true" >> $GITHUB_OUTPUT
+            echo "✅ STG環境は起動中です - 自動停止タイマー開始"
+          else
+            echo "is_running=false" >> $GITHUB_OUTPUT
+            echo "🛑 STG環境は停止中です - 自動停止タイマー不要"
+          fi
+
+      - name: ⏳ Wait for Scheduled Time
+        if: steps.verify_running.outputs.is_running == 'true'
+        run: |
+          SLEEP_SECONDS=$((60 * 60 * ${{ github.event.inputs.hours }}))
+          echo "⏳ ${{ github.event.inputs.hours }}時間 ($SLEEP_SECONDS秒) 待機中..."
+          echo "🕐 停止予定時刻: $(date -d '+${{ github.event.inputs.hours }} hours' '+%Y-%m-%d %H:%M:%S')"
+          
+          # 1時間ごとに状況を報告
+          HOURS_REMAINING=${{ github.event.inputs.hours }}
+          while [ $HOURS_REMAINING -gt 0 ]; do
+            echo "⏰ 残り${HOURS_REMAINING}時間でSTG環境を停止します"
+            
+            # 1時間待機（ただし最後の1時間未満の場合は残り時間だけ）
+            if [ $HOURS_REMAINING -eq 1 ]; then
+              sleep $SLEEP_SECONDS
+              break
+            else
+              sleep 3600  # 1時間
+              HOURS_REMAINING=$((HOURS_REMAINING - 1))
+              SLEEP_SECONDS=$((SLEEP_SECONDS - 3600))
+            fi
+          done
+          
+          echo "⏰ 自動停止時刻に到達しました"
+
+      - name: 🔍 Final Status Check
+        if: steps.verify_running.outputs.is_running == 'true'
+        id: final_check
+        run: |
+          echo "停止前の最終状態確認..."
+          
+          # Frontend service status
+          FRONTEND_COUNT=$(aws ecs describe-services \
+            --cluster stg-front \
+            --services stg-front-service \
+            --query 'services[0].desiredCount' \
+            --output text 2>/dev/null || echo "0")
+          
+          # Backend service status  
+          BACKEND_COUNT=$(aws ecs describe-services \
+            --cluster stg-api \
+            --services stg-api-service \
+            --query 'services[0].desiredCount' \
+            --output text 2>/dev/null || echo "0")
+          
+          echo "Frontend desired count: $FRONTEND_COUNT"
+          echo "Backend desired count: $BACKEND_COUNT"
+          
+          if [ "$FRONTEND_COUNT" = "1" ] && [ "$BACKEND_COUNT" = "1" ]; then
+            echo "should_stop=true" >> $GITHUB_OUTPUT
+            echo "✅ STG環境は起動中です - 自動停止を実行します"
+          else
+            echo "should_stop=false" >> $GITHUB_OUTPUT
+            echo "🛑 STG環境は既に停止済みです - 自動停止をスキップ"
+          fi
+
+      - name: 🛑 Auto Stop ECS Services
+        if: steps.final_check.outputs.should_stop == 'true'
+        run: |
+          echo "🛑 自動停止実行中..."
+          echo "⏰ 停止時刻: $(date '+%Y-%m-%d %H:%M:%S')"
+          
+          # Stop Frontend service
+          echo "Frontend service停止中..."
+          aws ecs update-service \
+            --cluster stg-front \
+            --service stg-front-service \
+            --desired-count 0
+          
+          # Stop Backend service
+          echo "Backend service停止中..."
+          aws ecs update-service \
+            --cluster stg-api \
+            --service stg-api-service \
+            --desired-count 0
+          
+          echo "✅ 自動停止コマンド完了"
+
+      - name: 📋 Auto Sleep Complete
+        if: steps.verify_running.outputs.is_running == 'true'
+        run: |
+          echo ""
+          echo "🎉 STG環境自動停止完了!"
+          echo "⏰ 停止時刻: $(date '+%Y-%m-%d %H:%M:%S')"
+          echo "📝 停止理由: ${{ github.event.inputs.purpose }}"
+          echo "💰 コスト削減効果: ECS Fargate料金が$0/月になりました"
+          echo ""
+          echo "📋 CloudFlare設定更新推奨:"
+          echo "1. CloudFlareダッシュボードでstg.smartao.jpを確認"
+          echo "2. 必要に応じてメンテナンスページに変更"
+          echo ""
+          echo "🚀 次回起動方法:"
+          echo "GitHub Actions: 'STG Environment Wake Up' ワークフロー実行"
+
+  already-stopped:
+    runs-on: ubuntu-latest
+    if: ${{ steps.verify_running.outputs.is_running == 'false' }}
+    steps:
+      - name: ℹ️ Already Stopped
+        run: |
+          echo "✅ STG環境は既に停止中です"
+          echo "自動停止タイマーは不要です" 
