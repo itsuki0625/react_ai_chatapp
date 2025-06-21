@@ -14,9 +14,9 @@ export const LoginForm: React.FC = () => {
   const [debugInfo, setDebugInfo] = useState<string>('');
   const [sessionExpiredMessage, setSessionExpiredMessage] = useState<string | null>(null);
 
-  // セッション期限切れの自動検出と処理
+  // セッション期限切れの処理を簡素化
   const handleSessionExpired = () => {
-    console.log('Session expired detected, setting message and clearing session...');
+    console.log('Session expired detected, clearing session...');
     
     setSessionExpiredMessage('セッションの有効期限が切れました。お手数ですが、再度ログインしてください。');
     setError('');
@@ -28,66 +28,51 @@ export const LoginForm: React.FC = () => {
       window.history.replaceState({}, '', url.toString());
     }
     
-    // セッションとローカルストレージの即座のクリア
-    if (typeof window !== 'undefined') {
-      localStorage.clear();
-      sessionStorage.clear();
-      // NextAuthのCookieも削除
-      document.cookie = 'next-auth.session-token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
-      document.cookie = '__Secure-next-auth.session-token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; Secure;';
-      document.cookie = 'next-auth.csrf-token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
-      document.cookie = '__Host-next-auth.csrf-token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; Secure;';
-    }
-    
-    // 非同期でsignOutを実行（失敗しても処理を続行）
+    // 非同期でsignOutを実行（エラーを無視）
     signOut({ 
       redirect: false,
       callbackUrl: '/login'
-    }).then(() => {
-      console.log('Session cleared successfully');
     }).catch(err => {
-      console.error('Error during signOut:', err);
-      // エラーが発生してもページは使用可能な状態にする
+      console.error('Error during signOut (ignored):', err);
     });
   };
 
-  // セッション状態を監視
+  // セッション状態の処理を簡素化
   useEffect(() => {
     console.log('セッション状態:', status, session);
     
-    // RefreshAccessTokenErrorまたはsession_expiredエラーがある場合は先に処理
+    // エラー処理を最優先
     const errorParam = searchParams?.get('error');
     const hasSessionError = session?.error === 'RefreshAccessTokenError';
     
     if (errorParam === 'session_expired' || hasSessionError) {
-      console.log('Session expired or refresh error detected:', { errorParam, hasSessionError });
+      console.log('Session error detected:', { errorParam, hasSessionError });
       handleSessionExpired();
-      return; // 早期リターンでその他の処理をスキップ
+      return;
     }
     
-    // ログアウト直後かどうかを確認
-    const isLoggedOut = searchParams?.get('status') === 'logged_out';
-
-    // ログアウト直後 *でない* 場合に、認証済みならリダイレクト
-    if (status === 'authenticated' && session && !isLoggedOut && !hasSessionError) {
-      console.log('認証済み (ログアウト直後ではない):', session);
+    // 認証済みユーザーのリダイレクト処理
+    if (status === 'authenticated' && session && !session.error) {
+      // ログアウト直後の場合はリダイレクトを抑制
+      const isLoggedOut = searchParams?.get('status') === 'logged_out';
+      if (isLoggedOut) {
+        console.log('ログアウト直後のため、リダイレクトを抑制');
+        return;
+      }
       
-      // ユーザーロールに基づいてリダイレクト先を決定
+      console.log('認証済みユーザー:', session);
+      
+      // リダイレクト先を決定
       const redirectUrl = searchParams?.get('redirect') || getDashboardByRole(session.user.role);
       console.log('遷移先:', redirectUrl);
       router.push(redirectUrl);
-    } else if (isLoggedOut) {
-        console.log('ログインページ表示 (ログアウト直後のためリダイレクト抑制)');
     }
   }, [session, status, router, searchParams]);
-  
-  // URLパラメータのエラーチェック処理は上記のuseEffectに統合済み
 
   // ユーザーロールに基づいてダッシュボードURLを取得
   const getDashboardByRole = (role: string): string => {
     if (!role) return '/dashboard';
     
-    // 単一のロールに基づいて遷移先を決定
     if (role === '管理者') {
       return '/admin/dashboard';
     } else if (role === '教員') {
@@ -111,7 +96,7 @@ export const LoginForm: React.FC = () => {
         password: 'password'
       };
       
-      // 実際の入力値を使用するか、テスト用の資格情報を使用するか
+      // デバッグモードの判定
       const useTestCredentials = email === 'debug' || password === 'debug';
       const loginEmail = useTestCredentials ? testCredentials.email : email;
       const loginPassword = useTestCredentials ? testCredentials.password : password;
@@ -120,19 +105,14 @@ export const LoginForm: React.FC = () => {
         setDebugInfo(prev => prev + `\nテストモード: ${testCredentials.email}`);
       }
       
-      // デフォルトリダイレクト先はログイン後に適切なダッシュボードに変更される
+      // リダイレクト先の決定
       let redirectUrl = searchParams?.get('redirect') || searchParams?.get('redirect_to') || '/dashboard';
-      
-      // URLデコードして正しいパスを取得
       redirectUrl = decodeURIComponent(redirectUrl);
       
-      console.log('リダイレクト先URL (デコード後):', redirectUrl);
-      setDebugInfo(prev => prev + `\nリダイレクト先: ${redirectUrl}`);
-
-      // NextAuthによるログイン
       console.log('ログイン試行:', loginEmail);
       setDebugInfo(prev => prev + `\nログイン試行: ${loginEmail}`);
       
+      // NextAuthによるログイン
       const result = await signIn('credentials', {
         email: loginEmail,
         password: loginPassword,
@@ -144,51 +124,31 @@ export const LoginForm: React.FC = () => {
       setDebugInfo(prev => prev + `\nログイン結果: ${JSON.stringify(result)}`);
       
       if (result?.error) {
-        console.error('ログインエラー詳細:', result.error);
+        console.error('ログインエラー:', result.error);
         
-        // エラータイプに基づいてメッセージをカスタマイズ
         if (result.error === 'CredentialsSignin') {
           setError('ログイン情報が正しくありません。メールアドレスとパスワードを確認してください。');
         } else {
           setError('ログインに失敗しました: ' + result.error);
         }
         
-        setDebugInfo(prev => prev + `\nエラー: ${result.error}`);
-        setIsLoading(false);
         return;
       }
       
       if (!result?.ok) {
         setError('ログイン処理中にエラーが発生しました。もう一度お試しください。');
-        setDebugInfo(prev => prev + '\n結果がOKではありません');
-        setIsLoading(false);
         return;
       }
       
-      console.log('ログイン成功、セッション確立中...');
-      setDebugInfo(prev => prev + '\nログイン成功、セッション確立中...');
+      console.log('ログイン成功');
+      setDebugInfo(prev => prev + '\nログイン成功');
       
-      // ログイン成功後、result.url があればそのURLにリダイレクト
+      // リダイレクト処理
       if (result?.url) {
-        // 必要であれば、ここで result.url から status=logged_out や error などの
-        // 不要なクエリパラメータを削除する処理を追加できます。
-        // 例:
-        // const finalRedirectUrl = new URL(result.url, window.location.origin);
-        // finalRedirectUrl.searchParams.delete('status');
-        // finalRedirectUrl.searchParams.delete('error');
-        // router.push(finalRedirectUrl.pathname + finalRedirectUrl.search);
-        
-        // 現状のログでは result.url にクエリパラメータが含まれていないため、そのまま使用
         router.push(result.url);
       } else {
-        // result.url がないという予期せぬ状況の場合、フォールバックとしてダッシュボードへ
-        // (あるいはエラー表示など、適切な処理)
-        // このフォールバックも、status=logged_out を考慮する必要がある
-        const fallbackRedirectUrl = getDashboardByRole(session?.user?.role || '');
-        const url = new URL(fallbackRedirectUrl, window.location.origin);
-        url.searchParams.delete('status'); // 安全のためにここでも削除
-        router.push(url.pathname + url.search);
-        console.warn("ログイン結果にリダイレクトURLが含まれていませんでした。フォールバック先に遷移します。");
+        // フォールバック
+        router.push('/dashboard');
       }
       
     } catch (err) {
@@ -198,6 +158,25 @@ export const LoginForm: React.FC = () => {
       setDebugInfo(prev => prev + `\n例外発生: ${errorMessage}`);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // 完全リセット機能
+  const handleCompleteReset = () => {
+    if (typeof window !== 'undefined') {
+      // 全ストレージをクリア
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      // 全Cookieを削除
+      document.cookie.split(";").forEach(c => {
+        const eqPos = c.indexOf("=");
+        const name = eqPos > -1 ? c.substr(0, eqPos).trim() : c.trim();
+        document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+      });
+      
+      // ページリロード
+      window.location.href = '/login';
     }
   };
 
@@ -216,13 +195,14 @@ export const LoginForm: React.FC = () => {
           {sessionExpiredMessage}
         </div>
       )}
+      
       {error && (
         <div className="p-3 rounded bg-red-50 text-red-500 text-sm">
           {error}
         </div>
       )}
       
-      {/* useSessionがloading状態の場合の表示 */}
+      {/* ローディング状態の表示 */}
       {status === 'loading' && (
         <div className="p-3 rounded bg-gray-50 text-gray-600 text-sm">
           認証状態を確認中...
@@ -287,21 +267,7 @@ export const LoginForm: React.FC = () => {
           <p className="text-red-700 text-xs mb-2">デバッグ用: セッション/認証エラーが解決しない場合</p>
           <button
             type="button"
-            onClick={() => {
-              // 完全なリセット
-              if (typeof window !== 'undefined') {
-                localStorage.clear();
-                sessionStorage.clear();
-                // 全てのCookieを削除
-                document.cookie.split(";").forEach(c => {
-                  const eqPos = c.indexOf("=");
-                  const name = eqPos > -1 ? c.substr(0, eqPos).trim() : c.trim();
-                  document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
-                });
-                // ページリロード
-                window.location.href = '/login';
-              }
-            }}
+            onClick={handleCompleteReset}
             className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
           >
             完全リセット（全Cookie削除 + リロード）
