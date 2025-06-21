@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { X } from 'lucide-react';
 import { useSession, signOut } from 'next-auth/react';
 // toast関連、Linterエラーは無視して進める（後で確認）
-import { toast } from 'sonner'; 
+import { toast } from 'sonner';
+import { apiClient } from '@/lib/api-client';
 
 // 仮のデータ型 (バックエンドのスキーマに合わせる)
 interface DesiredDepartmentInput {
@@ -70,25 +71,12 @@ const TargetSchoolSetupPage = () => {
       setIsFetchingOptions(true);
       setFetchError(null);
 
-      // ★★★ アクセストークンの取得 (要確認・修正) ★★★
-      const accessToken = session?.user?.accessToken;
-      if (!accessToken) {
-        setFetchError('認証情報が見つかりません。ログインし直してください。');
-        toast.error('認証情報が見つかりません。再度ログインしてください。');
-        await signOut({ redirect: false });
-        router.push('/login');
-        setIsFetchingOptions(false);
-        return;
-      }
-
-      const headers = { 
-        'Authorization': `Bearer ${accessToken}`
-      };
+      // APIクライアントが認証を自動で処理します
 
       try {
         const [univResponse, admResponse] = await Promise.all([
-          fetch(`/api/v1/universities/`, { headers }),
-          fetch(`/api/v1/admissions/`, { headers })
+          apiClient.get('/api/v1/universities/'),
+          apiClient.get('/api/v1/admissions/')
         ]);
 
         if (univResponse.status === 401 || admResponse.status === 401) {
@@ -99,20 +87,8 @@ const TargetSchoolSetupPage = () => {
             return;
         }
 
-        if (!univResponse.ok || !admResponse.ok) {
-            let errorMsg = '選択肢データの取得に失敗しました。';
-            if (!univResponse.ok) {
-                 const errData = await univResponse.json().catch(() => ({}));
-                 errorMsg = `大学リスト取得エラー: ${errData.detail || univResponse.statusText}`;
-            } else if (!admResponse.ok) {
-                 const errData = await admResponse.json().catch(() => ({}));
-                 errorMsg = `入試方式リスト取得エラー: ${errData.detail || admResponse.statusText}`;
-            }
-          throw new Error(errorMsg);
-        }
-
-        const univData: UniversityResponse[] = await univResponse.json();
-        const admData: AdmissionMethodResponse[] = await admResponse.json();
+        const univData: UniversityResponse[] = univResponse.data;
+        const admData: AdmissionMethodResponse[] = admResponse.data;
         
         // 想定: univData は [{id, name, departments: [{id, name}]}] の形式
         // 想定: admData は [{id, name}] の形式
@@ -215,28 +191,10 @@ const TargetSchoolSetupPage = () => {
     }
     setIsLoading(true);
     try {
-      // ★★★ アクセストークンの取得 (ProfileSetupPage と同様に要確認・修正) ★★★
-      const accessToken = session?.user?.accessToken;
-      if (!accessToken) {
-          toast.error('認証情報が見つかりません。再度ログインしてください。');
-          await signOut({ redirect: false });
-          router.push('/login');
-          setIsLoading(false);
-          return;
-      }
 
-      const headers = {
-         'Content-Type': 'application/json',
-         'Authorization': `Bearer ${accessToken}` // ★認証ヘッダーを追加
-      };
-      
       // バックエンドに一括登録APIがない場合、個別にPOSTリクエストを送る
       const results = await Promise.all(desiredSchools.map(school => 
-        fetch(`/api/v1/desired-schools/`, {
-          method: 'POST',
-          headers: headers, // 認証ヘッダーを含む
-          body: JSON.stringify(school),
-        })
+        apiClient.post('/api/v1/desired-schools/', school)
       ));
 
       // ★ 401 エラーチェック (いずれか一つでも401ならログアウト)
@@ -247,17 +205,6 @@ const TargetSchoolSetupPage = () => {
           router.push('/login');
           setIsLoading(false);
           return;
-      }
-
-      // 全てのリクエストが成功したかチェック
-      const failedRequests = results.filter(res => !res.ok);
-      if (failedRequests.length > 0) {
-        // エラー処理 (最初のエラーを表示する例)
-        const firstError = await failedRequests[0].json();
-        const failedSchoolIndex = results.findIndex(res => !res.ok);
-        // ★★★ 表示用に大学名を取得 (universitiesData を参照) ★★★
-        const failedSchoolName = universitiesData.find(u => u.id === desiredSchools[failedSchoolIndex]?.university_id)?.name || '不明な大学';
-        throw new Error(`志望校「${failedSchoolName}」の登録に失敗: ${firstError.detail || '不明なエラー'}`);
       }
 
       toast.success('志望校情報を保存しました。');

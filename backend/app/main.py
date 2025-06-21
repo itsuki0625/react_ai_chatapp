@@ -43,7 +43,7 @@ logging.getLogger("httpx").setLevel(logging.INFO)
 
 # アプリケーション内部のログレベル調整
 logging.getLogger("app.database.database").setLevel(logging.INFO)  # データベース関連のDEBUGログを抑制
-logging.getLogger("app.middleware.auth").setLevel(logging.INFO)  # 認証ミドルウェアのDEBUGログを抑制
+logging.getLogger("app.middleware.auth").setLevel(logging.DEBUG)  # 認証ミドルウェアのDEBUGログを有効化（一時的）
 logging.getLogger("app.api.deps").setLevel(logging.INFO)  # API依存関係のDEBUGログを抑制
 logging.getLogger("app.api.v1.endpoints.chat").setLevel(logging.INFO)  # チャットエンドポイントのDEBUGログを抑制
 

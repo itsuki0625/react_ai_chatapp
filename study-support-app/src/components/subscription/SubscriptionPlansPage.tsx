@@ -345,7 +345,16 @@ export const SubscriptionPlansPage: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto p-6">
-      <StyledH1 className="mb-6">サブスクリプションプラン</StyledH1>
+      <div className="flex justify-between items-center mb-6">
+        <StyledH1 className="mb-0">サブスクリプションプラン</StyledH1>
+        <Button
+          onClick={() => router.push('/settings')}
+          variant="outline"
+          className="text-sm"
+        >
+          マイページへ
+        </Button>
+      </div>
 
       <div className="mb-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {(() => { console.log('[Render Debug] currentSubscription:', currentSubscription); return null; })()}
