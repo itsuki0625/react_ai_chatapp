@@ -366,7 +366,7 @@ export const SubscriptionPlansPage: React.FC = () => {
           )}
 
           <Button
-            onClick={() => router.push('/settings/profile')}
+            onClick={() => router.push('/settings')}
             className="mt-6 w-full"
             variant="outline"
           >
