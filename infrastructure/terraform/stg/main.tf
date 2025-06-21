@@ -154,8 +154,8 @@ resource "aws_lb_listener_rule" "backend" {
     target_group_arn = aws_lb_target_group.backend.arn
   }
   condition {
-    path_pattern {
-      values = ["/api/*"]
+    host_header {
+      values = ["api-stg.smartao.jp"]
     }
   }
 }
@@ -365,4 +365,10 @@ resource "aws_s3_bucket_public_access_block" "icon_images" {
 output "icon_images_bucket_name" {
   description = "S3 bucket name for icon images"
   value       = aws_s3_bucket.icon_images.bucket
+}
+
+# ALB DNS名を出力
+output "alb_dns_name" {
+  description = "DNS name of the Application Load Balancer"
+  value       = aws_lb.main.dns_name
 } 

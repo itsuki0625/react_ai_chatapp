@@ -144,116 +144,26 @@ jobs:
             --cli-read-timeout 300 \
             --cli-connect-timeout 60 || echo "Backend timeout (続行)"
 
-      - name: 🔍 Get Service URLs
+      - name: 🔍 Get ALB DNS Name
         id: get_urls
         run: |
-          echo "🔍 サービスURLを取得中..."
-          echo "⏳ タスクのネットワーク設定完了まで少し待機..."
-          sleep 30
+          echo "🔍 ALB DNS名を取得中..."
           
-          # Frontend IP取得を複数回試行
-          FRONTEND_IP=""
-          for i in {1..5}; do
-            echo "Frontend IP取得試行 $i/5..."
-            
-            FRONTEND_TASK_ARN=$(aws ecs list-tasks \
-              --cluster stg-front \
-              --service-name stg-front-service \
-              --query 'taskArns[0]' \
-              --output text 2>/dev/null || echo "")
-            
-            echo "Frontend Task ARN: $FRONTEND_TASK_ARN"
-            
-            if [ "$FRONTEND_TASK_ARN" != "" ] && [ "$FRONTEND_TASK_ARN" != "None" ] && [ "$FRONTEND_TASK_ARN" != "null" ]; then
-              # タスクの詳細を取得
-              TASK_DETAIL=$(aws ecs describe-tasks \
-                --cluster stg-front \
-                --tasks $FRONTEND_TASK_ARN \
-                --query 'tasks[0]' \
-                --output json 2>/dev/null || echo "{}")
-              
-              echo "Task detail keys: $(echo "$TASK_DETAIL" | jq -r 'keys[]' 2>/dev/null || echo 'JSON parse failed')"
-              
-              # ネットワークインターフェースIDを取得
-              FRONTEND_ENI=$(echo "$TASK_DETAIL" | jq -r '.attachments[0].details[] | select(.name=="networkInterfaceId") | .value' 2>/dev/null || echo "")
-              
-              echo "Frontend ENI: $FRONTEND_ENI"
-              
-              if [ "$FRONTEND_ENI" != "" ] && [ "$FRONTEND_ENI" != "null" ]; then
-                # パブリックIPを取得
-                FRONTEND_IP=$(aws ec2 describe-network-interfaces \
-                  --network-interface-ids $FRONTEND_ENI \
-                  --query 'NetworkInterfaces[0].Association.PublicIp' \
-                  --output text 2>/dev/null || echo "")
-                
-                echo "Frontend IP: $FRONTEND_IP"
-                
-                if [ "$FRONTEND_IP" != "" ] && [ "$FRONTEND_IP" != "None" ] && [ "$FRONTEND_IP" != "null" ]; then
-                  echo "✅ Frontend IP取得成功: $FRONTEND_IP"
-                  break
-                fi
-              fi
-            fi
-            
-            if [ $i -lt 5 ]; then
-              echo "⏳ 30秒待機してリトライ..."
-              sleep 30
-            fi
-          done
+          # ALB DNS名を取得
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names stg-main-alb \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text 2>/dev/null || echo "")
           
-          # Backend IP取得を複数回試行
-          BACKEND_IP=""
-          for i in {1..5}; do
-            echo "Backend IP取得試行 $i/5..."
-            
-            BACKEND_TASK_ARN=$(aws ecs list-tasks \
-              --cluster stg-api \
-              --service-name stg-api-service \
-              --query 'taskArns[0]' \
-              --output text 2>/dev/null || echo "")
-            
-            echo "Backend Task ARN: $BACKEND_TASK_ARN"
-            
-            if [ "$BACKEND_TASK_ARN" != "" ] && [ "$BACKEND_TASK_ARN" != "None" ] && [ "$BACKEND_TASK_ARN" != "null" ]; then
-              # タスクの詳細を取得
-              TASK_DETAIL=$(aws ecs describe-tasks \
-                --cluster stg-api \
-                --tasks $BACKEND_TASK_ARN \
-                --query 'tasks[0]' \
-                --output json 2>/dev/null || echo "{}")
-              
-              echo "Task detail keys: $(echo "$TASK_DETAIL" | jq -r 'keys[]' 2>/dev/null || echo 'JSON parse failed')"
-              
-              # ネットワークインターフェースIDを取得
-              BACKEND_ENI=$(echo "$TASK_DETAIL" | jq -r '.attachments[0].details[] | select(.name=="networkInterfaceId") | .value' 2>/dev/null || echo "")
-              
-              echo "Backend ENI: $BACKEND_ENI"
-              
-              if [ "$BACKEND_ENI" != "" ] && [ "$BACKEND_ENI" != "null" ]; then
-                # パブリックIPを取得
-                BACKEND_IP=$(aws ec2 describe-network-interfaces \
-                  --network-interface-ids $BACKEND_ENI \
-                  --query 'NetworkInterfaces[0].Association.PublicIp' \
-                  --output text 2>/dev/null || echo "")
-                
-                echo "Backend IP: $BACKEND_IP"
-                
-                if [ "$BACKEND_IP" != "" ] && [ "$BACKEND_IP" != "None" ] && [ "$BACKEND_IP" != "null" ]; then
-                  echo "✅ Backend IP取得成功: $BACKEND_IP"
-                  break
-                fi
-              fi
-            fi
-            
-            if [ $i -lt 5 ]; then
-              echo "⏳ 30秒待機してリトライ..."
-              sleep 30
-            fi
-          done
+          echo "ALB DNS: $ALB_DNS"
           
-          # 結果をGitHub Outputに設定
-          echo "frontend_ip=$FRONTEND_IP" >> $GITHUB_OUTPUT
-          echo "backend_ip=$BACKEND_IP" >> $GITHUB_OUTPUT
+          if [ "$ALB_DNS" != "" ] && [ "$ALB_DNS" != "None" ] && [ "$ALB_DNS" != "null" ]; then
+            echo "✅ ALB DNS取得成功: $ALB_DNS"
+            echo "alb_dns=$ALB_DNS" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ ALB DNS取得に失敗"
+            echo "alb_dns=" >> $GITHUB_OUTPUT
+          fi
 
       - name: 📋 Wake Up Complete
         run: |
@@ -263,40 +173,33 @@ jobs:
           echo "📝 使用目的: ${{ github.event.inputs.purpose || 'API経由起動' }}"
           echo ""
           
-          FRONTEND_IP="${{ steps.get_urls.outputs.frontend_ip }}"
-          BACKEND_IP="${{ steps.get_urls.outputs.backend_ip }}"
+          ALB_DNS="${{ steps.get_urls.outputs.alb_dns }}"
           
-          if [ "$FRONTEND_IP" != "" ] && [ "$FRONTEND_IP" != "null" ]; then
-            echo "🌐 Frontend URL: http://$FRONTEND_IP:3000"
+          if [ "$ALB_DNS" != "" ] && [ "$ALB_DNS" != "null" ]; then
+            echo "🌐 Frontend URL: https://stg.smartao.jp"
+            echo "🌐 Backend API URL: https://api-stg.smartao.jp"
+            echo "🌐 ALB DNS Name: $ALB_DNS"
           else
-            echo "⚠️ Frontend IP取得に失敗"
+            echo "⚠️ ALB DNS取得に失敗"
             echo "📋 手動確認コマンド:"
-            echo "aws ecs list-tasks --cluster stg-front --service-name stg-front-service"
-          fi
-          
-          if [ "$BACKEND_IP" != "" ] && [ "$BACKEND_IP" != "null" ]; then
-            echo "🌐 Backend URL: http://$BACKEND_IP:5050"
-          else
-            echo "⚠️ Backend IP取得に失敗"
-            echo "📋 手動確認コマンド:"
-            echo "aws ecs list-tasks --cluster stg-api --service-name stg-api-service"
+            echo "aws elbv2 describe-load-balancers --names stg-main-alb"
           fi
           
           echo ""
           echo "📋 CloudFlare設定更新:"
           echo "1. CloudFlareダッシュボードにログイン"
-          echo "2. DNS設定でstg.smartao.jpのAレコードを更新"
-          if [ "$FRONTEND_IP" != "" ] && [ "$FRONTEND_IP" != "null" ]; then
-            echo "3. 新しいIP: $FRONTEND_IP"
+          echo "2. DNS設定で以下のCNAMEレコードを設定:"
+          if [ "$ALB_DNS" != "" ] && [ "$ALB_DNS" != "null" ]; then
+            echo "   - stg.smartao.jp → $ALB_DNS"
+            echo "   - api-stg.smartao.jp → $ALB_DNS"
           else
-            echo "3. IPアドレス: 手動で確認が必要"
+            echo "   - CNAME: 手動で確認が必要"
           fi
           echo ""
           echo "🛑 使用後は必ず停止してください:"
           echo "GitHub Actions: 'STG Environment Sleep' ワークフロー実行"
           echo ""
-          echo "💰 想定コスト: ${{ github.event.inputs.duration || '4' }}時間で約$0.40-2"
+          echo "💰 想定コスト: ${{ github.event.inputs.duration || '4' }}時間で約$1.10-3 (ALB込み)"
           echo ""
           echo "🔧 トラブルシューティング:"
-          echo "IPが取得できない場合は、数分待ってから以下を実行:"
-          echo "GitHub Actions > 'STG Environment Wake Up' を再実行" 
+          echo "ALBが応答しない場合は、ECSタスクの起動完了まで数分待機してください" 
