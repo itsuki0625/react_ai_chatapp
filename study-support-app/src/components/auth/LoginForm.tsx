@@ -16,47 +16,46 @@ export const LoginForm: React.FC = () => {
 
   // セッション期限切れの自動検出と処理
   const handleSessionExpired = () => {
+    console.log('Session expired detected, setting message and clearing session...');
+    
     setSessionExpiredMessage('セッションの有効期限が切れました。お手数ですが、再度ログインしてください。');
+    setError('');
     
-    console.log('Session expired detected, forcing sign out...');
+    // URLパラメータをクリア
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('error');
+      window.history.replaceState({}, '', url.toString());
+    }
     
-    // 既存のセッションを完全にクリア
+    // 簡単なセッションクリア（手動でのURL操作は避ける）
     signOut({ 
       redirect: false,
       callbackUrl: '/login'
     }).then(() => {
-      // ローカルストレージやセッションストレージのクリア
+      console.log('Session cleared successfully');
+      // ローカルストレージのクリア
       if (typeof window !== 'undefined') {
         localStorage.clear();
         sessionStorage.clear();
       }
-      
-      // URLからerrorパラメータを削除してクリーンな状態にする
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.delete('error');
-      newUrl.searchParams.set('status', 'logged_out');
-      
-      // ブラウザの履歴を置き換える
-      window.history.replaceState({}, '', newUrl.toString());
-      
-      console.log('Session expired, signed out and cleaned up.');
     }).catch(err => {
-      console.error('Error during signOut for session_expired:', err);
-      
-      // エラーが発生した場合でも、強制的にページをリロード
-      if (typeof window !== 'undefined') {
-        localStorage.clear();
-        sessionStorage.clear();
-        window.location.href = '/login?status=logged_out';
-      }
+      console.error('Error during signOut:', err);
     });
-    
-    setError('');
   };
 
   // セッション状態を監視
   useEffect(() => {
     console.log('セッション状態:', status, session);
+    
+    // session_expiredエラーがある場合は先に処理
+    const errorParam = searchParams?.get('error');
+    if (errorParam === 'session_expired') {
+      console.log('Session expired error detected in URL');
+      handleSessionExpired();
+      return; // 早期リターンでその他の処理をスキップ
+    }
+    
     // ログアウト直後かどうかを確認
     const isLoggedOut = searchParams?.get('status') === 'logged_out';
 
@@ -73,13 +72,7 @@ export const LoginForm: React.FC = () => {
     }
   }, [session, status, router, searchParams]);
   
-  // URLパラメータのエラーをチェックし、session_expiredならログアウト処理
-  useEffect(() => {
-    const errorParam = searchParams?.get('error');
-    if (errorParam === 'session_expired') {
-      handleSessionExpired();
-    }
-  }, [searchParams, router]);
+  // URLパラメータのエラーチェック処理は上記のuseEffectに統合済み
 
   // ユーザーロールに基づいてダッシュボードURLを取得
   const getDashboardByRole = (role: string): string => {
@@ -201,6 +194,13 @@ export const LoginForm: React.FC = () => {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* セッション状態のデバッグ情報 */}
+      {process.env.NODE_ENV !== 'production' && (
+        <div className="p-2 bg-blue-50 text-blue-700 text-xs font-mono rounded">
+          セッション状態: {status} | エラー: {searchParams?.get('error') || 'なし'}
+        </div>
+      )}
+      
       {/* セッション切れメッセージの表示 */}
       {sessionExpiredMessage && (
         <div className="p-3 rounded bg-yellow-50 text-yellow-700 text-sm">
@@ -210,6 +210,13 @@ export const LoginForm: React.FC = () => {
       {error && (
         <div className="p-3 rounded bg-red-50 text-red-500 text-sm">
           {error}
+        </div>
+      )}
+      
+      {/* useSessionがloading状態の場合の表示 */}
+      {status === 'loading' && (
+        <div className="p-3 rounded bg-gray-50 text-gray-600 text-sm">
+          認証状態を確認中...
         </div>
       )}
       
