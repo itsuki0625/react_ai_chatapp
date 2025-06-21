@@ -198,10 +198,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     "https://smartao.jp"
                 ]
                 
+                # オリジンが許可リストに含まれている場合のみCORSヘッダーを設定
                 if origin and origin in allowed_origins:
                     response.headers["Access-Control-Allow-Origin"] = origin
                     response.headers["Access-Control-Allow-Credentials"] = "true"
+                    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+                    response.headers["Access-Control-Allow-Headers"] = "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
                     response.headers["Vary"] = "Origin"
+                    logger.debug(f"CORSヘッダーを設定: {origin} -> {request.url.path}")
+                else:
+                    logger.warning(f"許可されていないオリジン: {origin} -> {request.url.path}")
                 
                 return response
             except Exception as e:
@@ -230,6 +236,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     cors_headers.update({
                         "Access-Control-Allow-Origin": origin,
                         "Access-Control-Allow-Credentials": "true",
+                        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+                        "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
                         "Vary": "Origin"
                     })
                 

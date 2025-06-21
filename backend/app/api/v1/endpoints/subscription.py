@@ -215,44 +215,72 @@ async def create_checkout_session(
     try:
         # デバッグ用ログ追加
         origin = request.headers.get("origin")
-        logger.info(f"チェックアウトセッション作成リクエスト - オリジン: {origin}, ユーザー: {current_user.id}, プライス: {request_data.price_id}")
+        logger.info(f"[DEBUG] チェックアウトセッション作成開始 - オリジン: {origin}, ユーザー: {current_user.id}, プライス: {request_data.price_id}")
+        
+        # リクエストデータの詳細ログ
+        logger.info(f"[DEBUG] リクエストデータ詳細: {request_data}")
+        
         # Stripe顧客IDを取得または作成
+        logger.info(f"[DEBUG] Stripe顧客ID取得開始 - ユーザー: {current_user.id}")
         stripe_customer_id = await crud_subscription.get_stripe_customer_id(db, current_user.id)
+        logger.info(f"[DEBUG] 既存Stripe顧客ID: {stripe_customer_id}")
+        
         if not stripe_customer_id:
-            stripe_customer_id = StripeService.create_customer(
-                    email=current_user.email,
-                    name=current_user.full_name,
-                    metadata={'user_id': str(current_user.id)}
-                )
-            logger.info(f"新規Stripe Customer作成: {stripe_customer_id} for User: {current_user.id}")
+            logger.info(f"[DEBUG] 新規Stripe顧客作成開始 - Email: {current_user.email}")
+            try:
+                stripe_customer_id = StripeService.create_customer(
+                        email=current_user.email,
+                        name=current_user.full_name,
+                        metadata={'user_id': str(current_user.id)}
+                    )
+                logger.info(f"[DEBUG] 新規Stripe Customer作成成功: {stripe_customer_id} for User: {current_user.id}")
+            except Exception as stripe_error:
+                logger.error(f"[DEBUG] Stripe顧客作成エラー: {stripe_error}", exc_info=True)
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Stripe顧客の作成に失敗しました: {str(stripe_error)}")
 
+        logger.info(f"[DEBUG] メタデータ作成開始")
         metadata = {
                 'user_id': str(current_user.id),
             'price_id': request_data.price_id,
             'plan_id': request_data.plan_id or request_data.price_id
         }
+        logger.info(f"[DEBUG] メタデータ作成完了: {metadata}")
 
+        logger.info(f"[DEBUG] 割引設定開始")
         discounts = []
         if request_data.coupon_id:
             discounts.append({'coupon': request_data.coupon_id})
             metadata['applied_coupon_id'] = request_data.coupon_id
+            logger.info(f"[DEBUG] 割引クーポン適用: {request_data.coupon_id}")
+        logger.info(f"[DEBUG] 割引設定完了: {discounts}")
 
-        session_response = StripeService.create_checkout_session(
-            customer_id=stripe_customer_id,
-            price_id=request_data.price_id,
-            success_url=request_data.success_url,
-            cancel_url=request_data.cancel_url,
-            metadata=metadata,
-            discounts=discounts
-        )
+        logger.info(f"[DEBUG] Stripeチェックアウトセッション作成開始")
+        logger.info(f"[DEBUG] パラメータ - customer_id: {stripe_customer_id}, price_id: {request_data.price_id}")
+        logger.info(f"[DEBUG] パラメータ - success_url: {request_data.success_url}, cancel_url: {request_data.cancel_url}")
+        
+        try:
+            session_response = StripeService.create_checkout_session(
+                customer_id=stripe_customer_id,
+                price_id=request_data.price_id,
+                success_url=request_data.success_url,
+                cancel_url=request_data.cancel_url,
+                metadata=metadata,
+                discounts=discounts
+            )
+            logger.info(f"[DEBUG] Stripeチェックアウトセッション作成成功: {session_response}")
+        except Exception as stripe_session_error:
+            logger.error(f"[DEBUG] Stripeチェックアウトセッション作成エラー: {stripe_session_error}", exc_info=True)
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"チェックアウトセッションの作成に失敗しました: {str(stripe_session_error)}")
 
+        logger.info(f"[DEBUG] レスポンス返却開始: {session_response}")
         return session_response
 
     except HTTPException as e:
+        logger.error(f"[DEBUG] HTTPException発生: {e.detail}", exc_info=True)
         raise e
     except Exception as e:
-        logger.error(f"チェックアウトセッション作成エラー (User: {current_user.id}, Price: {request_data.price_id}): {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="チェックアウトセッションの作成に失敗しました。")
+        logger.error(f"[DEBUG] 予期しないエラー発生 (User: {current_user.id}, Price: {request_data.price_id}): {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"チェックアウトセッションの作成に失敗しました: {str(e)}")
 
 
 @router.options("/create-checkout")
@@ -777,3 +805,38 @@ async def stripe_webhook(
          raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Webhook処理中に予期せぬエラーが発生しました。")
 
     return {"status": "success"}
+
+@router.post("/debug-test")
+async def debug_test_endpoint(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_user)
+):
+    """
+    デバッグ用のテストエンドポイント
+    """
+    try:
+        origin = request.headers.get("origin")
+        logger.info(f"[DEBUG-TEST] テストエンドポイント開始 - オリジン: {origin}, ユーザー: {current_user.id}")
+        
+        # データベース接続テスト
+        logger.info(f"[DEBUG-TEST] データベース接続テスト開始")
+        stripe_customer_id = await crud_subscription.get_stripe_customer_id(db, current_user.id)
+        logger.info(f"[DEBUG-TEST] データベース接続テスト成功 - Stripe Customer ID: {stripe_customer_id}")
+        
+        # 基本情報を返す
+        response_data = {
+            "status": "success",
+            "user_id": str(current_user.id),
+            "user_email": current_user.email,
+            "stripe_customer_id": stripe_customer_id,
+            "origin": origin,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        logger.info(f"[DEBUG-TEST] レスポンス返却: {response_data}")
+        return response_data
+        
+    except Exception as e:
+        logger.error(f"[DEBUG-TEST] エラー発生: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"デバッグテストエラー: {str(e)}")
