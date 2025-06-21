@@ -123,6 +123,7 @@ app.add_middleware(
         "X-Requested-With",
         "X-CSRF-Token",
         "X-Auth-Status",
+        "X-Request-Info",  # デバッグ用ヘッダーを追加
         "Origin",
         "Access-Control-Request-Method",
         "Access-Control-Request-Headers",
@@ -172,7 +173,7 @@ async def global_exception_handler(request: Request, exc: Exception):
             "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Credentials": "true",
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-            "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+            "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, X-Request-Info, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
             "Vary": "Origin"
         })
     
@@ -225,7 +226,7 @@ async def handle_options(full_path: str, request: Request):
         headers={
             "Access-Control-Allow-Origin": allow_origin,
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-            "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+            "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, X-Request-Info, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
             "Access-Control-Allow-Credentials": "true",
             "Access-Control-Max-Age": "3600",
             "Vary": "Origin",
