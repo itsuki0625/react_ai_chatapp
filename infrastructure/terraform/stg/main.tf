@@ -155,7 +155,7 @@ resource "aws_lb_listener_rule" "backend" {
   }
   condition {
     host_header {
-      values = ["api-stg.smartao.jp"]
+      values = ["stg-api.smartao.jp"]
     }
   }
 }
