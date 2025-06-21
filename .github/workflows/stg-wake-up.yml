@@ -28,18 +28,13 @@ env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
 
 jobs:
-  wake-up-stg:
+  check-if-already-running:
     runs-on: ubuntu-latest
     environment: Preview
+    outputs:
+      is_running: ${{ steps.check_status.outputs.status }}
     
     steps:
-      - name: 🚀 STG Wake Up Summary
-        run: |
-          echo "🎯 STG環境起動開始"
-          echo "⏰ 起動時間: ${{ github.event.inputs.duration || '4' }}時間"
-          echo "📝 使用目的: ${{ github.event.inputs.purpose || 'API経由起動' }}"
-          echo "💰 想定コスト: ~$0.10-2"
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -77,8 +72,39 @@ jobs:
             echo "🛑 STG環境は停止中です"
           fi
 
+  already-running:
+    runs-on: ubuntu-latest
+    needs: check-if-already-running
+    if: needs.check-if-already-running.outputs.is_running == 'running'
+    
+    steps:
+      - name: ℹ️ Already Running
+        run: |
+          echo "✅ STG環境は既に起動中です"
+          echo "現在のサービス状態を確認してください"
+
+  wake-up-stg:
+    runs-on: ubuntu-latest
+    environment: Preview
+    needs: check-if-already-running
+    if: needs.check-if-already-running.outputs.is_running == 'stopped'
+    
+    steps:
+      - name: 🚀 STG Wake Up Summary
+        run: |
+          echo "🎯 STG環境起動開始"
+          echo "⏰ 起動時間: ${{ github.event.inputs.duration || '4' }}時間"
+          echo "📝 使用目的: ${{ github.event.inputs.purpose || 'API経由起動' }}"
+          echo "💰 想定コスト: ~$0.10-2"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
       - name: 🚀 Start ECS Services
-        if: steps.check_status.outputs.status == 'stopped'
         run: |
           echo "🚀 ECSサービス起動中..."
           
@@ -99,7 +125,6 @@ jobs:
           echo "✅ ECSサービス起動コマンド完了"
 
       - name: ⏳ Wait for Services to Start
-        if: steps.check_status.outputs.status == 'stopped'
         run: |
           echo "⏳ サービス起動完了まで待機中..."
           
@@ -199,13 +224,4 @@ jobs:
           echo "🛑 使用後は必ず停止してください:"
           echo "GitHub Actions: 'STG Environment Sleep' ワークフロー実行"
           echo ""
-          echo "💰 想定コスト: ${{ github.event.inputs.duration || '4' }}時間で約$0.40-2"
-
-  already-running:
-    runs-on: ubuntu-latest
-    if: ${{ steps.check_status.outputs.status == 'running' }}
-    steps:
-      - name: ℹ️ Already Running
-        run: |
-          echo "✅ STG環境は既に起動中です"
-          echo "現在のサービス状態を確認してください" 
+          echo "💰 想定コスト: ${{ github.event.inputs.duration || '4' }}時間で約$0.40-2" 
