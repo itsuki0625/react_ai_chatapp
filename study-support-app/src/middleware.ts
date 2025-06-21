@@ -13,6 +13,24 @@ export default auth((req) => {
   // ログを強化
   console.log(`[Middleware Start] Path: ${pathname}, IsLoggedIn: ${isLoggedIn}, Status: ${userStatus}, IsAdmin: ${isAdmin}, IsLoggedOut: ${isLoggedOut}`);
 
+  // --- 無限リダイレクト防止: RefreshAccessTokenError の特別処理 ---
+  if (authObj?.error === "RefreshAccessTokenError") {
+    console.log(`[Middleware RefreshError] RefreshAccessTokenError detected. Clearing session and redirecting to login.`);
+    
+    // セッションを完全にクリアするために、レスポンスのCookieを削除
+    const response = NextResponse.redirect(new URL('/login?error=session_expired', nextUrl.origin));
+    
+    // NextAuthのセッションCookieを削除
+    response.cookies.delete('next-auth.session-token');
+    response.cookies.delete('__Secure-next-auth.session-token');
+    response.cookies.delete('next-auth.csrf-token');
+    response.cookies.delete('__Host-next-auth.csrf-token');
+    response.cookies.delete('next-auth.callback-url');
+    response.cookies.delete('__Secure-next-auth.callback-url');
+    
+    return response;
+  }
+
   // --- アクセス制御対象ルートの定義 ---
   const protectedRoutes = [
     '/dashboard',
@@ -72,13 +90,8 @@ export default auth((req) => {
       return NextResponse.redirect(new URL('/subscription/plans', nextUrl.origin));
     }
 
-    // 2d. JWTエラーチェック
-    if (authObj?.error === "RefreshAccessTokenError") {
-      console.log(`[Middleware Redirect 2d] RefreshAccessTokenError detected. Redirecting to login.`);
-      const redirectUrl = new URL('/login', nextUrl.origin);
-      redirectUrl.searchParams.set('error', 'session_expired');
-      return NextResponse.redirect(redirectUrl);
-    }
+    // 2d. JWTエラーチェック（上記で既に処理済み）
+    // この時点では RefreshAccessTokenError は既に上で処理済み
 
     // 2e. 管理者関連のチェック
     if (isAdminRoute && !isAdmin) {

@@ -28,19 +28,26 @@ export const LoginForm: React.FC = () => {
       window.history.replaceState({}, '', url.toString());
     }
     
-    // 簡単なセッションクリア（手動でのURL操作は避ける）
+    // セッションとローカルストレージの即座のクリア
+    if (typeof window !== 'undefined') {
+      localStorage.clear();
+      sessionStorage.clear();
+      // NextAuthのCookieも削除
+      document.cookie = 'next-auth.session-token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+      document.cookie = '__Secure-next-auth.session-token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; Secure;';
+      document.cookie = 'next-auth.csrf-token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+      document.cookie = '__Host-next-auth.csrf-token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; Secure;';
+    }
+    
+    // 非同期でsignOutを実行（失敗しても処理を続行）
     signOut({ 
       redirect: false,
       callbackUrl: '/login'
     }).then(() => {
       console.log('Session cleared successfully');
-      // ローカルストレージのクリア
-      if (typeof window !== 'undefined') {
-        localStorage.clear();
-        sessionStorage.clear();
-      }
     }).catch(err => {
       console.error('Error during signOut:', err);
+      // エラーが発生してもページは使用可能な状態にする
     });
   };
 
@@ -48,10 +55,12 @@ export const LoginForm: React.FC = () => {
   useEffect(() => {
     console.log('セッション状態:', status, session);
     
-    // session_expiredエラーがある場合は先に処理
+    // RefreshAccessTokenErrorまたはsession_expiredエラーがある場合は先に処理
     const errorParam = searchParams?.get('error');
-    if (errorParam === 'session_expired') {
-      console.log('Session expired error detected in URL');
+    const hasSessionError = session?.error === 'RefreshAccessTokenError';
+    
+    if (errorParam === 'session_expired' || hasSessionError) {
+      console.log('Session expired or refresh error detected:', { errorParam, hasSessionError });
       handleSessionExpired();
       return; // 早期リターンでその他の処理をスキップ
     }
@@ -60,7 +69,7 @@ export const LoginForm: React.FC = () => {
     const isLoggedOut = searchParams?.get('status') === 'logged_out';
 
     // ログアウト直後 *でない* 場合に、認証済みならリダイレクト
-    if (status === 'authenticated' && session && !isLoggedOut) {
+    if (status === 'authenticated' && session && !isLoggedOut && !hasSessionError) {
       console.log('認証済み (ログアウト直後ではない):', session);
       
       // ユーザーロールに基づいてリダイレクト先を決定
@@ -269,6 +278,34 @@ export const LoginForm: React.FC = () => {
         <div className="mt-4 p-3 bg-gray-100 text-gray-700 font-mono text-xs whitespace-pre-wrap rounded">
           <strong>デバッグ情報:</strong>
           {debugInfo}
+        </div>
+      )}
+      
+      {/* 完全リセットボタン - 開発環境でのみ表示 */}
+      {process.env.NODE_ENV !== 'production' && (
+        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded">
+          <p className="text-red-700 text-xs mb-2">デバッグ用: セッション/認証エラーが解決しない場合</p>
+          <button
+            type="button"
+            onClick={() => {
+              // 完全なリセット
+              if (typeof window !== 'undefined') {
+                localStorage.clear();
+                sessionStorage.clear();
+                // 全てのCookieを削除
+                document.cookie.split(";").forEach(c => {
+                  const eqPos = c.indexOf("=");
+                  const name = eqPos > -1 ? c.substr(0, eqPos).trim() : c.trim();
+                  document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+                });
+                // ページリロード
+                window.location.href = '/login';
+              }
+            }}
+            className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+          >
+            完全リセット（全Cookie削除 + リロード）
+          </button>
         </div>
       )}
       
