@@ -217,7 +217,11 @@ resource "aws_db_instance" "rds" {
   vpc_security_group_ids  = [aws_security_group.rds.id]
   skip_final_snapshot     = true
   publicly_accessible     = false
-  parameter_group_name = aws_db_parameter_group.custom_rds_pg.name
+  parameter_group_name    = aws_db_parameter_group.custom_rds_pg.name
+  multi_az                = false  # Multi-AZ無効化 (コスト削減 -$15/月)
+  backup_retention_period = 7      # バックアップは7日間保持
+  backup_window          = "03:00-04:00"  # JST 12:00-13:00
+  maintenance_window     = "sun:04:00-sun:05:00"  # JST日曜13:00-14:00
   tags = { Environment = var.environment }
 }
 
@@ -293,33 +297,33 @@ resource "aws_vpc_endpoint" "ecr_api" {
   }
 }
 
-# ECR DKR VPC Endpoint
-resource "aws_vpc_endpoint" "ecr_dkr" {
-  vpc_id            = module.vpc.vpc_id
-  service_name      = "com.amazonaws.${var.aws_region}.ecr.dkr"
-  vpc_endpoint_type = "Interface"
-  subnet_ids         = module.vpc.private_subnets
-  security_group_ids = [aws_security_group.vpc_endpoint.id]
-  private_dns_enabled = true
-  tags = {
-    Name        = "${var.environment}-ecr-dkr-vpce"
-    Environment = var.environment
-  }
-}
+# ECR DKR VPC Endpoint (削除: コスト削減 -$22.5/月)
+# resource "aws_vpc_endpoint" "ecr_dkr" {
+#   vpc_id            = module.vpc.vpc_id
+#   service_name      = "com.amazonaws.${var.aws_region}.ecr.dkr"
+#   vpc_endpoint_type = "Interface"
+#   subnet_ids         = module.vpc.private_subnets
+#   security_group_ids = [aws_security_group.vpc_endpoint.id]
+#   private_dns_enabled = true
+#   tags = {
+#     Name        = "${var.environment}-ecr-dkr-vpce"
+#     Environment = var.environment
+#   }
+# }
 
-# CloudWatch Logs VPC Endpoint
-resource "aws_vpc_endpoint" "logs" {
-  vpc_id            = module.vpc.vpc_id
-  service_name      = "com.amazonaws.${var.aws_region}.logs"
-  vpc_endpoint_type = "Interface"
-  subnet_ids         = module.vpc.private_subnets
-  security_group_ids = [aws_security_group.vpc_endpoint.id]
-  private_dns_enabled = true
-  tags = {
-    Name        = "${var.environment}-logs-vpce"
-    Environment = var.environment
-  }
-}
+# CloudWatch Logs VPC Endpoint (削除: コスト削減 -$22.5/月)
+# resource "aws_vpc_endpoint" "logs" {
+#   vpc_id            = module.vpc.vpc_id
+#   service_name      = "com.amazonaws.${var.aws_region}.logs"
+#   vpc_endpoint_type = "Interface"
+#   subnet_ids         = module.vpc.private_subnets
+#   security_group_ids = [aws_security_group.vpc_endpoint.id]
+#   private_dns_enabled = true
+#   tags = {
+#     Name        = "${var.environment}-logs-vpce"
+#     Environment = var.environment
+#   }
+# }
 
 # The following S3 Gateway VPC Endpoint block is removed as it's now managed by the VPC module
 # Restore the external definition

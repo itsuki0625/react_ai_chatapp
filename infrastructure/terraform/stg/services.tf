@@ -41,7 +41,7 @@ resource "aws_ecs_service" "backend" {
   name            = "${var.environment}-api-service"
   cluster         = aws_ecs_cluster.backend.id
   task_definition = aws_ecs_task_definition.backend.arn
-  desired_count   = 1
+  desired_count   = 0  # オンデマンド運用: 通常は停止
   launch_type     = "FARGATE"
   platform_version = "LATEST"
   network_configuration {
@@ -54,7 +54,7 @@ resource "aws_ecs_service" "backend" {
     container_name   = "backend"
     container_port   = 5050
   }
-  depends_on = [ aws_lb_listener.backend_http ]
+  depends_on = [ aws_lb_listener.main_http ]
 }
 
 # Frontend task definition
@@ -100,7 +100,7 @@ resource "aws_ecs_service" "frontend" {
   name            = "${var.environment}-front-service"
   cluster         = aws_ecs_cluster.frontend.id
   task_definition = aws_ecs_task_definition.frontend.arn
-  desired_count   = 1
+  desired_count   = 0  # オンデマンド運用: 通常は停止
   launch_type     = "FARGATE"
   platform_version = "LATEST"
   network_configuration {
@@ -113,5 +113,5 @@ resource "aws_ecs_service" "frontend" {
     container_name   = "frontend"
     container_port   = 3000
   }
-  depends_on = [ aws_lb_listener.frontend_http ]
+  depends_on = [ aws_lb_listener.main_http ]
 } 
