@@ -36,20 +36,23 @@ jobs:
         id: build-image
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
-          IMAGE_URI="${REGISTRY}/stg-backend:latest"
-          echo "Building image: $IMAGE_URI"
+          IMAGE_URI_LATEST="${REGISTRY}/stg-backend:latest"
+          IMAGE_URI_STG="${REGISTRY}/stg-backend:stg"
+          echo "Building image: $IMAGE_URI_LATEST"
           docker build \
             --file backend/Dockerfile.stg \
-            --tag  $IMAGE_URI \
+            --tag  $IMAGE_URI_LATEST \
+            --tag  $IMAGE_URI_STG \
             backend
           # デバッグ出力を追加
-          echo "Setting output: latest_image_uri=$IMAGE_URI"
-          echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "Setting output: latest_image_uri=$IMAGE_URI_LATEST"
+          echo "latest_image_uri=$IMAGE_URI_LATEST" >> $GITHUB_OUTPUT
 
       - name: Push STG backend to ECR
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
           docker push ${REGISTRY}/stg-backend:latest
+          docker push ${REGISTRY}/stg-backend:stg
           
       - name: Verify output value
         run: |
@@ -80,20 +83,23 @@ jobs:
         id: build-image
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
-          IMAGE_URI="${REGISTRY}/stg-frontend:latest"
-          echo "Building image: $IMAGE_URI"
+          IMAGE_URI_LATEST="${REGISTRY}/stg-frontend:latest"
+          IMAGE_URI_STG="${REGISTRY}/stg-frontend:stg"
+          echo "Building image: $IMAGE_URI_LATEST"
           docker build \
             --file study-support-app/Dockerfile.stg \
-            --tag  $IMAGE_URI \
+            --tag  $IMAGE_URI_LATEST \
+            --tag  $IMAGE_URI_STG \
             study-support-app
           # デバッグ出力を追加
-          echo "Setting output: latest_image_uri=$IMAGE_URI"
-          echo "latest_image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "Setting output: latest_image_uri=$IMAGE_URI_LATEST"
+          echo "latest_image_uri=$IMAGE_URI_LATEST" >> $GITHUB_OUTPUT
 
       - name: Push STG frontend to ECR
         run: |
           REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
           docker push ${REGISTRY}/stg-frontend:latest
+          docker push ${REGISTRY}/stg-frontend:stg
           
       - name: Verify output value
         run: |
