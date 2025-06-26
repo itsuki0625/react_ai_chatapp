@@ -14,17 +14,22 @@ export default auth((req) => {
 
   // --- RefreshAccessTokenError の処理を改善 ---
   if (authObj?.error === "RefreshAccessTokenError") {
-    console.log(`[Middleware] RefreshAccessTokenError detected. Redirecting to login with session_expired.`);
-    
-    // 既にログインページで session_expired エラーパラメータがある場合は、無限ループを防ぐ
-    if (pathname === '/login' && searchParams.get('error') === 'session_expired') {
-      console.log('[Middleware] Already on login page with session_expired, allowing through');
-      return NextResponse.next();
+    console.log(`[Middleware] RefreshAccessTokenError detected on path: ${pathname}.`);
+
+    let response;
+    const loginUrl = new URL('/login?error=session_expired', nextUrl.origin);
+
+    // ログインページにいるかどうかで処理を分岐
+    if (nextUrl.pathname === '/login') {
+      console.log('[Middleware] Already on login page, not redirecting again.');
+      // ログインページへのリクエストは許可
+      response = NextResponse.next();
+    } else {
+      console.log('[Middleware] Not on login page, redirecting.');
+      // ログインページにリダイレクト
+      response = NextResponse.redirect(loginUrl);
     }
-    
-    // セッションCookieをクリアしてログインページにリダイレクト
-    const response = NextResponse.redirect(new URL('/login?error=session_expired', nextUrl.origin));
-    
+
     // NextAuthのセッションCookieを削除
     const cookiesToDelete = [
       'next-auth.session-token',
@@ -34,7 +39,10 @@ export default auth((req) => {
     ];
     
     cookiesToDelete.forEach(cookieName => {
-      response.cookies.delete(cookieName);
+      response.cookies.delete({
+        name: cookieName,
+        path: '/',
+      });
     });
     
     return response;

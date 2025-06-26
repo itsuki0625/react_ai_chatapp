@@ -1,10 +1,11 @@
+'use client';
+
 import React, { createContext, useReducer, useContext, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
-import { ChatState, ChatAction as OriginalChatAction, ChatMessage, ChatSubmitRequest, ChatTypeValue, ChatTypeEnum, ChatSession, MessageSender, ChatSessionStatus } from '@/types/chat'; // ChatActionをOriginalChatActionとしてインポート
+import { ChatState, ChatAction as OriginalChatAction, ChatMessage, ChatSubmitRequest, ChatTypeValue, ChatTypeEnum, ChatSession, MessageSender, ChatSessionStatus } from '@/types/chat';
 import { useChatWebSocket, WebSocketMessage } from '@/hooks/useChatWebSocket';
 import { v4 as uuidv4 } from 'uuid';
-import { apiClient } from '@/lib/api-client';
-import { chatApi } from '@/lib/api-client';
-import { useSession } from "next-auth/react"; // Added useSession
+import { apiClient, chatApi } from '@/lib/api-client';
+import { useSession } from "next-auth/react";
 
 // OriginalChatAction から START_NEW_CHAT_SESSION を除外する
 type OriginalChatActionWithoutStartNew = Exclude<OriginalChatAction, { type: 'START_NEW_CHAT_SESSION' }>;
@@ -213,7 +214,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     switch (wsMessage.type) {
       case 'chunk':
         if (wsMessage.content && wsMessage.content.trim().length > 0) {
-          const streamingAiMsgIndex = state.messages.findIndex(m => m.sender === 'AI' && m.isStreaming);
+          const streamingAiMsgIndex = state.messages.findIndex((m: ChatMessage) => m.sender === 'AI' && m.isStreaming);
           if (streamingAiMsgIndex !== -1) {
             aiMessage = {
               ...state.messages[streamingAiMsgIndex],
@@ -234,11 +235,11 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         }
         break;
       case 'done':
-        const finalAiMsgIndex = state.messages.findIndex(m => m.sender === 'AI' && m.isStreaming && ((wsMessage as any).id ? m.id === (wsMessage as any).id : (wsMessage as any).message?.id ? m.id === (wsMessage as any).message.id : true) ); 
+        const finalAiMsgIndex = state.messages.findIndex((m: ChatMessage) => m.sender === 'AI' && m.isStreaming && ((wsMessage as any).id ? m.id === (wsMessage as any).id : (wsMessage as any).message?.id ? m.id === (wsMessage as any).message.id : true) ); 
         if (finalAiMsgIndex !== -1) {
           const finalMessage = state.messages[finalAiMsgIndex];
           if (!finalMessage.content || finalMessage.content.trim().length === 0) {
-            const filteredMessages = state.messages.filter((_, index) => index !== finalAiMsgIndex);
+            const filteredMessages = state.messages.filter((_: ChatMessage, index: number) => index !== finalAiMsgIndex);
             dispatch({ type: 'FETCH_HISTORY_SUCCESS', payload: filteredMessages });
           } else {
             aiMessage = {
@@ -278,24 +279,20 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   }, [state.sessionId, state.messages, dispatch]);
 
   const handleWebSocketError = useCallback((error: Event | Error) => {
-    console.error("WebSocket Provider Error Callback:", error); // Clarified log
-    // dispatch({ type: 'SEND_MESSAGE_FAILURE', payload: 'WebSocket connection error' }); // Avoid this, as it's not a message send failure
-    // Potentially dispatch a specific WebSocket error action
+    console.error("WebSocket Provider Error Callback:", error);
   }, []); 
   
   const handleWebSocketOpen = useCallback(() => {
     console.log("WebSocket Provider Open Callback: Connection Opened");
-    // setIsConnected(true); // Removed, wsIsConnected handles this
   }, []);
 
   const handleWebSocketClose = useCallback((event: CloseEvent) => {
     console.log("WebSocket Provider Close Callback: Connection Closed", event.reason, event.code);
-    // setIsConnected(false); // Removed, wsIsConnected handles this
   }, []);
 
   const { sendMessage: wsSendMessage, isConnected: wsIsConnected, webSocketRef: actualWebSocketRef } = useChatWebSocket({
     socketUrl: socketUrl,
-    token: authToken, // authToken from useSession will control connection
+    token: authToken,
     onMessageReceived: handleWebSocketMessage,
     onError: handleWebSocketError,
     onOpen: handleWebSocketOpen,
@@ -303,33 +300,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   });
 
   useEffect(() => {
-      // setIsConnected(wsIsConnected); // Removed, using wsIsConnected directly in context
       dispatch({ type: 'SET_WEBSOCKET_CONNECTED', payload: wsIsConnected });
   }, [wsIsConnected, dispatch]);
-
-  // useEffect for managing WebSocket connection based on authToken and component lifecycle
-  // This useEffect block is removed as useChatWebSocket now handles connection based on its token prop.
-  /*
-  useEffect(() => {
-    const currentWebSocket = actualWebSocketRef.current;
-    if (authToken) {
-      console.log(`[ChatContext Auth Effect - Token Based] AuthToken is present. WebSocket connection should be managed by useChatWebSocket based on token presence.`);
-    } else {
-      console.log(`[ChatContext Auth Effect - Token Based] AuthToken is NOT present. WebSocket should be disconnected by useChatWebSocket.`);
-    }
-
-    return () => {
-      console.log("[ChatContext Auth Effect - Token Based] ChatProvider is unmounting. Closing WebSocket.");
-      if (currentWebSocket && currentWebSocket.readyState === WebSocket.OPEN) { // Check if open before closing
-        currentWebSocket.close(1000, 'ChatProvider unmounted by ChatContext cleanup');
-      }
-    };
-  }, [authToken, actualWebSocketRef]);
-  */
-
-  // const connectWebSocket = useCallback(() => { ... }); // Removed
-  // const disconnectWebSocket = useCallback(() => { ... }); // Removed
-  // useEffect(() => { const cleanup = connectWebSocket(); ... }); // Removed
 
   const sendMessage = useCallback(async (messageContent: string) => {
     if (!authToken) {
@@ -397,13 +369,13 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     }
     if (!chatType) {
       console.error('startNewChat: Chat type missing.');
-      throw new Error('Chat type required to start new chat.');
+      throw new Error('Chat type is required to start new chat.');
     }
 
     try {
-      console.log(`[ChatContext] Attempting to create new session for type: ${chatType}`);
+      console.log(`[ChatContext] Starting new chat for type: ${chatType}`);
       const response = await apiClient.post<ChatSession>(
-        '/api/v1/chat/sessions/',
+        '/api/v1/chat/sessions',
         { chat_type: chatType },
         { headers: { Authorization: `Bearer ${authToken}` } }
       );
@@ -495,7 +467,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   const archiveSession = useCallback(async (sessionId: string): Promise<void> => {
     if (!authToken) { 
       console.error("Archive: No auth token provided.");
-      dispatch({ type: 'SEND_MESSAGE_FAILURE', payload: "認証トークンがありません。アーカイブできません。" }); // Example of specific error dispatch
+      dispatch({ type: 'SEND_MESSAGE_FAILURE', payload: "認証トークンがありません。アーカイブできません。" });
       return Promise.reject(new Error("Authentication token not available.")); 
     }
     try {
@@ -525,7 +497,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   const unarchiveSession = useCallback(async (sessionId: string): Promise<void> => {
     if (!authToken) { 
       console.error("Unarchive: No auth token provided.");
-      dispatch({ type: 'SEND_MESSAGE_FAILURE', payload: "認証トークンがありません。アーカイブ解除できません。" }); // Example
+      dispatch({ type: 'SEND_MESSAGE_FAILURE', payload: "認証トークンがありません。アーカイブ解除できません。" });
       return Promise.reject(new Error("Authentication token not available."));
     }
     try {
@@ -540,10 +512,6 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [authToken, dispatch, state.currentChatType, fetchSessions]);
 
-  // useEffect(() => {
-  //   setAuthToken(initialAuthToken); // Removed, authToken now comes from useSession
-  // }, [initialAuthToken]);
-
   useEffect(() => {
     if (state.currentChatType && authToken) {
       fetchSessions(state.currentChatType);
@@ -552,29 +520,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [state.currentChatType, authToken, fetchSessions]);
 
-  // }, [state.sessionId, authToken, fetchMessages, state.justStartedNewChat, dispatch]);
-
-  /*  // WebSocketの接続試行とクリーンアップを行うuseEffectをコメントアウト
-  useEffect(() => {
-    if (authToken && state.currentChatType) {
-        console.log("Attempting to connect WebSocket...");
-        // connectWebSocket(); // Removed
-    } else {
-        console.log("WebSocket not connecting: authToken or currentChatType missing.");
-        // disconnectWebSocket(); // Removed
-    }
-    return () => {
-        console.log("Cleaning up WebSocket connection...");
-        // disconnectWebSocket(); // Removed
-    };
-  }, [authToken, state.currentChatType]); // Removed connectWebSocket, disconnectWebSocket from dependencies
-  */
-
   const contextValue = useMemo(() => ({
     ...state,
     dispatch,
-    // connectWebSocket, // Removed
-    // disconnectWebSocket, // Removed
     sendMessage,
     clearChat,
     changeChatType,
@@ -585,13 +533,13 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     fetchArchivedSessions,
     unarchiveSession,
     authToken,
-    isWebSocketConnected: wsIsConnected, // Use wsIsConnected from useChatWebSocket
+    isWebSocketConnected: wsIsConnected,
   }), [
     state, dispatch, sendMessage, 
     clearChat, changeChatType, startNewChat, 
     fetchMessages, fetchSessions, archiveSession, 
     fetchArchivedSessions, unarchiveSession,
-    authToken, wsIsConnected // Added wsIsConnected to dependencies
+    authToken, wsIsConnected
   ]);
 
   return <ChatContext.Provider value={contextValue}>{children}</ChatContext.Provider>;
