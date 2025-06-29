@@ -14,7 +14,7 @@ export const Navbar = () => {
       <div className="container mx-auto px-6 py-3">
         <div className="flex justify-between">
           <div className="flex items-center">
-            <Link href={isAdmin ? "/admin/dashboard" : "/dashboard"} className="text-xl font-bold text-gray-800">
+            <Link href={isAdmin ? "/admin/dashboard" : "/student/dashboard"} className="text-xl font-bold text-gray-800">
               Study Support
             </Link>
           </div>

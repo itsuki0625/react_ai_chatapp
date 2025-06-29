@@ -1,7 +1,7 @@
 import NextAuth, { DefaultSession, DefaultUser } from "next-auth";
 import { JWT, DefaultJWT } from "next-auth/jwt";
 
-// Userインターフェースをauth.tsのauthorizeの返り値に合わせる
+// リファクタリングされた認証モジュールの型定義に合わせて拡張
 declare module "next-auth" {
   interface User extends DefaultUser {
     role?: string[] | string; // authorizeからの入力は配列か文字列の可能性

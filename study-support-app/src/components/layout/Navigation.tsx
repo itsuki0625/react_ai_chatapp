@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -35,50 +35,50 @@ interface NavItem {
 
 // フリーユーザー向けナビゲーション
 const freeUserNavigation: NavItem[] = [
-  { name: 'ダッシュボード', href: '/dashboard', icon: Home },
+  { name: 'ダッシュボード', href: '/student/dashboard', icon: Home },
   {
     name: 'AIチャット',
-    href: '/chat',
+    href: '/student/chat',
     icon: BrainCircuit,
     expanded: false,
     requiresPaid: true,
     disabled: true,
     children: [
-      { name: '自己分析AI', href: '/chat/self-analysis', icon: MessageSquare, requiresPaid: true, disabled: true },
-      { name: '総合型選抜AI', href: '/chat/admission', icon: GraduationCap, requiresPaid: true, disabled: true },
-      { name: '学習支援AI', href: '/chat/study-support', icon: BookOpen, requiresPaid: true, disabled: true },
-      { name: 'FAQチャット', href: '/chat/faq', icon: CircleHelp, requiresPaid: true, disabled: true },
+      { name: '自己分析AI', href: '/student/chat/self-analysis', icon: MessageSquare, requiresPaid: true, disabled: true },
+      { name: '総合型選抜AI', href: '/student/chat/admission', icon: GraduationCap, requiresPaid: true, disabled: true },
+      { name: '学習支援AI', href: '/student/chat/study-support', icon: BookOpen, requiresPaid: true, disabled: true },
+      { name: 'FAQチャット', href: '/student/chat/faq', icon: CircleHelp, requiresPaid: true, disabled: true },
     ] 
   },
-  { name: 'コミュニケーション', href: '/communication', icon: Users, requiresPaid: true },
-  { name: '志望校管理', href: '/application', icon: User },
-  { name: '志望理由書', href: '/statement', icon: FileText, requiresPaid: true },
-  { name: 'コンテンツ', href: '/contents', icon: SquarePlay, requiresPaid: true },
-  { name: '設定', href: '/settings', icon: Settings },
-  { name: 'プラン', href: '/subscription', icon: DollarSign },
+  { name: 'コミュニケーション', href: '/student/communication', icon: Users, requiresPaid: true },
+  { name: '志望校管理', href: '/student/application', icon: User },
+  { name: '志望理由書', href: '/student/statement', icon: FileText, requiresPaid: true },
+  { name: 'コンテンツ', href: '/student/contents', icon: SquarePlay, requiresPaid: true },
+  { name: '設定', href: '/student/settings', icon: Settings },
+  { name: 'プラン', href: '/student/subscription', icon: DollarSign },
 ];
 
 // 有料ユーザー向けナビゲーション
 const paidUserNavigation: NavItem[] = [
-  { name: 'ダッシュボード', href: '/dashboard', icon: Home },
+  { name: 'ダッシュボード', href: '/student/dashboard', icon: Home },
   {
     name: 'AIチャット',
-    href: '/chat',
+    href: '/student/chat',
     icon: BrainCircuit,
     expanded: false,
     children: [
-      { name: '自己分析AI', href: '/chat/self-analysis', icon: MessageSquare },
-      { name: '総合型選抜AI', href: '/chat/admission', icon: GraduationCap },
-      { name: '学習支援AI', href: '/chat/study-support', icon: BookOpen },
-      { name: 'FAQチャット', href: '/chat/faq', icon: CircleHelp },
+      { name: '自己分析AI', href: '/student/chat/self-analysis', icon: MessageSquare },
+      { name: '総合型選抜AI', href: '/student/chat/admission', icon: GraduationCap },
+      { name: '学習支援AI', href: '/student/chat/study-support', icon: BookOpen },
+      { name: 'FAQチャット', href: '/student/chat/faq', icon: CircleHelp },
     ] 
   },
-  { name: 'コミュニケーション', href: '/communication', icon: Users },
-  { name: '志望校管理', href: '/application', icon: User },
-  { name: '志望理由書', href: '/statement', icon: FileText },
-  { name: 'コンテンツ', href: '/contents', icon: SquarePlay },
-  { name: '設定', href: '/settings', icon: Settings },
-  { name: 'プラン', href: '/subscription', icon: DollarSign },
+  { name: 'コミュニケーション', href: '/student/communication', icon: Users },
+  { name: '志望校管理', href: '/student/application', icon: User },
+  { name: '志望理由書', href: '/student/statement', icon: FileText },
+  { name: 'コンテンツ', href: '/student/contents', icon: SquarePlay },
+  { name: '設定', href: '/student/settings', icon: Settings },
+  { name: 'プラン', href: '/student/subscription', icon: DollarSign },
 ];
 
 const adminNavigation: NavItem[] = [
@@ -104,18 +104,39 @@ export const Navigation = () => {
 
   // ユーザーの権限判定（完全に権限ベース）
   const isAdmin = session?.user?.isAdmin;
-  const userPermissions = session?.user?.permissions || [];
+  const userPermissions = useMemo(() => session?.user?.permissions || [], [session?.user?.permissions]);
   
-  // 権限ベースで機能利用可否を判定
-  const canUseCommunication = userPermissions.includes('communication_read') || userPermissions.includes('communication_write');
-  const canUseChat = userPermissions.includes('chat_session_read') || userPermissions.includes('chat_message_send');
-  const canUseStatement = userPermissions.includes('statement_review_request') || userPermissions.includes('statement_manage_own');
-  const canUseContent = userPermissions.includes('content_read');
-  const canUseDesiredSchool = userPermissions.includes('desired_school_manage_own') || userPermissions.includes('application_read');
+  // 権限ベースで機能利用可否を判定（useMemoで安定化）
+  const canUseCommunication = useMemo(() => 
+    userPermissions.includes('communication_read') || userPermissions.includes('communication_write'), 
+    [userPermissions]
+  );
+  const canUseChat = useMemo(() => 
+    userPermissions.includes('chat_session_read') || userPermissions.includes('chat_message_send'), 
+    [userPermissions]
+  );
+  const canUseStatement = useMemo(() => 
+    userPermissions.includes('statement_review_request') || userPermissions.includes('statement_manage_own'), 
+    [userPermissions]
+  );
+  const canUseContent = useMemo(() => 
+    userPermissions.includes('content_read'), 
+    [userPermissions]
+  );
+  const canUseDesiredSchool = useMemo(() => 
+    userPermissions.includes('desired_school_manage_own') || userPermissions.includes('application_read'), 
+    [userPermissions]
+  );
   
   // 表示用の判定（後方互換性のため）
-  const isPaidUser = canUseCommunication || canUseChat || canUseStatement;
-  const isPremiumUser = userPermissions.includes('statement_review_request');
+  const isPaidUser = useMemo(() => 
+    canUseCommunication || canUseChat || canUseStatement, 
+    [canUseCommunication, canUseChat, canUseStatement]
+  );
+  const isPremiumUser = useMemo(() => 
+    userPermissions.includes('statement_review_request'), 
+    [userPermissions]
+  );
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -130,7 +151,7 @@ export const Navigation = () => {
     } else if (status === 'unauthenticated') {
       setCurrentNavItems([]);
     }
-  }, [session, status, isAdmin, isPaidUser, isPremiumUser, userPermissions]);
+  }, [status, isAdmin, isPaidUser]);
 
   const [navItemsState, setNavItemsState] = useState<NavItem[]>([]);
 
@@ -138,13 +159,13 @@ export const Navigation = () => {
     setNavItemsState(currentNavItems.map(item => ({ ...item, expanded: item.expanded ?? false })));
   }, [currentNavItems]);
 
-  const toggleExpand = (index: number) => {
+  const toggleExpand = useCallback((index: number) => {
     setNavItemsState(prevItems =>
       prevItems.map((item, i) =>
         i === index ? { ...item, expanded: !item.expanded } : item
       )
     );
-  };
+  }, []);
 
   const { data: notificationsData } = useQuery<{
     unread: number;
@@ -169,23 +190,23 @@ export const Navigation = () => {
   const unreadCount = notificationsData?.unread || 0;
 
   // 制限されたアイテムのクリックハンドラー
-  const handleRestrictedClick = (e: React.MouseEvent, item: NavItem) => {
+  const handleRestrictedClick = useCallback((e: React.MouseEvent, item: NavItem) => {
     if (!isAdmin) {
       let restricted = false;
-      if (item.href === '/communication' && !canUseCommunication) restricted = true;
-      else if (item.href === '/chat' && !canUseChat) restricted = true;
-      else if (item.href === '/statement' && !canUseStatement) restricted = true;
-      else if (item.href === '/contents' && !canUseContent) restricted = true;
-      else if (item.href === '/application' && !canUseDesiredSchool) restricted = true;
+      if (item.href === '/student/communication' && !canUseCommunication) restricted = true;
+      else if (item.href === '/student/chat' && !canUseChat) restricted = true;
+      else if (item.href === '/student/statement' && !canUseStatement) restricted = true;
+      else if (item.href === '/student/contents' && !canUseContent) restricted = true;
+      else if (item.href === '/student/application' && !canUseDesiredSchool) restricted = true;
       else if (item.requiresPaid && !isPaidUser) restricted = true;
       else if (item.requiresPremium && !isPremiumUser) restricted = true;
       
       if (restricted) {
         e.preventDefault();
-        router.push('/subscription');
+        router.push('/student/subscription');
       }
     }
-  };
+  }, [isAdmin, canUseCommunication, canUseChat, canUseStatement, canUseContent, canUseDesiredSchool, isPaidUser, isPremiumUser, router]);
 
   if (status === 'loading') {
     return <div>Loading...</div>;
@@ -218,11 +239,11 @@ export const Navigation = () => {
           // 権限ベースで制限判定
           let isRestricted = false;
           if (!isAdmin) {
-            if (item.href === '/communication' && !canUseCommunication) isRestricted = true;
-            else if (item.href === '/chat' && !canUseChat) isRestricted = true;
-            else if (item.href === '/statement' && !canUseStatement) isRestricted = true;
-            else if (item.href === '/contents' && !canUseContent) isRestricted = true;
-            else if (item.href === '/application' && !canUseDesiredSchool) isRestricted = true;
+            if (item.href === '/student/communication' && !canUseCommunication) isRestricted = true;
+            else if (item.href === '/student/chat' && !canUseChat) isRestricted = true;
+            else if (item.href === '/student/statement' && !canUseStatement) isRestricted = true;
+            else if (item.href === '/student/contents' && !canUseContent) isRestricted = true;
+            else if (item.href === '/student/application' && !canUseDesiredSchool) isRestricted = true;
             else if (item.requiresPaid && !isPaidUser) isRestricted = true;
             else if (item.requiresPremium && !isPremiumUser) isRestricted = true;
           }
@@ -233,9 +254,9 @@ export const Navigation = () => {
                 <>
                   <button
                     onClick={() => {
-                      if (isRestricted) {
-                        router.push('/subscription');
-                      } else {
+                                          if (isRestricted) {
+                      router.push('/student/subscription');
+                    } else {
                         toggleExpand(index);
                       }
                     }}
@@ -290,7 +311,7 @@ export const Navigation = () => {
                         return (
                           <Link
                             key={child.name}
-                            href={isChildRestricted ? '/subscription' : child.href}
+                            href={isChildRestricted ? '/student/subscription' : child.href}
                             onClick={(e) => handleRestrictedClick(e, child)}
                             className={`
                               flex items-center px-4 py-2 text-sm font-medium rounded-md
@@ -317,7 +338,7 @@ export const Navigation = () => {
                 </>
               ) : (
                 <Link
-                  href={isRestricted ? '/subscription' : item.href}
+                                      href={isRestricted ? '/student/subscription' : item.href}
                   onClick={(e) => handleRestrictedClick(e, item)}
                   className={`
                     flex items-center px-4 py-2 text-sm font-medium rounded-md
@@ -357,7 +378,7 @@ export const Navigation = () => {
             <p className="text-xs text-blue-700 mb-2">
               AIチャットや志望校管理などの機能をご利用いただくには、有料プランへのアップグレードが必要です。
             </p>
-            <Link href="/subscription">
+                          <Link href="/student/subscription">
               <button className="w-full bg-blue-600 text-white text-xs py-1.5 px-3 rounded-md hover:bg-blue-700 transition-colors">
                 プランを確認する
               </button>

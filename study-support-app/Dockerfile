@@ -8,6 +8,7 @@ COPY package*.json ./
 
 # npmのキャッシュをクリアしてからインストールを実行
 RUN npm cache clean --force && \
+    rm -rf node_modules && \
     npm install --legacy-peer-deps && \
     npm install -g next
 

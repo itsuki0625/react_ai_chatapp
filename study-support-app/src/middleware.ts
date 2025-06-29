@@ -14,17 +14,22 @@ export default auth((req) => {
 
   // --- RefreshAccessTokenError の処理を改善 ---
   if (authObj?.error === "RefreshAccessTokenError") {
-    console.log(`[Middleware] RefreshAccessTokenError detected. Redirecting to login with session_expired.`);
-    
-    // 既にログインページで session_expired エラーパラメータがある場合は、無限ループを防ぐ
-    if (pathname === '/login' && searchParams.get('error') === 'session_expired') {
-      console.log('[Middleware] Already on login page with session_expired, allowing through');
-      return NextResponse.next();
+    console.log(`[Middleware] RefreshAccessTokenError detected on path: ${pathname}.`);
+
+    let response;
+    const loginUrl = new URL('/login?error=session_expired', nextUrl.origin);
+
+    // ログインページにいるかどうかで処理を分岐
+    if (nextUrl.pathname === '/login') {
+      console.log('[Middleware] Already on login page, not redirecting again.');
+      // ログインページへのリクエストは許可
+      response = NextResponse.next();
+    } else {
+      console.log('[Middleware] Not on login page, redirecting.');
+      // ログインページにリダイレクト
+      response = NextResponse.redirect(loginUrl);
     }
-    
-    // セッションCookieをクリアしてログインページにリダイレクト
-    const response = NextResponse.redirect(new URL('/login?error=session_expired', nextUrl.origin));
-    
+
     // NextAuthのセッションCookieを削除
     const cookiesToDelete = [
       'next-auth.session-token',
@@ -34,7 +39,10 @@ export default auth((req) => {
     ];
     
     cookiesToDelete.forEach(cookieName => {
-      response.cookies.delete(cookieName);
+      response.cookies.delete({
+        name: cookieName,
+        path: '/',
+      });
     });
     
     return response;
@@ -42,18 +50,18 @@ export default auth((req) => {
 
   // --- アクセス制御対象ルートの定義 ---
   const protectedRoutes = [
-    '/dashboard',
-    '/settings',
+    '/student/dashboard',
+    '/student/settings',
     '/admin',
-    '/contents',
-    '/chat',
-    '/faq',
-    '/statement',
-    '/application',
-    '/subscription'
+    '/student/contents',
+    '/student/chat',
+    '/student/faq',
+    '/student/statement',
+    '/student/application',
+    '/student/subscription'
   ];
   
-  const subscriptionRequiredRoutes = ['/contents', '/chat', '/faq', '/statement'];
+  const subscriptionRequiredRoutes = ['/student/contents', '/student/chat', '/student/faq', '/student/statement'];
 
   const isAdminRoute = pathname.startsWith('/admin');
   const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route));
@@ -71,13 +79,20 @@ export default auth((req) => {
 
   // --- 2. 認証済みユーザーの処理 ---
   if (isLoggedIn) {
-    // 2a. ステータスページへのアクセスは常に許可
+    // 2a. 古いダッシュボードパスのリダイレクト
+    if (pathname === '/dashboard' || pathname === '/chat' || pathname === '/settings' || pathname === '/contents' || pathname === '/application' || pathname === '/statement' || pathname === '/subscription') {
+      const newPath = `/student${pathname}`;
+      console.log(`[Middleware] Redirecting old path ${pathname} to new path ${newPath}`);
+      return NextResponse.redirect(new URL(newPath, nextUrl.origin));
+    }
+
+    // 2b. ステータスページへのアクセスは常に許可
     if (isStatusPageRoute) {
       console.log(`[Middleware] Allowing access to status page: ${pathname}`);
       return NextResponse.next();
     }
 
-    // 2b. アカウントステータスに基づくリダイレクト
+    // 2c. アカウントステータスに基づくリダイレクト
     if (userStatus === 'pending' && !isStatusPageRoute) {
       console.log(`[Middleware] Pending user accessing non-status page ${pathname}. Redirecting to /pending-activation.`);
       return NextResponse.redirect(new URL('/pending-activation', nextUrl.origin));
@@ -88,16 +103,16 @@ export default auth((req) => {
       return NextResponse.redirect(new URL('/inactive-account', nextUrl.origin));
     }
 
-    // 2c. サブスクリプション必須ルートのチェック
+    // 2d. サブスクリプション必須ルートのチェック
     if (isSubscriptionRequiredRoute && userStatus !== 'active') {
-      console.log(`[Middleware] Non-active user (status: ${userStatus}) accessing subscription required route ${pathname}. Redirecting to /subscription/plans.`);
-      return NextResponse.redirect(new URL('/subscription/plans', nextUrl.origin));
+      console.log(`[Middleware] Non-active user (status: ${userStatus}) accessing subscription required route ${pathname}. Redirecting to /student/subscription/plans.`);
+      return NextResponse.redirect(new URL('/student/subscription/plans', nextUrl.origin));
     }
 
-    // 2d. 管理者関連のチェック
+    // 2e. 管理者関連のチェック
     if (isAdminRoute && !isAdmin) {
-      console.log(`[Middleware] Non-admin access to /admin. Redirecting to dashboard.`);
-      return NextResponse.redirect(new URL('/dashboard', nextUrl.origin));
+      console.log(`[Middleware] Non-admin access to /admin. Redirecting to student dashboard.`);
+      return NextResponse.redirect(new URL('/student/dashboard', nextUrl.origin));
     }
     
     if (isAdmin && !isAdminRoute && !isAuthPage && !isStatusPageRoute) {
@@ -105,7 +120,7 @@ export default auth((req) => {
       return NextResponse.redirect(new URL('/admin/dashboard', nextUrl.origin));
     }
 
-    // 2e. 認証済みユーザーがログイン/サインアップページにアクセスした場合
+    // 2f. 認証済みユーザーがログイン/サインアップページにアクセスした場合
     if (isAuthPage) {
       // ログアウト直後またはセッションエラー時はログインページへのアクセスを許可
       if (pathname === '/login' && (isLoggedOut || searchParams.get('error') === 'session_expired')) {
@@ -113,7 +128,7 @@ export default auth((req) => {
         return NextResponse.next();
       }
       
-      const redirectUrl = isAdmin ? '/admin/dashboard' : '/dashboard';
+      const redirectUrl = isAdmin ? '/admin/dashboard' : '/student/dashboard';
       console.log(`[Middleware] Authenticated user accessing auth page ${pathname}. Redirecting to ${redirectUrl}.`);
       return NextResponse.redirect(new URL(redirectUrl, nextUrl.origin));
     }

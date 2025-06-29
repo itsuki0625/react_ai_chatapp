@@ -37,7 +37,7 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
       `}>
         <div className="p-6">
           <div className="flex items-center justify-between">
-            <Link href="/dashboard">
+            <Link href="/student/dashboard">
               <Image
                 src="/logo.svg"
                 alt="SmartAO Logo"
