@@ -103,7 +103,7 @@ const ChatSidebar: React.FC = () => {
 
     // Check if already selected to prevent unnecessary navigation
     // Also check if the current pathname already reflects this selection
-    const targetPath = `/chat/${chatType.toLowerCase()}/${sessionId}`;
+    const targetPath = `/student/chat/${chatType.toLowerCase()}/${sessionId}`;
     if (currentChatType === chatType && currentSessionIdFromContext === sessionId && pathname === targetPath) {
       console.log(`[ChatSidebar handleSelectSession] Session ${sessionId} of type ${chatType} is already active and URL matches (${pathname}). No action needed.`);
       return;
@@ -134,7 +134,7 @@ const ChatSidebar: React.FC = () => {
         const newSessionId = await startNewChat(currentChatType);
 
         if (newSessionId) {
-          const newPath = `/chat/${currentChatType.toLowerCase()}/${newSessionId}`;
+          const newPath = `/student/chat/${currentChatType.toLowerCase()}/${newSessionId}`;
           console.log(`[ChatSidebar][handleStartNewChat] Navigating to ${newPath}`);
           router.push(newPath);
         } else {

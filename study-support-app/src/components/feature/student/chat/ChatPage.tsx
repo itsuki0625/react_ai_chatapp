@@ -121,7 +121,7 @@ const useSessionSync = () => {
 
   // 新しいセッション作成時のURL更新
   const updateUrlForNewSession = useCallback((sessionId: string, chatType: string) => {
-    const newChatPath = `/chat/${chatType.toLowerCase()}/${sessionId}`;
+          const newChatPath = `/student/chat/${chatType.toLowerCase()}/${sessionId}`;
     router.replace(newChatPath);
   }, [router]);
 

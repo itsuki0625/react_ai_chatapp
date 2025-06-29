@@ -47,7 +47,7 @@ const SelfAnalysisSessionsPage: React.FC = () => {
   }, [authStatus, viewMode, fetchArchivedSessions]);
 
   const handleViewSession = (sessionId: string) => {
-    router.push(`/chat/self-analysis/${sessionId}`);
+    router.push(`/student/chat/self-analysis/${sessionId}`);
   };
 
   const handleArchiveSession = async (sessionId: string) => {
@@ -124,7 +124,7 @@ const SelfAnalysisSessionsPage: React.FC = () => {
             <div>
               <div className="flex items-center mb-4">
                 <button
-                  onClick={() => router.push('/chat/self-analysis')}
+                  onClick={() => router.push('/student/chat/self-analysis')}
                   className="mr-4 p-2 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
                 >
                   <ArrowLeft className="w-5 h-5" />
@@ -190,7 +190,7 @@ const SelfAnalysisSessionsPage: React.FC = () => {
               </p>
               {viewMode === 'active' && (
                 <button
-                  onClick={() => router.push('/chat/self-analysis')}
+                  onClick={() => router.push('/student/chat/self-analysis')}
                   className="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors duration-200"
                 >
                   新しい自己分析を開始

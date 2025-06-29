@@ -67,8 +67,8 @@ const GenericSessionsPage: React.FC<GenericSessionsPageProps> = ({ chatType }) =
           badgeColor: 'bg-gray-100 text-gray-800',
           iconBg: 'bg-gray-100',
           buttonBg: 'bg-gray-50 hover:bg-gray-100',
-          route: '/chat',
-          sessionRoute: (id: string) => `/chat/${id}`,
+          route: '/student/chat',
+          sessionRoute: (id: string) => `/student/chat/${id}`,
         };
       case 'self_analysis':
         return {
@@ -81,8 +81,8 @@ const GenericSessionsPage: React.FC<GenericSessionsPageProps> = ({ chatType }) =
           badgeColor: 'bg-blue-100 text-blue-800',
           iconBg: 'bg-blue-100',
           buttonBg: 'bg-blue-50 hover:bg-blue-100',
-          route: '/chat/self-analysis',
-          sessionRoute: (id: string) => `/chat/self-analysis/${id}`,
+              route: '/student/chat/self-analysis',
+    sessionRoute: (id: string) => `/student/chat/self-analysis/${id}`,
         };
       case 'admission':
         return {
@@ -95,8 +95,8 @@ const GenericSessionsPage: React.FC<GenericSessionsPageProps> = ({ chatType }) =
           badgeColor: 'bg-purple-100 text-purple-800',
           iconBg: 'bg-purple-100',
           buttonBg: 'bg-purple-50 hover:bg-purple-100',
-          route: '/chat/admission',
-          sessionRoute: (id: string) => `/chat/admission/${id}`,
+              route: '/student/chat/admission',
+    sessionRoute: (id: string) => `/student/chat/admission/${id}`,
         };
       case 'study_support':
         return {
@@ -109,8 +109,8 @@ const GenericSessionsPage: React.FC<GenericSessionsPageProps> = ({ chatType }) =
           badgeColor: 'bg-green-100 text-green-800',
           iconBg: 'bg-green-100',
           buttonBg: 'bg-green-50 hover:bg-green-100',
-          route: '/chat/study-support',
-          sessionRoute: (id: string) => `/chat/study-support/${id}`,
+              route: '/student/chat/study-support',
+    sessionRoute: (id: string) => `/student/chat/study-support/${id}`,
         };
       case 'faq':
         return {
@@ -123,8 +123,8 @@ const GenericSessionsPage: React.FC<GenericSessionsPageProps> = ({ chatType }) =
           badgeColor: 'bg-orange-100 text-orange-800',
           iconBg: 'bg-orange-100',
           buttonBg: 'bg-orange-50 hover:bg-orange-100',
-          route: '/chat/faq',
-          sessionRoute: (id: string) => `/chat/faq/${id}`,
+              route: '/student/chat/faq',
+    sessionRoute: (id: string) => `/student/chat/faq/${id}`,
         };
       default:
         return {
@@ -137,8 +137,8 @@ const GenericSessionsPage: React.FC<GenericSessionsPageProps> = ({ chatType }) =
           badgeColor: 'bg-gray-100 text-gray-800',
           iconBg: 'bg-gray-100',
           buttonBg: 'bg-gray-50 hover:bg-gray-100',
-          route: '/chat',
-          sessionRoute: (id: string) => `/chat/${id}`,
+          route: '/student/chat',
+          sessionRoute: (id: string) => `/student/chat/${id}`,
         };
     }
   };

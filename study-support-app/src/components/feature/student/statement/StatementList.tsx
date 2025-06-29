@@ -313,7 +313,7 @@ export const StatementList = () => {
               自分の強みや志望動機を整理して、魅力的な志望理由書を作成しましょう。
             </p>
             <button
-              onClick={() => router.push('/chat/self-analysis')}
+              onClick={() => router.push('/student/chat/self-analysis')}
               className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm"
             >
               自己分析AIを使ってみる

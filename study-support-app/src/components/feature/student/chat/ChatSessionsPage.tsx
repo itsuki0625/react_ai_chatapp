@@ -73,11 +73,11 @@ const ChatSessionsPage: React.FC = () => {
 
   const handleViewSession = (sessionId: string, chatType: ChatTypeValue) => {
     const chatTypeRoutes: Record<ChatTypeValue, string> = {
-      [ChatTypeEnum.GENERAL]: `/chat/${sessionId}`,
-      [ChatTypeEnum.SELF_ANALYSIS]: `/chat/self-analysis/${sessionId}`,
-      [ChatTypeEnum.ADMISSION]: `/chat/admission/${sessionId}`,
-      [ChatTypeEnum.STUDY_SUPPORT]: `/chat/study-support/${sessionId}`,
-      [ChatTypeEnum.FAQ]: `/chat/faq/${sessionId}`,
+          [ChatTypeEnum.GENERAL]: `/student/chat/${sessionId}`,
+    [ChatTypeEnum.SELF_ANALYSIS]: `/student/chat/self-analysis/${sessionId}`,
+    [ChatTypeEnum.ADMISSION]: `/student/chat/admission/${sessionId}`,
+    [ChatTypeEnum.STUDY_SUPPORT]: `/student/chat/study-support/${sessionId}`,
+    [ChatTypeEnum.FAQ]: `/student/chat/faq/${sessionId}`,
     };
     
     router.push(chatTypeRoutes[chatType]);

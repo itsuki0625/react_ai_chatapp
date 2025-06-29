@@ -249,22 +249,22 @@ export default function CommunicationPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3 mb-4">
-                  <Link href="/chat/self-analysis">
+                  <Link href="/student/chat/self-analysis">
                     <Button variant="outline" className="w-full justify-start">
                       自己分析AI
                     </Button>
                   </Link>
-                  <Link href="/chat/admission">
+                  <Link href="/student/chat/admission">
                     <Button variant="outline" className="w-full justify-start">
                       総合型選抜AI
                     </Button>
                   </Link>
-                  <Link href="/chat/study-support">
+                  <Link href="/student/chat/study-support">
                     <Button variant="outline" className="w-full justify-start">
                       学習支援AI
                     </Button>
                   </Link>
-                  <Link href="/chat/faq">
+                  <Link href="/student/chat/faq">
                     <Button variant="outline" className="w-full justify-start">
                       FAQチャット
                     </Button>

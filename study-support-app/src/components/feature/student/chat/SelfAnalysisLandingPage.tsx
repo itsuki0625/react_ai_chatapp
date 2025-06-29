@@ -47,7 +47,7 @@ const SelfAnalysisLandingPage: React.FC = () => {
     try {
       const newSessionId = await startNewChat(ChatTypeEnum.SELF_ANALYSIS);
       if (newSessionId) {
-        router.push(`/chat/self-analysis/${newSessionId}`);
+        router.push(`/student/chat/self-analysis/${newSessionId}`);
       }
     } catch (error) {
       console.error('Failed to start new chat:', error);
@@ -55,7 +55,7 @@ const SelfAnalysisLandingPage: React.FC = () => {
   };
 
   const handleViewSession = (sessionId: string) => {
-    router.push(`/chat/self-analysis/${sessionId}`);
+    router.push(`/student/chat/self-analysis/${sessionId}`);
   };
 
   // 認証ローディング状態
@@ -276,7 +276,7 @@ const SelfAnalysisLandingPage: React.FC = () => {
               {sessions.length > 6 && (
                 <div className="mt-6 text-center">
                   <button 
-                    onClick={() => router.push('/chat/self-analysis/sessions')}
+                    onClick={() => router.push('/student/chat/self-analysis/sessions')}
                     className="text-blue-600 hover:text-blue-700 font-medium"
                   >
                     すべてのセッションを見る →

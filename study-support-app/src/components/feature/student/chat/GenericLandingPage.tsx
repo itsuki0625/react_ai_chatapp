@@ -280,7 +280,7 @@ const GenericLandingPage: React.FC<GenericLandingPageProps> = ({ chatType }) => 
     try {
       const sessionId = await startNewChat(chatType);
       if (sessionId) {
-        router.push(`/chat/${chatType}/${sessionId}`);
+        router.push(`/student/chat/${chatType}/${sessionId}`);
       }
     } catch (error) {
       console.error('新しいチャット開始エラー:', error);
@@ -288,7 +288,7 @@ const GenericLandingPage: React.FC<GenericLandingPageProps> = ({ chatType }) => 
   };
 
   const handleViewSession = (sessionId: string) => {
-    router.push(`/chat/${chatType}/${sessionId}`);
+          router.push(`/student/chat/${chatType}/${sessionId}`);
   };
 
   // 認証ローディング状態
@@ -458,7 +458,7 @@ const GenericLandingPage: React.FC<GenericLandingPageProps> = ({ chatType }) => 
               {filteredSessions.length > 6 && (
                 <div className="mt-6 text-center">
                   <button 
-                    onClick={() => router.push(`/chat/${chatType}/sessions`)}
+                    onClick={() => router.push(`/student/chat/${chatType}/sessions`)}
                     className={`${config.color.primary} hover:${config.color.secondary} font-medium`}
                   >
                     すべてのセッションを見る →
