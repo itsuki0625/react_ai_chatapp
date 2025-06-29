@@ -13,7 +13,7 @@ export default function PaymentRequiredPage() {
           以下のボタンから決済ページへ進み、手続きを完了してください。
         </p>
         {/* TODO: 実際の決済ページへのリンクに置き換える */}
-        <Link href="/subscription" legacyBehavior>
+        <Link href="/student/subscription" legacyBehavior>
           <a className="inline-block mt-4 px-6 py-3 text-lg font-medium text-white bg-green-600 rounded-md hover:bg-green-700">
             決済ページへ進む
           </a>

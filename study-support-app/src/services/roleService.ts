@@ -1,155 +1,93 @@
 import { RoleRead, RoleCreate, RoleUpdate } from '@/types/role';
-
-// Assume fetchWithAuth exists in lib for authenticated requests
-// You might need to create this helper function
-import { fetchWithAuth } from '@/lib/fetchWithAuth';
-import { getApiBaseUrl } from './api';
-
-const API_BASE_URL = getApiBaseUrl();
+import { apiClient } from '@/lib/api';
 
 // GET /api/v1/roles
 export const getRoles = async (params?: { skip?: number; limit?: number }): Promise<RoleRead[]> => {
-  const queryParams = new URLSearchParams(params as Record<string, string>).toString();
-  const base_url = `${API_BASE_URL}/api/v1/roles/`;
-  const url = queryParams ? `${base_url}?${queryParams}` : base_url;
-  console.log(`Fetching roles from: ${url}`); // Log the URL
-  const response = await fetchWithAuth(url);
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Failed to fetch roles:', response.status, errorText);
-    throw new Error(`Failed to fetch roles: ${response.statusText}`);
+  try {
+    console.log('Fetching roles from API');
+    const response = await apiClient.get('/api/v1/roles/', { params });
+    console.log('Received roles:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to fetch roles:', error);
+    throw error;
   }
-  const data = await response.json();
-  console.log('Received roles:', data);
-  return data;
 };
 
 // POST /api/v1/roles
 export const createRole = async (data: RoleCreate): Promise<RoleRead> => {
-  const url = `${API_BASE_URL}/api/v1/roles`;
-  console.log(`Creating role at: ${url} with data:`, data);
-  const response = await fetchWithAuth(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-     const errorData = await response.json().catch(() => ({ detail: 'Failed to create role' }));
-     console.error('Failed to create role:', response.status, errorData);
-     throw new Error(errorData.detail || `Failed to create role: ${response.statusText}`);
+  try {
+    console.log('Creating role with data:', data);
+    const response = await apiClient.post('/api/v1/roles', data);
+    console.log('Created role:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to create role:', error);
+    throw error;
   }
-   const createdData = await response.json();
-   console.log('Created role:', createdData);
-  return createdData;
 };
 
 // PUT /api/v1/roles/{role_id}
 export const updateRole = async (id: string, data: RoleUpdate): Promise<RoleRead> => {
-  const url = `${API_BASE_URL}/api/v1/roles/${id}`;
-  console.log(`Updating role at: ${url} with data:`, data);
-  const response = await fetchWithAuth(url, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-   if (!response.ok) {
-     const errorData = await response.json().catch(() => ({ detail: 'Failed to update role' }));
-     console.error('Failed to update role:', response.status, errorData);
-     throw new Error(errorData.detail || `Failed to update role: ${response.statusText}`);
-   }
-   const updatedData = await response.json();
-   console.log('Updated role:', updatedData);
-  return updatedData;
+  try {
+    console.log(`Updating role ${id} with data:`, data);
+    const response = await apiClient.put(`/api/v1/roles/${id}`, data);
+    console.log('Updated role:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to update role:', error);
+    throw error;
+  }
 };
 
 // DELETE /api/v1/roles/{role_id}
 export const deleteRole = async (id: string): Promise<RoleRead> => {
-  const url = `${API_BASE_URL}/api/v1/roles/${id}`;
-  console.log(`Deleting role at: ${url}`);
-  const response = await fetchWithAuth(url, {
-    method: 'DELETE',
-  });
-   if (!response.ok) {
-     const errorData = await response.json().catch(() => ({ detail: 'Failed to delete role' }));
-     console.error('Failed to delete role:', response.status, errorData);
-     throw new Error(errorData.detail || `Failed to delete role: ${response.statusText}`);
-   }
-   // Check if the backend returns the deleted object or just 2xx status
-   if (response.status === 204) { // Handle No Content response
-       console.log('Successfully deleted role (204 No Content).');
-       // Since the object is deleted, we might return a confirmation or minimal data
-       // Returning the ID might be useful for cache invalidation
-       return { id } as RoleRead; // Cast needed as it's not the full object
-   } else {
-       const deletedData = await response.json();
-       console.log('Deleted role (received object):', deletedData);
-       return deletedData;
-   }
+  try {
+    console.log(`Deleting role: ${id}`);
+    const response = await apiClient.delete(`/api/v1/roles/${id}`);
+    console.log('Deleted role:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to delete role:', error);
+    throw error;
+  }
 };
 
 // PUT /api/v1/roles/{role_id}/permissions
 export const setRolePermissions = async ({ roleId, permissionIds }: { roleId: string; permissionIds: string[] }): Promise<RoleRead> => {
-  const url = `${API_BASE_URL}/api/v1/roles/${roleId}/permissions`;
-  console.log(`Setting permissions for role ${roleId} at: ${url} with IDs:`, permissionIds);
-  const response = await fetchWithAuth(url, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ permission_ids: permissionIds }), // Match backend expectation
-  });
-   if (!response.ok) {
-     const errorData = await response.json().catch(() => ({ detail: 'Failed to set role permissions' }));
-     console.error('Failed to set permissions:', response.status, errorData);
-     throw new Error(errorData.detail || `Failed to set role permissions: ${response.statusText}`);
-   }
-   const updatedRole = await response.json();
-   console.log('Set permissions, updated role:', updatedRole);
-  return updatedRole;
+  try {
+    console.log(`Setting permissions for role ${roleId}:`, permissionIds);
+    const response = await apiClient.put(`/api/v1/roles/${roleId}/permissions`, { permission_ids: permissionIds });
+    console.log('Set permissions, updated role:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to set role permissions:', error);
+    throw error;
+  }
 };
 
-// --- Optional: Functions to add/remove single permission ---
 // POST /api/v1/roles/{role_id}/permissions/{permission_id}
 export const addPermissionToRole = async (roleId: string, permissionId: string): Promise<RoleRead> => {
-    const url = `${API_BASE_URL}/api/v1/roles/${roleId}/permissions/${permissionId}`;
-    console.log(`Adding permission ${permissionId} to role ${roleId} at: ${url}`);
-    const response = await fetchWithAuth(url, {
-        method: 'POST',
-    });
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Failed to add permission' }));
-        console.error('Failed to add permission:', response.status, errorData);
-        throw new Error(errorData.detail || `Failed to add permission: ${response.statusText}`);
-    }
-    const updatedRole = await response.json();
-    console.log('Added permission, updated role:', updatedRole);
-    return updatedRole;
+  try {
+    console.log(`Adding permission ${permissionId} to role ${roleId}`);
+    const response = await apiClient.post(`/api/v1/roles/${roleId}/permissions/${permissionId}`);
+    console.log('Added permission, updated role:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to add permission:', error);
+    throw error;
+  }
 };
 
 // DELETE /api/v1/roles/{role_id}/permissions/{permission_id}
 export const removePermissionFromRole = async (roleId: string, permissionId: string): Promise<RoleRead> => {
-    const url = `${API_BASE_URL}/api/v1/roles/${roleId}/permissions/${permissionId}`;
-    console.log(`Removing permission ${permissionId} from role ${roleId} at: ${url}`);
-    const response = await fetchWithAuth(url, {
-        method: 'DELETE',
-    });
-     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Failed to remove permission' }));
-        console.error('Failed to remove permission:', response.status, errorData);
-        throw new Error(errorData.detail || `Failed to remove permission: ${response.statusText}`);
-     }
-     if (response.status === 204) {
-         console.log('Successfully removed permission (204 No Content).');
-         // Need to decide what to return. Refetching might be the safest.
-         // For now, return minimal info.
-         return { id: roleId } as RoleRead;
-     } else {
-        const updatedRole = await response.json();
-        console.log('Removed permission, updated role:', updatedRole);
-        return updatedRole;
-     }
-}; 
+  try {
+    console.log(`Removing permission ${permissionId} from role ${roleId}`);
+    const response = await apiClient.delete(`/api/v1/roles/${roleId}/permissions/${permissionId}`);
+    console.log('Removed permission, updated role:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to remove permission:', error);
+    throw error;
+  }
+};

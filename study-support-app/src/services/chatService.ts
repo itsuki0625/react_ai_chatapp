@@ -1,8 +1,6 @@
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import { ChatSession, ChatMessage, ChatTypeEnum, type ChatTypeValue } from '@/types/chat'; // Ensure types are correctly defined and imported
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5050';
-const CHAT_API_URL = `${API_BASE_URL}/api/v1/chat`;
+import { apiClient } from '@/lib/api';
 
 /**
  * Fetches active chat sessions.
@@ -10,15 +8,12 @@ const CHAT_API_URL = `${API_BASE_URL}/api/v1/chat`;
  * @returns Promise<ChatSession[]>
  */
 export const getChatSessions = async (sessionType: string = "CONSULTATION"): Promise<ChatSession[]> => {
-    const url = `${CHAT_API_URL}/sessions?session_type=${encodeURIComponent(sessionType)}`;
-    console.log(`[ChatService] Fetching active sessions from: ${url}`);
     try {
-        const response = await fetchWithAuth(url);
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ detail: 'Failed to fetch active chat sessions' }));
-            throw new Error(errorData.detail || `HTTP error ${response.status}`);
-        }
-        return await response.json();
+        console.log(`[ChatService] Fetching active sessions for type: ${sessionType}`);
+        const response = await apiClient.get('/api/v1/chat/sessions', { 
+            params: { session_type: sessionType } 
+        });
+        return response.data;
     } catch (error) {
         console.error("[ChatService] Error in getChatSessions:", error);
         throw error; // Re-throw the error for React Query to handle
