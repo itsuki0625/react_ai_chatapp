@@ -1,8 +1,8 @@
-import axios, { InternalAxiosRequestConfig, AxiosRequestHeaders } from 'axios';
-import { API_BASE_URL } from '@/lib/config'; // config からインポート
-import { getSession } from 'next-auth/react'; // getSession をインポート
+import axios, { AxiosRequestHeaders } from 'axios';
+import { API_BASE_URL } from '@/lib/config';
+import { getSession } from 'next-auth/react';
 
-// 型定義を追加
+// セッション型定義
 interface SessionWithToken {
   accessToken?: string;
   user?: {
@@ -12,59 +12,74 @@ interface SessionWithToken {
   [key: string]: unknown;
 }
 
-// APIのベースURLを直接指定する代わりに config から読み込む
-// const baseURL = 'http://localhost:5050/api/v1'; 
-
+// 統一されたAPIクライアント
 export const apiClient = axios.create({
-  baseURL: `${API_BASE_URL}/api/v1`, // API_BASE_URL に /api/v1 を追加
-  withCredentials: true, // 参照ファイルに合わせて追加
+  baseURL: API_BASE_URL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
   },
+  timeout: 30000,
 });
 
-// 認証トークンをヘッダーに付与するインターセプター
+// リクエストインターセプター - 認証トークン自動付与
 apiClient.interceptors.request.use(
-  (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig | Promise<InternalAxiosRequestConfig> => {
-    config.headers = config.headers || {} as AxiosRequestHeaders;
-
+  async (config) => {
+    // クライアントサイドでのみ実行
     if (typeof window !== 'undefined') {
-      // getSession は非同期なので、即座に config を返すことは難しい
-      // Promise を返すパターンで実装する
-      return getSession().then(session => {
-        const sessionData = session as SessionWithToken | null;
-        const accessToken = sessionData?.accessToken || sessionData?.user?.accessToken;
+      try {
+        const session = await getSession() as SessionWithToken | null;
+        console.log('[ApiClient] Session fetched:', session);
+
+        const accessToken = session?.accessToken || session?.user?.accessToken;
+
         if (accessToken) {
+          if (!config.headers) {
+            config.headers = {} as AxiosRequestHeaders;
+          }
           config.headers.Authorization = `Bearer ${accessToken}`;
-          console.log("Authorization header set with token from session.");
+          console.log('[ApiClient] Authorization header added');
         } else {
-          console.log("No access token found in session.");
+          console.warn('[ApiClient] No access token found in session');
+          if (config.url) {
+            console.warn(`[ApiClient] Request to ${config.url} without token`);
+          }
         }
-        return config; // Promise 内で config を返す
-      }).catch(error => {
-        console.error('Failed to get session or attach token:', error);
-        return config; // エラー時も config を返す (またはエラーを再スロー)
-      });
+      } catch (error) {
+        console.error('[ApiClient] Failed to get session:', error);
+      }
     }
-    // サーバーサイドなど、window がない場合はそのまま config を返す
     return config;
   },
   (error) => {
+    console.error('[ApiClient] Request Error:', error);
     return Promise.reject(error);
   }
 );
 
-// レスポンスインターセプター (例: 401エラー時のリダイレクト)
-/*
+// レスポンスインターセプター - 認証エラー自動処理
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response && error.response.status === 401) {
-      // ログインページへリダイレクトなどの処理
-      console.error("Unauthorized, redirecting to login...");
-      // window.location.href = '/login';
+  async (error) => {
+    if (error.response?.status === 401) {
+      console.error('[ApiClient] 401 Unauthorized - Session expired');
+      
+      // クライアントサイドでの認証エラー処理
+      if (typeof window !== 'undefined') {
+        const authErrorEvent = new CustomEvent('auth-error', {
+          detail: {
+            status: 401,
+            error: 'Unauthorized',
+            originalError: error
+          }
+        });
+        window.dispatchEvent(authErrorEvent);
+      }
     }
     return Promise.reject(error);
   }
 );
-*/ 
+
+export default apiClient; 

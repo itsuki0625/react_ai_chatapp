@@ -114,7 +114,7 @@ STRIPE_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxx
 STRIPE_PRICE_ID=price_xxxxxxxxxxxxxxxx
 
 # NextAuth.js設定（フロントエンド用）
-NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_URL=http://localhost:3030
 NEXTAUTH_SECRET=あなたのNextAuth秘密鍵
 ```
 

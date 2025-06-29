@@ -1,5 +1,5 @@
 import React from 'react';
-import { AdminNavBar } from '@/components/common/AdminNavBar'; // Assuming AdminNavBar exists
+import { AdminNavBar } from '@/components/feature/admin/AdminNavBar'; // Assuming AdminNavBar exists
 
 interface AdminLayoutProps {
   children: React.ReactNode;

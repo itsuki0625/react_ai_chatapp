@@ -1,26 +1,17 @@
 import { PermissionRead } from '@/types/permission';
-
-// Assume fetchWithAuth exists in lib for authenticated requests
-import { fetchWithAuth } from '@/lib/fetchWithAuth';
-import { getApiBaseUrl } from './api';
-
-const API_BASE_URL = getApiBaseUrl();
+import { apiClient } from '@/lib/api';
 
 // GET /api/v1/permissions
 export const getPermissions = async (params?: { skip?: number; limit?: number }): Promise<PermissionRead[]> => {
-  const queryParams = new URLSearchParams(params as Record<string, string>).toString();
-  const url = `${API_BASE_URL}/api/v1/permissions/${queryParams ? '?' + queryParams : ''}`;
-  console.log(`Fetching permissions from: ${url}`);
-  // Permissions are often public, but use fetchWithAuth if authentication is required
-  const response = await fetchWithAuth(url);
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Failed to fetch permissions:', response.status, errorText);
-    throw new Error(`Failed to fetch permissions: ${response.statusText}`);
+  try {
+    console.log('Fetching permissions from API');
+    const response = await apiClient.get('/api/v1/permissions/', { params });
+    console.log('Received permissions:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to fetch permissions:', error);
+    throw error;
   }
-  const data = await response.json();
-  console.log('Received permissions:', data);
-  return data;
 };
 
 // --- CRUD for Permissions (Optional) ---

@@ -745,7 +745,7 @@ async def get_chat_analysis(
     logger.warning("Chat analysis endpoint not fully implemented with async DB.")
     raise HTTPException(status_code=501, detail="Not Implemented Yet")
 
-@router.post("/sessions/", response_model=ChatSession, status_code=status.HTTP_201_CREATED)
+@router.post("/sessions", response_model=ChatSession, status_code=status.HTTP_201_CREATED)
 async def create_new_chat_session(
     *,
     session_in: ChatSessionCreate,
@@ -793,7 +793,7 @@ async def read_chat_session(
         raise HTTPException(status_code=404, detail="Chat session not found")
     return session
 
-@router.post("/sessions/{session_id}/messages/", response_model=ChatMessageSchema, status_code=status.HTTP_201_CREATED)
+@router.post("/sessions/{session_id}/messages", response_model=ChatMessageSchema, status_code=status.HTTP_201_CREATED)
 async def create_new_chat_message(
     session_id: UUID,
     message_in: ChatMessageCreate,
@@ -891,7 +891,7 @@ async def create_new_chat_message(
 
     return ai_message
 
-@router.get("/sessions/{session_id}/messages/", response_model=List[ChatMessageSchema])
+@router.get("/sessions/{session_id}/messages", response_model=List[ChatMessageSchema])
 async def read_chat_messages(
     session_id: UUID,
     skip: int = 0,

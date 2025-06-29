@@ -1,7 +1,7 @@
 // import type { NextConfig } from "next"; // 型インポートを削除
 
 const nextConfig = { // 型注釈を削除
-  reactStrictMode: true,
+  reactStrictMode: false,
   staticPageGenerationTimeout: 180,
   images: {
     domains: ['localhost', 'backend'],

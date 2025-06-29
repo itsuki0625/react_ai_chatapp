@@ -78,9 +78,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
             
             # 許可されたオリジンのリスト
             allowed_origins = [
-                "http://localhost:3001",
+                "http://localhost:3000",  # 旧ポート
+                "http://localhost:3001", 
+                "http://localhost:3030",  # 新ポート（追加）
                 "http://localhost:5050", 
+                "http://127.0.0.1:3000",  # 旧ポート
                 "http://127.0.0.1:3001",
+                "http://127.0.0.1:3030",  # 新ポート（追加）
                 "https://app.smartao.jp",
                 "https://api.smartao.jp",
                 "https://stg.smartao.jp",
@@ -188,9 +192,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 origin = request.headers.get("origin")
                 logger.info(f"通常リクエストのオリジン: {origin} パス: {request.url.path}")
                 allowed_origins = [
+                    "http://localhost:3000",  # 旧ポート
                     "http://localhost:3001",
+                    "http://localhost:3030",  # 新ポート（追加）
                     "http://localhost:5050", 
+                    "http://127.0.0.1:3000",  # 旧ポート
                     "http://127.0.0.1:3001",
+                    "http://127.0.0.1:3030",  # 新ポート（追加）
                     "https://app.smartao.jp",
                     "https://api.smartao.jp",
                     "https://stg.smartao.jp",
@@ -221,9 +229,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 # エラーレスポンスにもCORSヘッダーを追加
                 origin = request.headers.get("origin")
                 allowed_origins = [
+                    "http://localhost:3000",  # 旧ポート
                     "http://localhost:3001",
+                    "http://localhost:3030",  # 新ポート（追加）
                     "http://localhost:5050", 
+                    "http://127.0.0.1:3000",  # 旧ポート
                     "http://127.0.0.1:3001",
+                    "http://127.0.0.1:3030",  # 新ポート（追加）
                     "https://app.smartao.jp",
                     "https://api.smartao.jp",
                     "https://stg.smartao.jp",
@@ -252,12 +264,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # オリジンを取得してCORSヘッダーを設定
             origin = request.headers.get("origin")
             allowed_origins = [
+                "http://localhost:3000",  # 旧ポート
                 "http://localhost:3001",
+                "http://localhost:3030",  # 新ポート（追加）
                 "http://localhost:5050", 
+                "http://127.0.0.1:3000",  # 旧ポート
                 "http://127.0.0.1:3001",
+                "http://127.0.0.1:3030",  # 新ポート（追加）
                 "https://app.smartao.jp",
                 "https://api.smartao.jp",
                 "https://stg.smartao.jp",
+                "https://stg-api.smartao.jp",
                 "https://smartao.jp"
             ]
             

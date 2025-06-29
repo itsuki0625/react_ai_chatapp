@@ -93,30 +93,43 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# CORS対応のためのオリジンリスト
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # ローカル開発環境（フロントエンド - 旧ポート）
+    "http://localhost:3001",  # ローカル開発環境（代替ポート）
+    "http://localhost:3030",  # ローカル開発環境（フロントエンド - 新ポート）
+    "http://localhost:5050",  # ローカルAPIサーバー
+    "http://127.0.0.1:3000",  # 代替ローカル開発環境（旧ポート）
+    "http://127.0.0.1:3001",  # 代替ローカル開発環境
+    "http://127.0.0.1:3030",  # 代替ローカル開発環境（新ポート）
+    "http://backend:5050",    # Docker内部通信
+    "http://frontend:3000",   # Docker内部通信（旧ポート）
+    "http://frontend:3030",   # Docker内部通信（新ポート）
+    "http://host.docker.internal:3000",  # Docker -> ホスト接続（旧ポート）
+    "http://host.docker.internal:3001",  # Docker -> ホスト接続
+    "http://host.docker.internal:3030",  # Docker -> ホスト接続（新ポート）
+    "http://host.docker.internal:5050",  # Docker -> ホスト接続
+    "https://yourdomain.com",  # 本番環境（必要に応じて変更）
+    "https://stg.smartao.jp", # ステージング環境フロントエンド
+    "https://stg-api.smartao.jp", # ステージング環境API（追加）
+    "https://api.smartao.jp", # 本番環境API
+    "https://app.smartao.jp", # 本番環境フロントエンド
+    "https://smartao.jp",     # 本番環境メインドメイン
+]
+
+# CORS設定をログ出力
+logger.info(f"CORS許可オリジン: {ALLOWED_ORIGINS}")
+
 # ミドルウェアの順序が重要：（後に追加されたものが先に実行される）
 # 1. CORSミドルウェア（最初に実行される）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3001",  # ローカル開発環境
-        "http://localhost:5050",  # ローカルAPIサーバー
-        "http://backend:5050",    # Docker内部通信
-        "http://frontend:3000",   # Docker内部通信
-        "http://127.0.0.1:3001",  # 代替ローカル開発環境
-        "http://host.docker.internal:3001",  # Docker -> ホスト接続
-        "http://host.docker.internal:5050",  # Docker -> ホスト接続
-        "https://yourdomain.com",  # 本番環境（必要に応じて変更）
-        "https://stg.smartao.jp", # ステージング環境フロントエンド
-        "https://stg-api.smartao.jp", # ステージング環境API（追加）
-        "https://api.smartao.jp", # 本番環境API
-        "https://app.smartao.jp", # 本番環境フロントエンド
-        "https://smartao.jp",     # 本番環境メインドメイン
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,  # 認証情報を許可
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # 明示的なメソッド指定
     allow_headers=[
         "Accept",
-        "Accept-Language",
+        "Accept-Language", 
         "Content-Language",
         "Content-Type",
         "Authorization",
@@ -143,6 +156,38 @@ app.add_middleware(
     path="/"  # クッキーのパスを明示的に設定
 )
 
+# 2.5. デバッグ用リクエスト/レスポンスログミドルウェア
+@app.middleware("http")
+async def debug_request_response(request: Request, call_next):
+    origin = request.headers.get("origin")
+    
+    # リクエスト情報をログ出力
+    if request.method == "POST" and "chat/sessions" in str(request.url):
+        logger.info(f"🔍 POST リクエスト詳細:")
+        logger.info(f"  URL: {request.url}")
+        logger.info(f"  Origin: {origin}")
+        logger.info(f"  Method: {request.method}")
+        logger.info(f"  Headers: {dict(request.headers)}")
+    
+    # レスポンスを取得
+    response = await call_next(request)
+    
+    # レスポンス情報をログ出力
+    if request.method == "POST" and "chat/sessions" in str(request.url):
+        logger.info(f"🔍 POST レスポンス詳細:")
+        logger.info(f"  Status: {response.status_code}")
+        logger.info(f"  Headers: {dict(response.headers)}")
+        logger.info(f"  Origin: {origin}")
+        
+        # CORS関連ヘッダーを特に確認
+        cors_headers = {
+            key: value for key, value in response.headers.items() 
+            if key.lower().startswith('access-control')
+        }
+        logger.info(f"  CORS Headers: {cors_headers}")
+    
+    return response
+
 # 3. 認証ミドルウェア（最後に実行される）
 app.add_middleware(AuthMiddleware)
 
@@ -156,19 +201,9 @@ async def global_exception_handler(request: Request, exc: Exception):
     
     # オリジンを取得してCORSヘッダーを設定
     origin = request.headers.get("origin")
-    allowed_origins = [
-        "http://localhost:3001",
-        "http://localhost:5050",
-        "http://127.0.0.1:3001",
-        "https://app.smartao.jp",
-        "https://api.smartao.jp",
-        "https://stg.smartao.jp",
-        "https://stg-api.smartao.jp",
-        "https://smartao.jp"
-    ]
     
     cors_headers = {}
-    if origin and origin in allowed_origins:
+    if origin and origin in ALLOWED_ORIGINS:
         cors_headers.update({
             "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Credentials": "true",
@@ -195,43 +230,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 # 修正: v1 の集約ルーターを /api/v1 プレフィックスで追加
 app.include_router(v1_api_router, prefix="/api/v1")
 
-# グローバルOPTIONSハンドラー（すべてのパスでOPTIONSリクエストを処理）
-@app.options("/{full_path:path}")
-async def handle_options(full_path: str, request: Request):
-    """
-    すべてのパスでOPTIONSリクエストを処理するグローバルハンドラー
-    CORSプリフライトリクエストに対応
-    """
-    origin = request.headers.get("origin")
-    
-    # 許可されたオリジンのリスト
-    allowed_origins = [
-        "http://localhost:3001",
-        "http://localhost:5050",
-        "http://127.0.0.1:3001",
-        "https://app.smartao.jp",
-        "https://api.smartao.jp",
-        "https://stg.smartao.jp",
-        "https://stg-api.smartao.jp",
-        "https://smartao.jp"
-    ]
-    
-    # オリジンが許可リストに含まれているかチェック
-    allow_origin = "*"  # デフォルト
-    if origin and origin in allowed_origins:
-        allow_origin = origin
-    
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": allow_origin,
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-            "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Auth-Status, X-Request-Info, Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Max-Age": "3600",
-            "Vary": "Origin",
-        }
-    )
+# カスタムOPTIONSハンドラーを完全に削除し、CORSMiddlewareに任せる
 
 # APIルーターの設定後に追加
 for route in app.routes:
