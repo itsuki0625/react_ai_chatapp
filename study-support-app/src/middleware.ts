@@ -1,5 +1,6 @@
 import { auth } from '@/auth';
 import { NextResponse } from 'next/server';
+import { hasRoutePermission, getPermissionRedirectUrl } from '@/lib/permissions';
 
 // NextAuthのミドルウェアをエクスポート
 export default auth((req) => {
@@ -8,9 +9,11 @@ export default auth((req) => {
   const isLoggedIn = !!authObj?.user;
   const userStatus = authObj?.user?.status;
   const isAdmin = authObj?.user?.isAdmin;
+  const isTeacher = authObj?.user?.isTeacher;
+  const userPermissions: string[] = authObj?.user?.permissions || [];
   const isLoggedOut = searchParams.get('status') === 'logged_out';
 
-  console.log(`[Middleware] Path: ${pathname}, IsLoggedIn: ${isLoggedIn}, Status: ${userStatus}, IsAdmin: ${isAdmin}`);
+  console.log(`[Middleware] Path: ${pathname}, IsLoggedIn: ${isLoggedIn}, Status: ${userStatus}, IsAdmin: ${isAdmin}, IsTeacher: ${isTeacher}, Permissions: ${userPermissions.join(', ')}`);
 
   // --- RefreshAccessTokenError の処理を改善 ---
   if (authObj?.error === "RefreshAccessTokenError") {
@@ -103,10 +106,17 @@ export default auth((req) => {
       return NextResponse.redirect(new URL('/inactive-account', nextUrl.origin));
     }
 
-    // 2d. サブスクリプション必須ルートのチェック
-    if (isSubscriptionRequiredRoute && userStatus !== 'active') {
-      console.log(`[Middleware] Non-active user (status: ${userStatus}) accessing subscription required route ${pathname}. Redirecting to /student/subscription/plans.`);
-      return NextResponse.redirect(new URL('/student/subscription/plans', nextUrl.origin));
+    // 2d. 権限ベースのアクセス制御
+    if (isSubscriptionRequiredRoute && pathname) {
+      const hasPermission = hasRoutePermission(pathname, userPermissions, isAdmin, isTeacher);
+      
+      if (!hasPermission) {
+        const redirectUrl = getPermissionRedirectUrl(pathname, userStatus || 'inactive');
+        console.log(`[Middleware] User lacks permission for route ${pathname}. Permissions: [${userPermissions.join(', ')}]. Redirecting to ${redirectUrl}.`);
+        return NextResponse.redirect(new URL(redirectUrl, nextUrl.origin));
+      }
+      
+      console.log(`[Middleware] User has permission for route ${pathname}. Permissions: [${userPermissions.join(', ')}].`);
     }
 
     // 2e. 管理者関連のチェック

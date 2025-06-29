@@ -42,6 +42,7 @@ export interface LoginResponse {
     status: string;
     grade?: string;
     prefecture?: string;
+    permissions?: string[]; // 権限情報を追加
   };
   token: {
     access_token: string;

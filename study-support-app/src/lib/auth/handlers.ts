@@ -2,7 +2,8 @@ import {
   Credentials, 
   ExtendedUser, 
   LoginResponse, 
-  RefreshTokenResponse 
+  RefreshTokenResponse,
+  DecodedToken
 } from './types';
 import { 
   getAuthApiUrl, 
@@ -69,6 +70,20 @@ export const authorizeUser = async (credentials: Credentials): Promise<ExtendedU
       throw new Error('Invalid API response format');
     }
 
+    // JWTトークンから権限情報を抽出
+    let permissions: string[] = [];
+    try {
+      // JWTトークンをデコード（署名検証なし、クレーム取得のみ）
+      const tokenParts = data.token.access_token.split('.');
+      if (tokenParts.length === 3) {
+        const payload = JSON.parse(atob(tokenParts[1])) as DecodedToken;
+        permissions = payload.permissions || [];
+        console.log('[Authorize] Extracted permissions from token:', permissions);
+      }
+    } catch (error) {
+      console.warn('[Authorize] Failed to extract permissions from token:', error);
+    }
+
     // BackendのUser型とToken型をNextAuthのUser型にマッピング
     const user: ExtendedUser = {
       id: data.user.id,
@@ -77,6 +92,7 @@ export const authorizeUser = async (credentials: Credentials): Promise<ExtendedU
       image: data.user.profile_image_url,
       role: data.user.role,
       status: data.user.status,
+      permissions: permissions, // 権限情報を追加
       grade: data.user.grade,
       prefecture: data.user.prefecture,
       profile_image_url: data.user.profile_image_url,
