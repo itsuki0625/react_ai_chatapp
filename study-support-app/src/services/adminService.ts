@@ -1,6 +1,6 @@
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import { CampaignCode, CampaignCodeCreatePayload } from '@/types/subscription';
-import { getApiBaseUrl } from './api';
+import { API_BASE_URL } from '@/lib/config';
 import { AdminUser, Role } from '@/types/user';
 import { 
   StripeProductWithPricesResponse, 
@@ -11,7 +11,7 @@ import {
 } from '@/types/stripe';
 
 // APIのベースURLを取得
-const API_URL = getApiBaseUrl();
+const API_URL = API_BASE_URL;
 const ADMIN_API_PREFIX = '/api/v1/admin'; // admin プレフィックスを定数化
 
 // Stripe商品の型定義
