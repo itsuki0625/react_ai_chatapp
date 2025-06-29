@@ -14,13 +14,19 @@ jobs:
   # Backend STG イメージのビルド & プッシュ
   build-push-backend-stg:
     environment: Preview
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       latest_image_uri: ${{ steps.build-image.outputs.latest_image_uri }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      # Windows環境でのDocker確認
+      - name: Check Docker
+        run: |
+          docker --version
+          docker info
+        
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -35,38 +41,47 @@ jobs:
       - name: Build STG backend image
         id: build-image
         run: |
-          REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
-          IMAGE_URI_LATEST="${REGISTRY}/stg-backend:latest"
-          IMAGE_URI_STG="${REGISTRY}/stg-backend:stg"
-          echo "Building image: $IMAGE_URI_LATEST"
-          docker build \
-            --file backend/Dockerfile.stg \
-            --tag  $IMAGE_URI_LATEST \
-            --tag  $IMAGE_URI_STG \
+          $REGISTRY = "${{ secrets.AWS_ECR_REGISTRY }}".TrimEnd('/')
+          $IMAGE_URI_LATEST = "${REGISTRY}/stg-backend:latest"
+          $IMAGE_URI_STG = "${REGISTRY}/stg-backend:stg"
+          Write-Host "Building image: $IMAGE_URI_LATEST"
+          docker build `
+            --file backend/Dockerfile.stg `
+            --tag  $IMAGE_URI_LATEST `
+            --tag  $IMAGE_URI_STG `
             backend
           # デバッグ出力を追加
-          echo "Setting output: latest_image_uri=$IMAGE_URI_LATEST"
-          echo "latest_image_uri=$IMAGE_URI_LATEST" >> $GITHUB_OUTPUT
+          Write-Host "Setting output: latest_image_uri=$IMAGE_URI_LATEST"
+          echo "latest_image_uri=$IMAGE_URI_LATEST" >> $env:GITHUB_OUTPUT
+        shell: powershell
 
       - name: Push STG backend to ECR
         run: |
-          REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
-          docker push ${REGISTRY}/stg-backend:latest
-          docker push ${REGISTRY}/stg-backend:stg
+          $REGISTRY = "${{ secrets.AWS_ECR_REGISTRY }}".TrimEnd('/')
+          docker push "${REGISTRY}/stg-backend:latest"
+          docker push "${REGISTRY}/stg-backend:stg"
+        shell: powershell
           
       - name: Verify output value
         run: |
-          echo "Verifying output value: ${{ steps.build-image.outputs.latest_image_uri }}"
+          Write-Host "Verifying output value: ${{ steps.build-image.outputs.latest_image_uri }}"
+        shell: powershell
 
   # Frontend STG イメージのビルド & プッシュ
   build-push-frontend-stg:
     environment: Preview
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       latest_image_uri: ${{ steps.build-image.outputs.latest_image_uri }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      # Windows環境でのDocker確認
+      - name: Check Docker
+        run: |
+          docker --version
+          docker info
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -82,33 +97,36 @@ jobs:
       - name: Build STG frontend image
         id: build-image
         run: |
-          REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
-          IMAGE_URI_LATEST="${REGISTRY}/stg-frontend:latest"
-          IMAGE_URI_STG="${REGISTRY}/stg-frontend:stg"
-          echo "Building image: $IMAGE_URI_LATEST"
-          docker build \
-            --file study-support-app/Dockerfile.stg \
-            --tag  $IMAGE_URI_LATEST \
-            --tag  $IMAGE_URI_STG \
+          $REGISTRY = "${{ secrets.AWS_ECR_REGISTRY }}".TrimEnd('/')
+          $IMAGE_URI_LATEST = "${REGISTRY}/stg-frontend:latest"
+          $IMAGE_URI_STG = "${REGISTRY}/stg-frontend:stg"
+          Write-Host "Building image: $IMAGE_URI_LATEST"
+          docker build `
+            --file study-support-app/Dockerfile.stg `
+            --tag  $IMAGE_URI_LATEST `
+            --tag  $IMAGE_URI_STG `
             study-support-app
           # デバッグ出力を追加
-          echo "Setting output: latest_image_uri=$IMAGE_URI_LATEST"
-          echo "latest_image_uri=$IMAGE_URI_LATEST" >> $GITHUB_OUTPUT
+          Write-Host "Setting output: latest_image_uri=$IMAGE_URI_LATEST"
+          echo "latest_image_uri=$IMAGE_URI_LATEST" >> $env:GITHUB_OUTPUT
+        shell: powershell
 
       - name: Push STG frontend to ECR
         run: |
-          REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
-          docker push ${REGISTRY}/stg-frontend:latest
-          docker push ${REGISTRY}/stg-frontend:stg
+          $REGISTRY = "${{ secrets.AWS_ECR_REGISTRY }}".TrimEnd('/')
+          docker push "${REGISTRY}/stg-frontend:latest"
+          docker push "${REGISTRY}/stg-frontend:stg"
+        shell: powershell
           
       - name: Verify output value
         run: |
-          echo "Verifying output value: ${{ steps.build-image.outputs.latest_image_uri }}"
+          Write-Host "Verifying output value: ${{ steps.build-image.outputs.latest_image_uri }}"
+        shell: powershell
 
   deploy-backend-stg:
     needs: build-push-backend-stg
     environment: Preview
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -120,14 +138,16 @@ jobs:
           aws-region:            ${{ secrets.AWS_REGION }}
       - name: Debug-Backend
         run: |
-          echo "============== DEBUG INFO =============="
-          echo "Backend URI: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
-          echo "========================================"
+          Write-Host "============== DEBUG INFO =============="
+          Write-Host "Backend URI: ${{ needs.build-push-backend-stg.outputs.latest_image_uri }}"
+          Write-Host "========================================"
+        shell: powershell
       - name: Debug alternative approach
         run: |
-          echo "Using hardcoded image URI as a fallback"
-          REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
-          echo "Registry: $REGISTRY"
+          Write-Host "Using hardcoded image URI as a fallback"
+          $REGISTRY = "${{ secrets.AWS_ECR_REGISTRY }}".TrimEnd('/')
+          Write-Host "Registry: $REGISTRY"
+        shell: powershell
           
       - name: Render ECS task definition (Fallback)
         id: render-task-def-fallback
@@ -139,9 +159,10 @@ jobs:
           
       - name: Debug fallback output
         run: |
-          echo "============== FALLBACK OUTPUT =============="
-          echo "Fallback Task definition: ${{ steps.render-task-def-fallback.outputs.task-definition }}"
-          echo "==============================================="
+          Write-Host "============== FALLBACK OUTPUT =============="
+          Write-Host "Fallback Task definition: ${{ steps.render-task-def-fallback.outputs.task-definition }}"
+          Write-Host "==============================================="
+        shell: powershell
           
       - name: Deploy Backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
@@ -154,7 +175,7 @@ jobs:
   deploy-frontend-stg:
     needs: build-push-frontend-stg
     environment: Preview
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -166,14 +187,16 @@ jobs:
           aws-region:            ${{ secrets.AWS_REGION }}
       - name: Debug-Frontend
         run: |
-          echo "============== DEBUG INFO =============="
-          echo "Frontend URI: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}"
-          echo "========================================"
+          Write-Host "============== DEBUG INFO =============="
+          Write-Host "Frontend URI: ${{ needs.build-push-frontend-stg.outputs.latest_image_uri }}"
+          Write-Host "========================================"
+        shell: powershell
       - name: Debug Frontend alternative approach
         run: |
-          echo "Using hardcoded image URI as a fallback"
-          REGISTRY=$(echo "${{ secrets.AWS_ECR_REGISTRY }}" | sed 's:/*$::')
-          echo "Registry: $REGISTRY"
+          Write-Host "Using hardcoded image URI as a fallback"
+          $REGISTRY = "${{ secrets.AWS_ECR_REGISTRY }}".TrimEnd('/')
+          Write-Host "Registry: $REGISTRY"
+        shell: powershell
           
       - name: Render ECS task definition (Fallback)
         id: render-frontend-task-def-fallback
@@ -185,9 +208,10 @@ jobs:
           
       - name: Debug frontend fallback output
         run: |
-          echo "============== FALLBACK OUTPUT =============="
-          echo "Fallback Task definition: ${{ steps.render-frontend-task-def-fallback.outputs.task-definition }}"
-          echo "==============================================="
+          Write-Host "============== FALLBACK OUTPUT =============="
+          Write-Host "Fallback Task definition: ${{ steps.render-frontend-task-def-fallback.outputs.task-definition }}"
+          Write-Host "==============================================="
+        shell: powershell
           
       - name: Deploy Frontend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
