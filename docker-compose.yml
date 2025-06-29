@@ -24,7 +24,7 @@ services:
   frontend:
     build: ./study-support-app
     ports:
-      - '3000:3000'
+      - '3030:3030'
     depends_on:
       - backend
     networks:
@@ -37,11 +37,12 @@ services:
     restart: always
     command: npm run dev
     environment:
-      - PORT=3000
+      - PORT=3030
       - HOST=0.0.0.0
       - NEXT_PUBLIC_API_BASE_URL=http://localhost:5050
       - NEXT_PUBLIC_BROWSER_API_URL=http://localhost:5050
       - INTERNAL_API_BASE_URL=http://backend:5050
+      - NEXTAUTH_URL=http://localhost:3030
 
   db:
     image: postgres:13
