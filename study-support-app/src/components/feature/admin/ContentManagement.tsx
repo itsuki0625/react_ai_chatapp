@@ -24,7 +24,7 @@ import {
   ContentCategoryUpdate
 } from '@/types/content';
 import { contentAPI } from '@/lib/api';
-import { Dialog } from '@/components/ui/dialog';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { getSlideProviderInfo } from '@/lib/slide';
 import { useSnackbar } from 'notistack';
 
@@ -659,8 +659,8 @@ export const ContentManagement = () => {
         </div>
       )}
 
-      <Dialog open={showContentForm} onClose={() => setShowContentForm(false)}>
-        <div className="p-6">
+      <Dialog open={showContentForm} onOpenChange={setShowContentForm}>
+        <DialogContent className="max-w-2xl">
           <h3 className="text-lg font-medium text-gray-900 mb-4">
             {editingContentId ? 'コンテンツを編集' : '新規コンテンツ'}
           </h3>
@@ -881,11 +881,11 @@ export const ContentManagement = () => {
               </button>
             </div>
           </form>
-        </div>
+        </DialogContent>
       </Dialog>
 
-      <Dialog open={showCategoryForm} onClose={() => setShowCategoryForm(false)}>
-        <div className="p-6">
+      <Dialog open={showCategoryForm} onOpenChange={setShowCategoryForm}>
+        <DialogContent className="max-w-2xl">
           <h3 className="text-lg font-medium text-gray-900 mb-4">
             {editingCategoryId ? 'カテゴリーを編集' : '新規カテゴリー'}
           </h3>
@@ -989,7 +989,7 @@ export const ContentManagement = () => {
               </button>
             </div>
           </form>
-        </div>
+        </DialogContent>
       </Dialog>
     </div>
   );
