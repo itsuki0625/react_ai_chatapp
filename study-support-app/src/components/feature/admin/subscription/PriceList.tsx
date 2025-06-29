@@ -480,7 +480,7 @@ export const PriceList: React.FC = () => {
           >
             キャンセル
           </Button>
-          <Button type="submit" variant="primary">
+          <Button type="submit" variant="default">
             {isEditModalOpen ? '更新する' : '作成する'}
           </Button>
         </div>
@@ -684,7 +684,7 @@ export const PriceList: React.FC = () => {
 
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-semibold">価格設定</h2>
-        <Button variant="primary" onClick={handleAddPrice} disabled={!!error}>
+        <Button variant="default" onClick={handleAddPrice} disabled={!!error}>
           <PlusCircle className="h-4 w-4 mr-2" />
           価格を追加
         </Button>

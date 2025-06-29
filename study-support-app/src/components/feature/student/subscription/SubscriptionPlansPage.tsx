@@ -452,7 +452,7 @@ export const SubscriptionPlansPage: React.FC = () => {
                )}
                   {!isCurrentPlan && selectedPlan?.price_id === plan.price_id && (
                     <Button
-                      variant="primary"
+                      variant="default"
                       className="w-full mt-4 bg-blue-600 text-white"
                       disabled={true}
                     >

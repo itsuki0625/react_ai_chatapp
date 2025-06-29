@@ -1,6 +1,9 @@
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import { ChatSession, ChatMessage, ChatTypeEnum, type ChatTypeValue } from '@/types/chat'; // Ensure types are correctly defined and imported
 import { apiClient } from '@/lib/api';
+import { API_BASE_URL } from '@/lib/config';
+
+const CHAT_API_URL = `${API_BASE_URL}/api/v1/chat`;
 
 /**
  * Fetches active chat sessions.

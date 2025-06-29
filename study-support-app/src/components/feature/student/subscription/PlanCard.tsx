@@ -65,7 +65,7 @@ export const PlanCard: React.FC<PlanCardProps> = ({
       <Button
         onClick={() => onSelectPlan(plan.id)}
         disabled={isLoading}
-        variant={isCurrentPlan ? "outline" : "primary"}
+        variant={isCurrentPlan ? "outline" : "default"}
         className="w-full"
       >
         {isCurrentPlan ? '現在のプラン' : '選択する'}

@@ -229,7 +229,7 @@ export const DesiredSchoolForm: React.FC<DesiredSchoolFormProps> = ({
         <Button type="button" variant="outline" onClick={onCancel}>
           キャンセル
         </Button>
-        <Button type="submit" variant="primary">
+        <Button type="submit" variant="default">
           {initialData ? '更新する' : '登録する'}
         </Button>
       </div>
