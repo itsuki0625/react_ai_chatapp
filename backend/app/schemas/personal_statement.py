@@ -12,6 +12,7 @@ class PersonalStatementBase(BaseModel):
     title: Optional[str] = None
     keywords: Optional[List[str]] = None
     self_analysis_chat_id: Optional[UUID] = None
+    submission_deadline: Optional[datetime] = None
 
 class PersonalStatementCreate(PersonalStatementBase):
     pass
@@ -23,6 +24,7 @@ class PersonalStatementUpdate(BaseModel):
     title: Optional[str] = None
     keywords: Optional[List[str]] = None
     self_analysis_chat_id: Optional[UUID] = None
+    submission_deadline: Optional[datetime] = None
 
 class PersonalStatementResponse(PersonalStatementBase, TimestampMixin):
     id: UUID
@@ -31,9 +33,52 @@ class PersonalStatementResponse(PersonalStatementBase, TimestampMixin):
     department_name: Optional[str] = None
     feedback_count: int = 0
     latest_feedback_at: Optional[datetime] = None
+    word_count: int = 0
     
     class Config:
         from_attributes = True
+    
+    @classmethod
+    def from_orm_with_counts(cls, statement) -> 'PersonalStatementResponse':
+        """ORMオブジェクトから計算フィールドを含むレスポンスを作成"""
+        # 文字数を計算
+        word_count = len(statement.content) if statement.content else 0
+        
+        # フィードバック数を計算
+        feedback_count = len(statement.feedback) if statement.feedback else 0
+        
+        # 最新フィードバック日時を取得
+        latest_feedback_at = None
+        if statement.feedback:
+            latest_feedback_at = max(f.created_at for f in statement.feedback)
+        
+        # 大学名・学部名を取得
+        university_name = None
+        department_name = None
+        if statement.desired_department:
+            department_name = statement.desired_department.department.name if statement.desired_department.department else None
+            if statement.desired_department.department and statement.desired_department.department.university:
+                university_name = statement.desired_department.department.university.name
+        
+        # レスポンスオブジェクトを作成
+        return cls(
+            id=statement.id,
+            user_id=statement.user_id,
+            content=statement.content,
+            status=statement.status,
+            desired_department_id=statement.desired_department_id,
+            title=statement.title,
+            keywords=statement.keywords or [],
+            self_analysis_chat_id=statement.self_analysis_chat_id,
+            submission_deadline=statement.submission_deadline,
+            created_at=statement.created_at,
+            updated_at=statement.updated_at,
+            university_name=university_name,
+            department_name=department_name,
+            feedback_count=feedback_count,
+            latest_feedback_at=latest_feedback_at,
+            word_count=word_count
+        )
 
 class FeedbackBase(BaseModel):
     content: str

@@ -1,5 +1,5 @@
-import StatementEditorPage from '@/components/feature/student/statement/StatementEditorPage';
+import StatementEditor from '@/components/feature/student/statement/StatementEditor';
 
 export default function Page() {
-  return <StatementEditorPage />;
+  return <StatementEditor />;
 }

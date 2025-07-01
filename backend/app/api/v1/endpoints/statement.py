@@ -23,7 +23,9 @@ async def create_new_statement(
     db: Session = Depends(get_db)
 ):
     """新しい志望理由書を作成"""
-    return crud_statement.create_statement(db=db, statement_in=statement_in, user_id=current_user.id)
+    statement = crud_statement.create_statement(db=db, statement_in=statement_in, user_id=current_user.id)
+    from app.schemas.personal_statement import PersonalStatementResponse
+    return PersonalStatementResponse.from_orm_with_counts(statement)
 
 @router.get("/", response_model=List[PersonalStatementResponse])
 async def get_user_statements(
@@ -32,7 +34,8 @@ async def get_user_statements(
 ):
     """ユーザーの志望理由書一覧を取得"""
     statements = crud_statement.get_statements(db=db, user_id=current_user.id)
-    return statements
+    from app.schemas.personal_statement import PersonalStatementResponse
+    return [PersonalStatementResponse.from_orm_with_counts(statement) for statement in statements]
 
 @router.get("/{statement_id}", response_model=PersonalStatementResponse)
 async def get_single_statement(
@@ -44,7 +47,8 @@ async def get_single_statement(
     statement = crud_statement.get_statement(db=db, statement_id=str(statement_id))
     if not statement or statement.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="志望理由書が見つかりません")
-    return statement
+    from app.schemas.personal_statement import PersonalStatementResponse
+    return PersonalStatementResponse.from_orm_with_counts(statement)
 
 @router.put("/{statement_id}", response_model=PersonalStatementResponse)
 async def update_existing_statement(
@@ -63,7 +67,8 @@ async def update_existing_statement(
     updated_statement = crud_statement.update_statement_db(
         db=db, statement=statement, statement_in=statement_in, user_id=current_user.id
     )
-    return updated_statement
+    from app.schemas.personal_statement import PersonalStatementResponse
+    return PersonalStatementResponse.from_orm_with_counts(updated_statement)
 
 @router.delete("/{statement_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_existing_statement(

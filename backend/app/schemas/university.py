@@ -7,37 +7,29 @@ from .base import TimestampMixin
 
 class UniversityBase(BaseModel):
     name: str
-    prefecture: str
-    address: Optional[str] = None
-    website_url: Optional[HttpUrl] = None
-    description: Optional[str] = None
-    is_national: bool = False  # 国公立か私立か
-    logo_url: Optional[HttpUrl] = None
+    university_code: str
+    is_active: bool = True
 
 class UniversityCreate(UniversityBase):
     pass
 
 class UniversityUpdate(BaseModel):
     name: Optional[str] = None
-    prefecture: Optional[str] = None
-    address: Optional[str] = None
-    website_url: Optional[HttpUrl] = None
-    description: Optional[str] = None
-    is_national: Optional[bool] = None
-    logo_url: Optional[HttpUrl] = None
+    university_code: Optional[str] = None
+    is_active: Optional[bool] = None
 
 class DepartmentBase(BaseModel):
     name: str
-    description: Optional[str] = None
-    faculty_name: str  # 学部名
+    department_code: str
+    is_active: bool = True
 
 class DepartmentCreate(DepartmentBase):
     university_id: UUID
 
 class DepartmentUpdate(BaseModel):
     name: Optional[str] = None
-    description: Optional[str] = None
-    faculty_name: Optional[str] = None
+    department_code: Optional[str] = None
+    is_active: Optional[bool] = None
 
 class DepartmentResponse(DepartmentBase, TimestampMixin):
     id: UUID
@@ -48,7 +40,6 @@ class DepartmentResponse(DepartmentBase, TimestampMixin):
 
 class UniversityResponse(UniversityBase, TimestampMixin):
     id: UUID
-    departments: Optional[List[DepartmentResponse]] = None
     
     class Config:
         from_attributes = True
@@ -56,19 +47,18 @@ class UniversityResponse(UniversityBase, TimestampMixin):
 class AdmissionMethodBase(BaseModel):
     name: str
     description: Optional[str] = None
-    category: str  # 一般入試、総合型選抜、学校推薦型など
+    is_active: bool = True
 
 class AdmissionMethodCreate(AdmissionMethodBase):
-    university_id: UUID
+    pass
 
 class AdmissionMethodUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    category: Optional[str] = None
+    is_active: Optional[bool] = None
 
 class AdmissionMethodResponse(AdmissionMethodBase, TimestampMixin):
     id: UUID
-    university_id: UUID
     
     class Config:
         from_attributes = True

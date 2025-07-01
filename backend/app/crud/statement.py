@@ -25,7 +25,8 @@ def create_statement(
         desired_department_id=statement_in.desired_department_id,
         title=statement_in.title,
         keywords=statement_in.keywords,
-        self_analysis_chat_id=statement_in.self_analysis_chat_id
+        self_analysis_chat_id=statement_in.self_analysis_chat_id,
+        submission_deadline=statement_in.submission_deadline
     )
     db.add(db_statement)
     db.commit()
@@ -44,7 +45,8 @@ def get_statement(
     ).options(
         joinedload(PersonalStatement.desired_department)
         .joinedload(DesiredDepartment.department)
-        .joinedload(Department.university)
+        .joinedload(Department.university),
+        joinedload(PersonalStatement.feedback)
     ).first()
 
 def get_statements(
@@ -57,7 +59,8 @@ def get_statements(
     ).options(
         joinedload(PersonalStatement.desired_department)
         .joinedload(DesiredDepartment.department)
-        .joinedload(Department.university)
+        .joinedload(Department.university),
+        joinedload(PersonalStatement.feedback)
     ).all()
     
     # 明示的にリレーションをロード
@@ -104,7 +107,9 @@ def update_statement_db(
         db.commit()
         db.refresh(statement)
         # print(f"After update: {statement.__dict__}")
-        return statement
+        
+        # 関連データを含めて再取得
+        return get_statement(db, str(statement.id))
     except Exception as e:
         db.rollback()
         print(f"Update error: {str(e)}")

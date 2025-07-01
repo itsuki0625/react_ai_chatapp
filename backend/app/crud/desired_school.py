@@ -6,6 +6,7 @@ from uuid import UUID
 from typing import List, Optional, Tuple
 
 from app.models.desired_school import DesiredSchool, DesiredDepartment
+from app.models.university import University, Department
 from app.schemas.desired_school import DesiredSchoolCreate, DesiredSchoolUpdate, DesiredDepartmentCreate
 from app.core.exceptions import NotFoundError, ConflictError, DatabaseError
 
@@ -68,7 +69,11 @@ async def get_desired_school(db: AsyncSession, *, desired_school_id: UUID) -> Op
     """指定されたIDのDesiredSchoolを関連するDesiredDepartmentと共に取得する"""
     result = await db.execute(
         select(DesiredSchool)
-        .options(joinedload(DesiredSchool.desired_departments))
+        .options(
+            joinedload(DesiredSchool.university),
+            joinedload(DesiredSchool.desired_departments).joinedload(DesiredDepartment.department),
+            joinedload(DesiredSchool.desired_departments).joinedload(DesiredDepartment.admission_method)
+        )
         .filter(DesiredSchool.id == desired_school_id)
     )
     return result.scalars().first()
@@ -77,7 +82,11 @@ async def get_desired_schools_by_user(db: AsyncSession, *, user_id: UUID, skip: 
     """指定されたユーザーIDのDesiredSchoolリストを関連するDesiredDepartmentと共に取得する"""
     result = await db.execute(
         select(DesiredSchool)
-        .options(joinedload(DesiredSchool.desired_departments))
+        .options(
+            joinedload(DesiredSchool.university),
+            joinedload(DesiredSchool.desired_departments).joinedload(DesiredDepartment.department),
+            joinedload(DesiredSchool.desired_departments).joinedload(DesiredDepartment.admission_method)
+        )
         .filter(DesiredSchool.user_id == user_id)
         .order_by(DesiredSchool.preference_order)
         .offset(skip)
@@ -100,8 +109,8 @@ async def get_desired_schools_by_user_with_count(db: AsyncSession, *, user_id: U
     stmt = (
         select(DesiredSchool)
         .options(
-            joinedload(DesiredSchool.university).joinedload(University.details),
-            joinedload(DesiredSchool.desired_departments).joinedload(DesiredDepartment.department).joinedload(Department.details),
+            joinedload(DesiredSchool.university),
+            joinedload(DesiredSchool.desired_departments).joinedload(DesiredDepartment.department),
             joinedload(DesiredSchool.desired_departments).joinedload(DesiredDepartment.admission_method)
         )
         .filter(DesiredSchool.user_id == user_id)
