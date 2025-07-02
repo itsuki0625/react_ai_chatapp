@@ -24,6 +24,42 @@ export interface UpdateStatementRequest {
   keywords?: string[];
 }
 
+// AI機能用のインターフェース
+export interface StatementChatRequest {
+  statement_id: string;
+  message: string;
+  chat_history: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp?: string;
+  }>;
+}
+
+export interface StatementChatResponse {
+  response: string;
+  suggestions: string[];
+  session_id: string;
+}
+
+export interface StatementImprovementRequest {
+  statement_id: string;
+  improvement_type: 'general' | 'structure' | 'expression' | 'logic';
+  specific_focus?: string;
+}
+
+export interface StatementImprovementResponse {
+  original_text: string;
+  improved_text: string;
+  changes: Array<{
+    id: string;
+    type: 'add' | 'delete' | 'modify';
+    original: string;
+    improved: string;
+    line_number: number;
+  }>;
+  explanation: string;
+}
+
 // StatementApiResponseを使用するため削除
 // export interface StatementResponse は StatementApiResponse に統一
 
@@ -202,6 +238,57 @@ export const getSelfAnalysisChats = async (): Promise<{
     console.error('Failed to fetch self analysis chats:', error);
     return [];
   }
+};
+
+// AI機能を追加
+export const sendStatementChatMessage = async (
+  statementId: string,
+  message: string,
+  chatHistory: StatementChatRequest['chat_history'] = []
+): Promise<StatementChatResponse> => {
+  const response = await fetchWithAuth(`${API_BASE_URL}/api/v1/statements/${statementId}/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      statement_id: statementId,
+      message,
+      chat_history: chatHistory,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'AIチャットの送信に失敗しました');
+  }
+
+  return response.json();
+};
+
+export const improveStatementWithAI = async (
+  statementId: string,
+  improvementType: StatementImprovementRequest['improvement_type'] = 'general',
+  specificFocus?: string
+): Promise<StatementImprovementResponse> => {
+  const response = await fetchWithAuth(`${API_BASE_URL}/api/v1/statements/${statementId}/improve`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      statement_id: statementId,
+      improvement_type: improvementType,
+      specific_focus: specificFocus,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'AI改善提案の取得に失敗しました');
+  }
+
+  return response.json();
 };
 
 // Add placeholder functions for create and update if needed later

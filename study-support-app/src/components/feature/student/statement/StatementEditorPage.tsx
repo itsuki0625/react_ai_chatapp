@@ -66,8 +66,8 @@ interface ApplicationDetailResponse {
 
 // 実際に使用するデータ構造に合わせた型定義に変更
 interface FormattedDepartment {
-  applicationId: string;
-  desiredDepartmentId: string;
+  desiredSchoolId: string;         // DesiredSchool.id（志望校ID）
+  desiredDepartmentId: string;     // DesiredDepartment.id（志望学部ID）
   universityName: string;
   departmentName: string;
   priority: number;
@@ -142,8 +142,8 @@ export default function StatementEditorPage({ id, initialData }: Props) {
           return null;
         }
         return {
-          applicationId: app.id,
-          desiredDepartmentId: desiredDeptInfo.id,
+          desiredSchoolId: app.id,                    // DesiredSchool.id（志望校ID）
+          desiredDepartmentId: desiredDeptInfo.id,    // DesiredDepartment.id（志望学部ID）
           universityName: app.university_name,
           departmentName: desiredDeptInfo.department_name,
           priority: app.priority,
@@ -222,10 +222,7 @@ export default function StatementEditorPage({ id, initialData }: Props) {
       setError("認証が必要です。再度ログインしてください。");
       return;
     }
-    if (!id && !selectedDesiredDepartmentId) { 
-        setError("関連付ける志望校・学部を選択してください。");
-        return;
-    }
+
 
     try {
       const url = id
@@ -243,13 +240,23 @@ export default function StatementEditorPage({ id, initialData }: Props) {
         status: id ? status : PersonalStatementStatus.DRAFT,
       };
 
-      if (selectedDesiredDepartmentId) {
+      // 新規作成時は志望学部必須、編集時はoptional
+      if (!id) {
+        // 新規作成時は必須
+        if (!selectedDesiredDepartmentId) {
+          setError("志望学部を選択してください。");
+          return;
+        }
         requestData.desired_department_id = selectedDesiredDepartmentId;
-      } else if (id && !initialData?.desired_department_id) {
-        // 編集時で、元々紐付いていなかった場合はキー自体を送らない (またはnullを送るかAPI仕様による)
-      } else if (id && initialData?.desired_department_id) {
-        // 編集時で、元々紐付いていたものを解除する場合はnullを送るかAPI仕様による
-        requestData.desired_department_id = null;
+      } else {
+        // 編集時
+        if (selectedDesiredDepartmentId) {
+          requestData.desired_department_id = selectedDesiredDepartmentId;
+        } else if (initialData?.desired_department_id) {
+          // 編集時で、元々紐付いていたものを解除する場合はnullを送る
+          requestData.desired_department_id = null;
+        }
+        // 元々紐付いていなかった場合はキー自体を送らない
       }
 
       if (selectedSelfAnalysisChatId) {

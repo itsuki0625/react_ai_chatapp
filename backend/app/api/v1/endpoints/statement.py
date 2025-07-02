@@ -13,8 +13,31 @@ from app.schemas.personal_statement import (
     FeedbackResponse
 )
 from app.crud import statement as crud_statement
+from pydantic import BaseModel
+from app.services.ai_service import generate_statement_ai_response, generate_statement_improvement
 
 router = APIRouter()
+
+class StatementChatRequest(BaseModel):
+    statement_id: UUID
+    message: str
+    chat_history: List[dict] = []
+
+class StatementChatResponse(BaseModel):
+    response: str
+    suggestions: List[str] = []
+    session_id: str
+
+class StatementImprovementRequest(BaseModel):
+    statement_id: UUID
+    improvement_type: str = "general"  # general, structure, expression, logic
+    specific_focus: str = ""
+
+class StatementImprovementResponse(BaseModel):
+    original_text: str
+    improved_text: str
+    changes: List[dict]
+    explanation: str
 
 @router.post("/", response_model=PersonalStatementResponse, status_code=status.HTTP_201_CREATED)
 async def create_new_statement(
@@ -111,4 +134,65 @@ async def get_statement_feedbacks(
     if statement.user_id != current_user.id and not current_user.has_permission('statement_review_respond'):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="この志望理由書のフィードバックを閲覧する権限がありません")
 
-    return crud_statement.get_feedbacks(db=db, statement_id=statement_id) 
+    return crud_statement.get_feedbacks(db=db, statement_id=statement_id)
+
+@router.post("/{statement_id}/chat", response_model=StatementChatResponse)
+async def chat_about_statement(
+    statement_id: UUID,
+    request: StatementChatRequest,
+    current_user: User = Depends(require_permission('statement_manage_own')),
+    db: Session = Depends(get_db)
+):
+    """志望理由書に関するAIチャット"""
+    statement = crud_statement.get_statement(db=db, statement_id=str(statement_id))
+    if not statement:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="志望理由書が見つかりません")
+    
+    if statement.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="この志望理由書にアクセスする権限がありません")
+    
+    # AI応答を生成
+    ai_response = await generate_statement_ai_response(
+        statement=statement,
+        message=request.message,
+        chat_history=request.chat_history,
+        user=current_user,
+        db=db
+    )
+    
+    return StatementChatResponse(
+        response=ai_response["response"],
+        suggestions=ai_response.get("suggestions", []),
+        session_id=ai_response.get("session_id", str(statement_id))
+    )
+
+@router.post("/{statement_id}/improve", response_model=StatementImprovementResponse)
+async def improve_statement_with_ai(
+    statement_id: UUID,
+    request: StatementImprovementRequest,
+    current_user: User = Depends(require_permission('statement_manage_own')),
+    db: Session = Depends(get_db)
+):
+    """AIによる志望理由書の改善提案"""
+    statement = crud_statement.get_statement(db=db, statement_id=str(statement_id))
+    if not statement:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="志望理由書が見つかりません")
+    
+    if statement.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="この志望理由書にアクセスする権限がありません")
+    
+    # AI改善提案を生成
+    improvement_result = await generate_statement_improvement(
+        statement=statement,
+        improvement_type=request.improvement_type,
+        specific_focus=request.specific_focus,
+        user=current_user,
+        db=db
+    )
+    
+    return StatementImprovementResponse(
+        original_text=statement.content,
+        improved_text=improvement_result["improved_text"],
+        changes=improvement_result["changes"],
+        explanation=improvement_result["explanation"]
+    ) 

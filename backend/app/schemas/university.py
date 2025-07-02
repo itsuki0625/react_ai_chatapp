@@ -40,6 +40,7 @@ class DepartmentResponse(DepartmentBase, TimestampMixin):
 
 class UniversityResponse(UniversityBase, TimestampMixin):
     id: UUID
+    departments: Optional[List['DepartmentResponse']] = []
     
     class Config:
         from_attributes = True

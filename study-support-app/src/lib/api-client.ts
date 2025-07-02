@@ -376,9 +376,9 @@ export const chatApi = chatApiBase;
 interface Department { // Corresponds to DepartmentResponse from backend schema
   id: string;
   name: string;
+  department_code: string;  // 必須フィールドを追加
   university_id: string; 
-  faculty_name?: string; 
-  description?: string; 
+  is_active: boolean;  // 必須フィールドを追加
   [key: string]: unknown; 
 }
 

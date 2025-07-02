@@ -127,12 +127,14 @@ export const ApplicationList = () => {
   };
 
   const handleCreateApplication = async () => {
-    router.push('/application/new');
+    router.push('/student/application/new');
   };
 
   const handleEditApplication = async (e: React.MouseEvent, applicationId: string) => {
     e.stopPropagation();
-    router.push(`/dashboard/applications/edit/${applicationId}`);
+    // TODO: 編集ページを実装する
+    alert('編集機能は開発中です');
+    // router.push(`/student/application/edit/${applicationId}`);
   };
 
   const handleDeleteApplication = async (e: React.MouseEvent, applicationId: string) => {
@@ -150,12 +152,16 @@ export const ApplicationList = () => {
 
   const handleAddDocument = async (e: React.MouseEvent, applicationId: string) => {
     e.stopPropagation();
-    router.push(`/dashboard/applications/${applicationId}/documents/new`);
+    // TODO: 書類追加ページを実装する
+    alert('書類追加機能は開発中です');
+    // router.push(`/student/application/${applicationId}/documents/new`);
   };
 
   const handleAddSchedule = async (e: React.MouseEvent, applicationId: string) => {
     e.stopPropagation();
-    router.push(`/dashboard/applications/${applicationId}/schedules/new`);
+    // TODO: スケジュール追加ページを実装する
+    alert('スケジュール追加機能は開発中です');
+    // router.push(`/student/application/${applicationId}/schedules/new`);
   };
 
   const getStatusColor = (status: string) => {

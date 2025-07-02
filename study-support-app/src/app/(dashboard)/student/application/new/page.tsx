@@ -31,7 +31,7 @@ export default function CreateApplicationPage() {
 
       if (response.data) { // Check if response.data exists and indicates success
         toast.success('志望校を登録しました。');
-        router.push('/application'); // Redirect to the list page
+        router.push('/student/application'); // Redirect to the list page
       } else {
         // This case might indicate an issue with the API response structure
         // or a non-standard success/failure indication.
@@ -58,7 +58,7 @@ export default function CreateApplicationPage() {
   };
 
   const handleCancel = () => {
-    router.push('/application'); // Redirect to the application list page
+    router.push('/student/application'); // Redirect to the application list page
   };
 
   return (

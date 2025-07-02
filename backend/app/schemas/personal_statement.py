@@ -8,14 +8,20 @@ from .base import TimestampMixin
 class PersonalStatementBase(BaseModel):
     content: str
     status: PersonalStatementStatus = PersonalStatementStatus.DRAFT
-    desired_department_id: Optional[UUID] = None
+    desired_department_id: Optional[UUID] = None  # Updateでは選択可能
     title: Optional[str] = None
     keywords: Optional[List[str]] = None
     self_analysis_chat_id: Optional[UUID] = None
     submission_deadline: Optional[datetime] = None
 
-class PersonalStatementCreate(PersonalStatementBase):
-    pass
+class PersonalStatementCreate(BaseModel):
+    content: str
+    status: PersonalStatementStatus = PersonalStatementStatus.DRAFT
+    desired_department_id: UUID  # 新規作成時は必須
+    title: Optional[str] = None
+    keywords: Optional[List[str]] = None
+    self_analysis_chat_id: Optional[UUID] = None
+    submission_deadline: Optional[datetime] = None
 
 class PersonalStatementUpdate(BaseModel):
     content: Optional[str] = None
