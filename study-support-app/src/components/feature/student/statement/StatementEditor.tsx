@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { PersonalStatement, StatementStatus, ChatSession, DesiredUniversity, convertToPersonalStatement } from '@/types/statement';
-import { getStatement, createStatement, updateStatement, improveStatementWithAI, StatementImprovementResponse } from '@/services/statementService';
+import { getStatement, createStatement, updateStatement, improveStatementWithAI, AIImprovementResponse } from '@/services/statementService';
 import { getDesiredSchools, DesiredSchool } from '@/services/universityService';
 import { useChat } from '@/store/chat/ChatContext';
 import { ChatTypeEnum } from '@/types/chat';
@@ -27,7 +27,8 @@ import {
   X,
   CheckCircle,
   Minus,
-  MessageCircle as MessageCircleIcon
+  MessageCircle as MessageCircleIcon,
+  Wand2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import AIAnalysisPanel from './AIAnalysisPanel';
@@ -88,7 +89,7 @@ export default function StatementEditor({ statementId }: Props) {
   
   // AI improvement state
   const [showDiffViewer, setShowDiffViewer] = useState(false);
-  const [improvementData, setImprovementData] = useState<StatementImprovementResponse | null>(null);
+  const [improvementData, setImprovementData] = useState<AIImprovementResponse | null>(null);
   const [isGeneratingImprovement, setIsGeneratingImprovement] = useState(false);
   
   // Selected suggestion state
