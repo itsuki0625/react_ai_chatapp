@@ -30,7 +30,11 @@ class CorrectionState(TypedDict):
 # ステップ実行のラッパー関数を定義
 async def run_analysis_step(state: CorrectionState) -> CorrectionState:
     agent = AnalysisStepAgent()
-    response = await agent(state)
+    response = await agent.execute(
+        statement_text=state["statement_text"],
+        university_info=state.get("university_info", ""),
+        self_analysis_context=state.get("self_analysis_context", "")
+    )
     
     logger.info(f"ANALYSIS step response type: {type(response)}, content: {response}")
     
@@ -55,7 +59,12 @@ async def run_analysis_step(state: CorrectionState) -> CorrectionState:
 
 async def run_structure_step(state: CorrectionState) -> CorrectionState:
     agent = StructureStepAgent()
-    response = await agent(state)
+    response = await agent.execute(
+        statement_text=state["statement_text"],
+        university_info=state.get("university_info", ""),
+        self_analysis_context=state.get("self_analysis_context", ""),
+        original_text=state["statement_text"]
+    )
     
     logger.info(f"STRUCTURE step response type: {type(response)}, content: {response}")
     
@@ -79,7 +88,11 @@ async def run_structure_step(state: CorrectionState) -> CorrectionState:
 
 async def run_content_step(state: CorrectionState) -> CorrectionState:
     agent = ContentStepAgent()
-    response = await agent(state)
+    response = await agent.execute(
+        statement_text=state["statement_text"],
+        university_info=state.get("university_info", ""),
+        self_analysis_context=state.get("self_analysis_context", "")
+    )
     
     logger.info(f"CONTENT step response type: {type(response)}, content: {response}")
     
@@ -103,7 +116,11 @@ async def run_content_step(state: CorrectionState) -> CorrectionState:
 
 async def run_expression_step(state: CorrectionState) -> CorrectionState:
     agent = ExpressionStepAgent()
-    response = await agent(state)
+    response = await agent.execute(
+        statement_text=state["statement_text"],
+        university_info=state.get("university_info", ""),
+        self_analysis_context=state.get("self_analysis_context", "")
+    )
     
     logger.info(f"EXPRESSION step response type: {type(response)}, content: {response}")
     
@@ -127,7 +144,11 @@ async def run_expression_step(state: CorrectionState) -> CorrectionState:
 
 async def run_coherence_step(state: CorrectionState) -> CorrectionState:
     agent = CoherenceStepAgent()
-    response = await agent(state)
+    response = await agent.execute(
+        statement_text=state["statement_text"],
+        university_info=state.get("university_info", ""),
+        self_analysis_context=state.get("self_analysis_context", "")
+    )
     
     logger.info(f"COHERENCE step response type: {type(response)}, content: {response}")
     
@@ -151,7 +172,11 @@ async def run_coherence_step(state: CorrectionState) -> CorrectionState:
 
 async def run_polish_step(state: CorrectionState) -> CorrectionState:
     agent = PolishStepAgent()
-    response = await agent(state)
+    response = await agent.execute(
+        statement_text=state["statement_text"],
+        university_info=state.get("university_info", ""),
+        self_analysis_context=state.get("self_analysis_context", "")
+    )
     
     logger.info(f"POLISH step response type: {type(response)}, content: {response}")
     

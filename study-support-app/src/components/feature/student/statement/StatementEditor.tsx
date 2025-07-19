@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Save, 
   Settings, 
@@ -28,12 +29,30 @@ import {
   Sparkles,
   History,
   ChevronDown,
-  GripVertical
+  GripVertical,
+  X,
+  CheckCircle,
+  Minus,
+  MessageCircle as MessageCircleIcon
 } from 'lucide-react';
 import { toast } from 'sonner';
+import AIAnalysisPanel from './AIAnalysisPanel';
 
 interface Props {
   statementId?: string;
+}
+
+interface Change {
+  original: string;
+  improved: string;
+  reason: string;
+}
+
+interface SelectedSuggestion {
+  step: string;
+  suggestionIndex: number;
+  suggestionText: string;
+  changes: Change[];
 }
 
 export default function StatementEditor({ statementId }: Props) {
@@ -52,19 +71,30 @@ export default function StatementEditor({ statementId }: Props) {
   const [desiredSchools, setDesiredSchools] = useState<DesiredSchool[]>([]);
   
   // Chat data
-  const [chatSessions, setChatSessions] = useState<ChatSession[]>(mockChatSessions);
-  const [activeChatId, setActiveChatId] = useState<string>('chat-1');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'chat' | 'ai'>('ai');
+  const [activeChatId, setActiveChatId] = useState<string>('default');
+  const [showChatHistory, setShowChatHistory] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   const [isAiTyping, setIsAiTyping] = useState(false);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [chatSessions, setChatSessions] = useState<any[]>([
+    { id: 'default', title: 'デフォルトチャット', messageCount: 0 }
+  ]);
+  const [chatPanelWidth, setChatPanelWidth] = useState(384);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const debouncedSaveRef = useRef<NodeJS.Timeout | null>(null);
   
   // UI state
   const [showSettings, setShowSettings] = useState(false);
-  const [showChatHistory, setShowChatHistory] = useState(false);
   const [wordCount, setWordCount] = useState(0);
-  const [chatPanelWidth, setChatPanelWidth] = useState(384); // 24rem = 384px
   const [isResizing, setIsResizing] = useState(false);
   
+  // Selected suggestion state
+  const [selectedSuggestion, setSelectedSuggestion] = useState<SelectedSuggestion | null>(null);
+  const [appliedChanges, setAppliedChanges] = useState<Set<string>>(new Set());
+
   // Refs
   const chatHistoryRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -171,8 +201,8 @@ export default function StatementEditor({ statementId }: Props) {
       const newWidth = containerRect.right - e.clientX;
       
       // Set min/max constraints
-      const minWidth = 280;
-      const maxWidth = containerRect.width * 0.7;
+      const minWidth = 300;
+      const maxWidth = Math.min(800, containerRect.width * 0.6);
       
       const constrainedWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
       setChatPanelWidth(constrainedWidth);
@@ -202,87 +232,48 @@ export default function StatementEditor({ statementId }: Props) {
   };
 
   const handleSave = async () => {
-    console.log('=== Save Button Clicked ===');
-    console.log('Title:', title);
-    console.log('Content length:', content?.length || 0);
-    console.log('Selected University:', selectedUniversity);
-    console.log('Selected Self Analysis Chat:', selectedSelfAnalysisChat);
-    console.log('Submission Deadline:', submissionDeadline);
-    console.log('StatementId (for update):', statementId);
-    
-    if (!title || !title.trim()) {
-      console.log('Validation failed: Title missing');
-      toast.error('タイトルを入力してください。');
+    if (!content.trim()) {
+      toast.error('内容を入力してください');
       return;
     }
-    
-    // desired_department_idの処理を安全に（志望大学が選択されていない場合はundefined）
-    let desired_department_id;
-    if (selectedUniversity) {
-      if (selectedUniversity.desired_departments && selectedUniversity.desired_departments.length > 0) {
-        desired_department_id = selectedUniversity.desired_departments[0].id;
-      } else {
-        // フォールバック: universitiyのIDを使用 (これは正しくない可能性があるので警告)
-        console.warn('No desired_departments found, using university ID as fallback');
-        desired_department_id = selectedUniversity.id;
-      }
-    } else {
-      console.log('No university selected, desired_department_id will be undefined');
-      desired_department_id = undefined;
-    }
-    
-    const saveData: any = {
-      title,
+
+    const saveData = {
+      title: title || '無題の志望理由書',
       content,
-      status,
-      keywords
+      status: statementId ? status : StatementStatus.DRAFT,
+      desired_department_id: selectedUniversity?.desired_departments?.[0]?.id || undefined,
+      self_analysis_chat_id: selectedSelfAnalysisChat?.id || undefined,
+      submission_deadline: submissionDeadline || undefined,
+      keywords: keywords.length > 0 ? keywords : undefined
     };
-    
-    // 値が存在する場合のみ追加
-    if (desired_department_id) {
-      saveData.desired_department_id = desired_department_id;
-    }
-    if (selectedSelfAnalysisChat?.id) {
-      saveData.self_analysis_chat_id = selectedSelfAnalysisChat.id;
-    }
-    if (submissionDeadline && submissionDeadline.trim()) {
-      saveData.submission_deadline = submissionDeadline;
-    }
-    
-    console.log('Save data prepared:', saveData);
-    
+
     try {
       if (statementId) {
-        console.log('Attempting to update statement...');
+        console.log('Updating statement...');
         const updatedStatement = await updateStatement(statementId, saveData);
-        console.log('Update successful:', updatedStatement);
+        console.log('Statement updated:', updatedStatement);
         const convertedStatement = convertToPersonalStatement(updatedStatement);
         setStatement(convertedStatement);
-        toast.success('志望理由書を更新しました。');
+        toast.success('志望理由書が更新されました');
       } else {
-        console.log('Attempting to create new statement...');
+        console.log('Creating new statement...');
         const createdStatement = await createStatement(saveData);
-        console.log('Create successful:', createdStatement);
+        console.log('Statement created:', createdStatement);
         const convertedStatement = convertToPersonalStatement(createdStatement);
         setStatement(convertedStatement);
-        toast.success('志望理由書を作成しました。');
-        // 新規作成の場合、編集ページにリダイレクト
+        toast.success('志望理由書が作成されました');
+        
+        // Redirect to edit page
         router.push(`/student/statement/${createdStatement.id}/edit`);
       }
     } catch (error) {
-      console.error('Save failed with error:', error);
-      console.error('Error details:', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        status: (error as any)?.status,
-        response: (error as any)?.response?.data
-      });
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      toast.error(`保存に失敗しました: ${errorMessage}`);
+      console.error('Error saving statement:', error);
+      toast.error('保存中にエラーが発生しました');
     }
   };
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || isAiTyping) return;
 
     const userMessage: ChatMessage = {
       id: `msg-${Date.now()}`,
@@ -296,7 +287,7 @@ export default function StatementEditor({ statementId }: Props) {
     setNewMessage('');
     setIsAiTyping(true);
 
-    // Mock AI response
+    // Simulate AI response
     setTimeout(() => {
       const aiMessage: ChatMessage = {
         id: `msg-${Date.now() + 1}`,
@@ -344,6 +335,54 @@ export default function StatementEditor({ statementId }: Props) {
       case StatementStatus.FINAL: return 'bg-purple-100 text-purple-800';
       default: return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  const handleContentChange = (newContent: string) => {
+    setContent(newContent);
+  };
+
+  const handleImprovementApplied = () => {
+    toast.success('AI添削の改善案が適用されました');
+    // 自動保存も実行
+    handleSave();
+  };
+
+  const handleAutoSave = () => {
+    toast.success('AI添削の改善案が適用されました');
+    handleSave();
+  };
+
+  // Handle suggestion selection from AI panel
+  const handleSuggestionClick = (step: string, index: number, suggestionText: string, changes: Change[]) => {
+    setSelectedSuggestion({
+      step,
+      suggestionIndex: index,
+      suggestionText,
+      changes
+    });
+  };
+
+  // Apply all changes from selected suggestion
+  const handleApplyAllChanges = (changes: Change[]) => {
+    let updatedContent = content;
+    
+    changes.forEach(change => {
+      updatedContent = updatedContent.replace(change.original, change.improved);
+    });
+    
+    setContent(updatedContent);
+    setSelectedSuggestion(null);
+    
+    // Mark changes as applied
+    const changeIds = changes.map(c => `${c.original}-${c.improved}`);
+    setAppliedChanges(prev => new Set([...prev, ...changeIds]));
+    
+    toast.success(`${changes.length}件の変更を適用しました`);
+  };
+
+  // Close suggestion detail overlay
+  const handleCloseSuggestionDetail = () => {
+    setSelectedSuggestion(null);
   };
 
   return (
@@ -541,163 +580,182 @@ export default function StatementEditor({ statementId }: Props) {
 
         {/* Resizer Handle */}
         <div
-          className={`w-2 bg-gray-200 hover:bg-blue-400 cursor-col-resize flex-shrink-0 transition-colors duration-150 relative group ${
-            isResizing ? 'bg-blue-500' : ''
+          className={`w-3 bg-gray-300 hover:bg-blue-400 cursor-col-resize flex-shrink-0 transition-all duration-150 relative group border-l border-r border-gray-200 ${
+            isResizing ? 'bg-blue-500 w-4' : ''
           }`}
           onMouseDown={handleResizeStart}
           title="ドラッグしてパネルサイズを調整"
         >
           {/* Resize Icon */}
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-            <GripVertical className="w-4 h-4 text-white" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <GripVertical className={`w-4 h-4 transition-opacity duration-150 ${
+              isResizing ? 'text-white opacity-100' : 'text-gray-500 opacity-60 group-hover:opacity-100 group-hover:text-white'
+            }`} />
           </div>
         </div>
 
-        {/* Right Pane - AI Chat */}
+        {/* 右側パネル */}
         <div 
-          className="flex flex-col bg-gray-50 min-h-0 flex-shrink-0" 
+          className="bg-gray-50 border-l flex-shrink-0"
           style={{ width: `${chatPanelWidth}px` }}
         >
-          {/* Chat Header */}
-          <div className="p-4 bg-white border-b flex-shrink-0">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-2">
-                <Sparkles className="w-5 h-5 text-purple-600" />
-                <h2 className="font-semibold">AIアシスタント</h2>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="relative" ref={chatHistoryRef}>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowChatHistory(!showChatHistory)}
-                  >
-                    <History className="w-4 h-4 mr-1" />
-                    <ChevronDown className={`w-3 h-3 transition-transform ${showChatHistory ? 'rotate-180' : ''}`} />
-                  </Button>
-                  
-                  {/* Chat History Dropdown */}
-                  {showChatHistory && (
-                    <div className="absolute top-full left-0 mt-1 w-64 bg-white border rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
-                      <div className="p-2 border-b bg-gray-50">
-                        <div className="text-xs font-medium text-gray-700">チャット履歴</div>
-                      </div>
-                      <div className="p-1">
-                        {chatSessions.map((session) => (
-                          <div
-                            key={session.id}
-                            className={`p-2 rounded cursor-pointer text-sm hover:bg-gray-100 ${
-                              activeChatId === session.id 
-                                ? 'bg-blue-50 text-blue-800 border border-blue-200' 
-                                : ''
-                            }`}
-                            onClick={() => {
-                              setActiveChatId(session.id);
-                              setShowChatHistory(false);
-                            }}
-                          >
-                            <div className="font-medium truncate">{session.title}</div>
-                            <div className="text-xs text-gray-500">
-                              {session.messageCount}件のメッセージ
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={createNewChatSession}
-                >
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
+          <div className="h-full flex flex-col">
+            {/* タブヘッダー */}
+            <div className="flex border-b bg-white">
+              <button
+                onClick={() => setActiveTab('chat')}
+                className={`flex-1 px-4 py-2 text-sm font-medium ${
+                  activeTab === 'chat'
+                    ? 'border-b-2 border-blue-500 text-blue-600'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <MessageCircle className="w-4 h-4 mr-2 inline" />
+                チャット
+              </button>
+              <button
+                onClick={() => setActiveTab('ai')}
+                className={`flex-1 px-4 py-2 text-sm font-medium ${
+                  activeTab === 'ai'
+                    ? 'border-b-2 border-purple-500 text-purple-600'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Sparkles className="w-4 h-4 mr-2 inline" />
+                AI分析
+              </button>
             </div>
-            
-            {/* Current Chat Info */}
-            <div className="text-sm text-gray-600">
-              {chatSessions.find(s => s.id === activeChatId)?.title || '新規チャット'}
-            </div>
-          </div>
 
-          {/* Chat Messages */}
-          <ScrollArea className="flex-1 p-4">
-            <div className="space-y-4">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${
-                    message.role === 'user' ? 'justify-end' : 'justify-start'
-                  }`}
-                >
-                  <div
-                    className={`max-w-[80%] p-3 rounded-lg ${
-                      message.role === 'user'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-white border'
-                    }`}
-                  >
-                    <div className="text-sm whitespace-pre-wrap">
-                      {message.content}
-                    </div>
-                    <div className={`text-xs mt-1 ${
-                      message.role === 'user' ? 'text-blue-100' : 'text-gray-500'
-                    }`}>
-                      {new Date(message.timestamp).toLocaleTimeString('ja-JP', {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              
-              {isAiTyping && (
-                <div className="flex justify-start">
-                  <div className="bg-white border p-3 rounded-lg">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                    </div>
+            {/* タブコンテンツ */}
+            <div className="flex-1 overflow-hidden">
+              {activeTab === 'chat' && (
+                <div className="h-full bg-white">
+                  {/* 既存のチャット機能 */}
+                  <div className="p-4 text-center text-gray-500">
+                    <MessageCircle className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                    <p>チャット機能は開発中です</p>
                   </div>
                 </div>
               )}
-            </div>
-          </ScrollArea>
-
-          {/* Chat Input */}
-          <div className="p-4 bg-white border-t flex-shrink-0">
-            <div className="flex space-x-2">
-              <Textarea
-                placeholder="AIに質問や改善依頼をしてください..."
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                className="flex-1 min-h-[60px] max-h-[120px]"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
-              />
-              <Button
-                onClick={handleSendMessage}
-                disabled={!newMessage.trim() || isAiTyping}
-                className="self-end"
-              >
-                <Send className="w-4 h-4" />
-              </Button>
-            </div>
-            <div className="text-xs text-gray-500 mt-2">
-              Shift+Enterで改行、Enterで送信
+              
+                             {activeTab === 'ai' && (
+                 <div className="h-full">
+                   {statementId ? (
+                     <AIAnalysisPanel
+                       statementId={statementId}
+                       currentContent={content}
+                       onContentChange={setContent}
+                       onImprovementApplied={handleAutoSave}
+                       onSuggestionClick={handleSuggestionClick}
+                     />
+                   ) : (
+                     <div className="p-4 text-center text-gray-500">
+                       <Sparkles className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                       <p>AI分析機能を使用するには、<br/>まず志望理由書を保存してください</p>
+                     </div>
+                   )}
+                 </div>
+               )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Selected Suggestion Detail Overlay */}
+      {selectedSuggestion && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-900">変更内容の詳細</h3>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={handleCloseSuggestionDetail}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+
+              {/* Selected Suggestion Info */}
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                <div className="flex items-center space-x-2 mb-2">
+                  <Badge className="bg-blue-100 text-blue-800">
+                    {selectedSuggestion.step}
+                  </Badge>
+                  <span className="text-sm text-gray-600">
+                    提案 #{selectedSuggestion.suggestionIndex + 1}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-700">{selectedSuggestion.suggestionText}</p>
+              </div>
+
+              {/* Changes List */}
+              <div className="space-y-4">
+                {selectedSuggestion.changes.map((change, index) => (
+                  <div key={index} className="border rounded-lg overflow-hidden">
+                    {/* 変更前（赤背景） */}
+                    <div className="bg-red-50 border-l-4 border-red-400 p-4">
+                      <div className="flex items-center mb-2">
+                        <Minus className="w-4 h-4 text-red-600 mr-2" />
+                        <span className="text-sm font-medium text-red-800">変更前</span>
+                      </div>
+                      <p className="text-gray-700 whitespace-pre-wrap">
+                        {change.original}
+                      </p>
+                    </div>
+                    
+                    {/* 変更後（緑背景） */}
+                    <div className="bg-green-50 border-l-4 border-green-400 p-4">
+                      <div className="flex items-center mb-2">
+                        <CheckCircle className="w-4 h-4 text-green-600 mr-2" />
+                        <span className="text-sm font-medium text-green-800">変更後</span>
+                      </div>
+                      <p className="text-gray-700 whitespace-pre-wrap">
+                        {change.improved}
+                      </p>
+                    </div>
+                    
+                    {/* 変更理由（吹き出し） */}
+                    <div className="bg-blue-50 border-l-4 border-blue-400 p-4">
+                      <div className="flex items-start">
+                        <MessageCircleIcon className="w-4 h-4 text-blue-600 mr-2 mt-0.5" />
+                        <div>
+                          <span className="text-sm font-medium text-blue-800 block mb-1">
+                            変更理由
+                          </span>
+                          <p className="text-sm text-blue-700">
+                            {change.reason}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex justify-end space-x-3 mt-6">
+                <Button 
+                  variant="outline" 
+                  onClick={handleCloseSuggestionDetail}
+                >
+                  キャンセル
+                </Button>
+                <Button 
+                  onClick={() => handleApplyAllChanges(selectedSuggestion.changes)}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  すべての変更を適用
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 } 

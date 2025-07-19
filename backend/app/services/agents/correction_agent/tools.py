@@ -80,11 +80,41 @@ async def generate_draft(current_text: str, focus_area: str, university_info: st
 """
         
         response = await llm.ainvoke(prompt)
-        result = {
-            "new_text": response.content,
-            "change_map": [{"section": focus_area, "change_type": "expansion", "reason": "AI による内容深掘り"}],
-            "improvement_score": 8.0
-        }
+        
+        try:
+            # LLMの応答をJSONとしてパース
+            response_text = response.content.strip()
+            
+            # JSON部分のみを抽出（```jsonで囲まれている場合）
+            if "```json" in response_text:
+                json_start = response_text.find("```json") + 7
+                json_end = response_text.find("```", json_start)
+                if json_end != -1:
+                    response_text = response_text[json_start:json_end].strip()
+            elif "```" in response_text:
+                json_start = response_text.find("```") + 3
+                json_end = response_text.find("```", json_start)
+                if json_end != -1:
+                    response_text = response_text[json_start:json_end].strip()
+            
+            # JSONをパース
+            parsed_result = json.loads(response_text)
+            
+            # 必要なフィールドが含まれているか確認し、不足分をフォールバック値で補完
+            result = {
+                "new_text": parsed_result.get("new_text", response.content),
+                "change_map": parsed_result.get("change_map", [{"section": focus_area, "change_type": "expansion", "reason": "AI による内容深掘り"}]),
+                "improvement_score": parsed_result.get("improvement_score", 8.0)
+            }
+            
+        except (json.JSONDecodeError, AttributeError) as e:
+            logger.warning(f"Failed to parse generate_draft response as JSON, using fallback: {e}")
+            # JSONパースに失敗した場合のフォールバック
+            result = {
+                "new_text": response.content,
+                "change_map": [{"section": focus_area, "change_type": "expansion", "reason": "AI による内容深掘り"}],
+                "improvement_score": 8.0
+            }
         
         return json.dumps(result, ensure_ascii=False, indent=2)
         
@@ -120,13 +150,42 @@ async def tone_style_adjust(text: str, target_tone: str = "formal", target_style
         
         response = await llm.ainvoke(prompt)
         
-        # 簡易的な結果生成（実際のLLM応答を解析）
-        result = {
-            "adjusted_text": response.content,
-            "changes": [{"original": "元の表現", "adjusted": "調整後の表現", "reason": f"{target_tone}・{target_style}への調整"}],
-            "tone_score": 8.5,
-            "style_score": 8.0
-        }
+        try:
+            # LLMの応答をJSONとしてパース
+            response_text = response.content.strip()
+            
+            # JSON部分のみを抽出（```jsonで囲まれている場合）
+            if "```json" in response_text:
+                json_start = response_text.find("```json") + 7
+                json_end = response_text.find("```", json_start)
+                if json_end != -1:
+                    response_text = response_text[json_start:json_end].strip()
+            elif "```" in response_text:
+                json_start = response_text.find("```") + 3
+                json_end = response_text.find("```", json_start)
+                if json_end != -1:
+                    response_text = response_text[json_start:json_end].strip()
+            
+            # JSONをパース
+            parsed_result = json.loads(response_text)
+            
+            # 必要なフィールドが含まれているか確認し、不足分をフォールバック値で補完
+            result = {
+                "adjusted_text": parsed_result.get("adjusted_text", response.content),
+                "changes": parsed_result.get("changes", [{"original": "元の表現", "adjusted": "調整後の表現", "reason": f"{target_tone}・{target_style}への調整"}]),
+                "tone_score": parsed_result.get("tone_score", 8.5),
+                "style_score": parsed_result.get("style_score", 8.0)
+            }
+            
+        except (json.JSONDecodeError, AttributeError) as e:
+            logger.warning(f"Failed to parse tone_style_adjust response as JSON, using fallback: {e}")
+            # JSONパースに失敗した場合のフォールバック
+            result = {
+                "adjusted_text": response.content,
+                "changes": [{"original": "元の表現", "adjusted": "調整後の表現", "reason": f"{target_tone}・{target_style}への調整"}],
+                "tone_score": 8.5,
+                "style_score": 8.0
+            }
         
         return json.dumps(result, ensure_ascii=False, indent=2)
         
@@ -167,20 +226,56 @@ async def evaluate_draft(text: str, university_info: str = None, rubric_type: st
         
         response = await llm.ainvoke(prompt)
         
-        # フォールバック結果
-        result = {
-            "overall_score": 75,
-            "structure_score": 75,
-            "content_score": 75,
-            "expression_score": 80,
-            "coherence_score": 70,
-            "university_alignment_score": 70,
-            "strengths": ["基本的な構成がある", "読みやすい文章"],
-            "weaknesses": ["より具体的な体験が必要", "大学との関連性を強化"],
-            "detailed_feedback": response.content,
-            "improvement_suggestions": ["具体的なエピソードを追加", "志望大学の特色を調査"],
-            "grade": "B"
-        }
+        try:
+            # LLMの応答をJSONとしてパース
+            response_text = response.content.strip()
+            
+            # JSON部分のみを抽出（```jsonで囲まれている場合）
+            if "```json" in response_text:
+                json_start = response_text.find("```json") + 7
+                json_end = response_text.find("```", json_start)
+                if json_end != -1:
+                    response_text = response_text[json_start:json_end].strip()
+            elif "```" in response_text:
+                json_start = response_text.find("```") + 3
+                json_end = response_text.find("```", json_start)
+                if json_end != -1:
+                    response_text = response_text[json_start:json_end].strip()
+            
+            # JSONをパース
+            parsed_result = json.loads(response_text)
+            
+            # 必要なフィールドが含まれているか確認し、不足分をフォールバック値で補完
+            result = {
+                "overall_score": parsed_result.get("overall_score", 75),
+                "structure_score": parsed_result.get("structure_score", 75),
+                "content_score": parsed_result.get("content_score", 75),
+                "expression_score": parsed_result.get("expression_score", 80),
+                "coherence_score": parsed_result.get("coherence_score", 70),
+                "university_alignment_score": parsed_result.get("university_alignment_score", 70),
+                "strengths": parsed_result.get("strengths", ["基本的な構成がある", "読みやすい文章"]),
+                "weaknesses": parsed_result.get("weaknesses", ["より具体的な体験が必要", "大学との関連性を強化"]),
+                "detailed_feedback": parsed_result.get("detailed_feedback", response.content),
+                "improvement_suggestions": parsed_result.get("improvement_suggestions", ["具体的なエピソードを追加", "志望大学の特色を調査"]),
+                "grade": parsed_result.get("grade", "B")
+            }
+            
+        except (json.JSONDecodeError, AttributeError) as e:
+            logger.warning(f"Failed to parse LLM response as JSON, using fallback: {e}")
+            # JSONパースに失敗した場合のフォールバック
+            result = {
+                "overall_score": 75,
+                "structure_score": 75,
+                "content_score": 75,
+                "expression_score": 80,
+                "coherence_score": 70,
+                "university_alignment_score": 70,
+                "strengths": ["基本的な構成がある", "読みやすい文章"],
+                "weaknesses": ["より具体的な体験が必要", "大学との関連性を強化"],
+                "detailed_feedback": response.content,
+                "improvement_suggestions": ["具体的なエピソードを追加", "志望大学の特色を調査"],
+                "grade": "B"
+            }
         
         return json.dumps(result, ensure_ascii=False, indent=2)
         
@@ -217,7 +312,7 @@ async def search_reference(topic: str, limit: int = 5) -> str:
         params = {
             "search": topic,
             "per_page": limit,
-            "mailto": "admin@example.com"  # OpenAlex推奨
+            "mailto": "office@smartao.jp"  # OpenAlex推奨
         }
         
         async with aiohttp.ClientSession() as session:
@@ -686,7 +781,7 @@ async def apply_reflexion(evaluation_logs: list, improvement_history: list) -> s
 
 # ===== 独自ツール (structure_analysis_tool) =====
 
-async def structure_analysis_tool(statement_text: str, university_info: str = "", self_analysis_context: str = "") -> str:
+async def structure_analysis_function(statement_text: str, university_info: str = "", self_analysis_context: str = "") -> str:
     """独自構造分析ツール (STRUCTUREステップ専用)"""
     try:
         # 既存の分析機能を再利用
@@ -834,7 +929,7 @@ apply_reflexion_tool = StructuredTool.from_function(
 )
 
 structure_analysis_tool = StructuredTool.from_function(
-    structure_analysis_tool,
+    structure_analysis_function,
     name="structure_analysis_tool",
     description="志望理由書の構造分析を行う独自ツール",
 )
