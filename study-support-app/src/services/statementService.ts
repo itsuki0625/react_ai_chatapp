@@ -419,6 +419,57 @@ export const getSelfAnalysisChats = async (): Promise<{
   }
 };
 
+// AI機能を追加
+export const sendStatementChatMessage = async (
+  statementId: string,
+  message: string,
+  chatHistory: StatementChatRequest['chat_history'] = []
+): Promise<StatementChatResponse> => {
+  const response = await fetchWithAuth(`${API_BASE_URL}/api/v1/statements/${statementId}/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      statement_id: statementId,
+      message,
+      chat_history: chatHistory,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'AIチャットの送信に失敗しました');
+  }
+
+  return response.json();
+};
+
+export const improveStatementWithAI = async (
+  statementId: string,
+  improvementType: StatementImprovementRequest['improvement_type'] = 'general',
+  specificFocus?: string
+): Promise<StatementImprovementResponse> => {
+  const response = await fetchWithAuth(`${API_BASE_URL}/api/v1/statements/${statementId}/improve`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      statement_id: statementId,
+      improvement_type: improvementType,
+      specific_focus: specificFocus,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'AI改善提案の取得に失敗しました');
+  }
+
+  return response.json();
+};
+
 // Add placeholder functions for create and update if needed later
 // export const createStatement = async (data: PersonalStatementCreate): Promise<PersonalStatementResponse> => { ... };
 // export const updateStatement = async (id: string, data: PersonalStatementUpdate): Promise<PersonalStatementResponse> => { ... }; 

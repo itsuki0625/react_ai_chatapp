@@ -2,9 +2,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { PersonalStatement, StatementStatus, ChatSession, ChatMessage, DesiredUniversity, convertToPersonalStatement } from '@/types/statement';
-import { mockChatSessions, mockChatMessages } from '@/lib/mockData/statements';
-import { getStatement, createStatement, updateStatement } from '@/services/statementService';
+import { PersonalStatement, StatementStatus, ChatSession, DesiredUniversity, convertToPersonalStatement } from '@/types/statement';
+import { getStatement, createStatement, updateStatement, improveStatementWithAI, StatementImprovementResponse } from '@/services/statementService';
 import { getDesiredSchools, DesiredSchool } from '@/services/universityService';
 import { useChat } from '@/store/chat/ChatContext';
 import { ChatTypeEnum } from '@/types/chat';
@@ -20,11 +19,6 @@ import {
   Save, 
   Settings, 
   MessageCircle, 
-  Send, 
-  Plus,
-  BookOpen,
-  Target,
-  Calendar,
   FileText,
   Sparkles,
   History,
@@ -90,13 +84,18 @@ export default function StatementEditor({ statementId }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [wordCount, setWordCount] = useState(0);
   const [isResizing, setIsResizing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // AI improvement state
+  const [showDiffViewer, setShowDiffViewer] = useState(false);
+  const [improvementData, setImprovementData] = useState<StatementImprovementResponse | null>(null);
+  const [isGeneratingImprovement, setIsGeneratingImprovement] = useState(false);
   
   // Selected suggestion state
   const [selectedSuggestion, setSelectedSuggestion] = useState<SelectedSuggestion | null>(null);
   const [appliedChanges, setAppliedChanges] = useState<Set<string>>(new Set());
 
   // Refs
-  const chatHistoryRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Initialize data
@@ -131,9 +130,6 @@ export default function StatementEditor({ statementId }: Props) {
             school.university?.name === foundStatement.universityName
           );
           setSelectedUniversity(university || null);
-          
-          // Find self-analysis chat (will be set by useEffect when sessions are loaded)
-          // NOTE: 自己分析チャットの連携は、sessionsが読み込まれた後に別のuseEffectで処理します
         }
       } catch (error) {
         console.error('Failed to load data:', error);
@@ -148,7 +144,7 @@ export default function StatementEditor({ statementId }: Props) {
   useEffect(() => {
     if (statement?.selfAnalysisChatId && sessions.length > 0) {
       const selfAnalysisChat = sessions.find(session => session.id === statement.selfAnalysisChatId);
-      if (selfAnalysisChat && selfAnalysisChat.status !== 'ARCHIVED') { // アーカイブされたチャットは選択しない
+      if (selfAnalysisChat && selfAnalysisChat.status !== 'ARCHIVED') {
         setSelectedSelfAnalysisChat({
           id: selfAnalysisChat.id,
           title: selfAnalysisChat.title || '無題のチャット',
@@ -157,40 +153,16 @@ export default function StatementEditor({ statementId }: Props) {
           createdAt: selfAnalysisChat.created_at || new Date().toISOString()
         });
       } else if (selfAnalysisChat && selfAnalysisChat.status === 'ARCHIVED') {
-        // 既に選択されているチャットがアーカイブされた場合は選択を解除
         setSelectedSelfAnalysisChat(null);
         console.log('Selected self-analysis chat has been archived and was deselected');
       }
     }
   }, [statement, sessions]);
 
-  // Load chat messages separately
-  useEffect(() => {
-    const chatMessages = mockChatMessages.filter(m => m.sessionId === activeChatId);
-    setMessages(chatMessages);
-  }, [activeChatId]);
-
   // Update word count
   useEffect(() => {
     setWordCount(content.length);
   }, [content]);
-
-  // Close chat history dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (chatHistoryRef.current && !chatHistoryRef.current.contains(event.target as Node)) {
-        setShowChatHistory(false);
-      }
-    };
-
-    if (showChatHistory) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showChatHistory]);
 
   // Handle panel resizing
   useEffect(() => {
@@ -266,6 +238,15 @@ export default function StatementEditor({ statementId }: Props) {
         // Redirect to edit page
         router.push(`/student/statement/${createdStatement.id}/edit`);
       }
+
+      const convertedStatement = convertToPersonalStatement(savedStatement);
+        setStatement(convertedStatement);
+      
+      if (!statementId) {
+        router.push(`/student/statement/${savedStatement.id}/edit`);
+      }
+      
+      toast.success('志望理由書を保存しました');
     } catch (error) {
       console.error('Error saving statement:', error);
       toast.error('保存中にエラーが発生しました');
@@ -302,29 +283,28 @@ export default function StatementEditor({ statementId }: Props) {
     }, 1500);
   };
 
-  const generateMockResponse = (userMessage: string): string => {
-    const responses = [
-      "この部分についてですが、もう少し具体的な例を挙げることで説得力が増すと思います。どのような体験やエピソードを追加できるでしょうか？",
-      "文章の構成は良いですね。ただし、第○段落の論理的な繋がりを強化すると、より一貫性のある志望理由書になります。",
-      "この表現は適切ですが、より学術的な言い回しに変更することも検討してみてください。例えば「〜と考えます」を「〜と思料します」など。",
-      "志望動機の部分がとても良く書けています。さらに、将来の具体的なビジョンを追加すると、より印象的な志望理由書になるでしょう。"
-    ];
-    
-    return responses[Math.floor(Math.random() * responses.length)];
+  // Diff viewer handlers
+  const handleAcceptAllChanges = () => {
+    if (improvementData) {
+      setContent(improvementData.improved_text);
+      setShowDiffViewer(false);
+      toast.success('すべての変更を適用しました');
+    }
   };
 
-  const createNewChatSession = () => {
-    const newSession: ChatSession = {
-      id: `chat-${Date.now()}`,
-      title: '新規チャット',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      messageCount: 0
-    };
-    
-    setChatSessions(prev => [...prev, newSession]);
-    setActiveChatId(newSession.id);
-    setMessages([]);
+  const handleRejectAllChanges = () => {
+    setShowDiffViewer(false);
+    toast.info('変更をキャンセルしました');
+  };
+
+  const handleAcceptChange = (changeId: string) => {
+    // Individual change acceptance logic can be implemented here
+    console.log('Accepting change:', changeId);
+  };
+
+  const handleRejectChange = (changeId: string) => {
+    // Individual change rejection logic can be implemented here
+    console.log('Rejecting change:', changeId);
   };
 
   const getStatusColor = (status: StatementStatus) => {
@@ -412,22 +392,28 @@ export default function StatementEditor({ statementId }: Props) {
             {status === StatementStatus.FINAL && '完成版'}
           </Badge>
           <span className="text-sm text-gray-500">{wordCount}文字</span>
+          
+          {/* AI Improvement Button */}
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              console.log('=== Settings Button Clicked ===');
-              console.log('Current desiredSchools:', desiredSchools);
-              console.log('Current sessions:', sessions);
-              console.log('Current showSettings:', showSettings);
-              setShowSettings(!showSettings);
-            }}
+            onClick={() => handleGenerateImprovement('general')}
+            disabled={!statementId || isGeneratingImprovement || !content.trim()}
+          >
+            <Wand2 className="w-4 h-4 mr-1" />
+            {isGeneratingImprovement ? '生成中...' : 'AI改善'}
+          </Button>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowSettings(!showSettings)}
           >
             <Settings className="w-4 h-4" />
           </Button>
-          <Button onClick={handleSave}>
+          <Button onClick={handleSave} disabled={isLoading}>
             <Save className="w-4 h-4 mr-2" />
-            保存
+            {isLoading ? '保存中...' : '保存'}
           </Button>
         </div>
       </div>
@@ -435,15 +421,6 @@ export default function StatementEditor({ statementId }: Props) {
       {/* Settings Panel */}
       {showSettings && (
         <div className="p-4 bg-white border-b space-y-4 flex-shrink-0">
-          {/* Debug info */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="p-2 bg-gray-100 text-xs">
-              <div>Debug: desiredSchools length: {desiredSchools.length}</div>
-              <div>Debug: sessions total: {sessions.length}, active: {sessions.filter(s => s.status !== 'ARCHIVED').length}</div>
-              <div>Debug: selectedUniversity: {selectedUniversity?.id || 'none'}</div>
-              <div>Debug: selectedSelfAnalysisChat: {selectedSelfAnalysisChat?.id || 'none'}</div>
-            </div>
-          )}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="text-sm font-medium text-gray-700 mb-2 block">
@@ -480,7 +457,7 @@ export default function StatementEditor({ statementId }: Props) {
                     setSelectedSelfAnalysisChat(null);
                   } else {
                     const chat = sessions.find(session => session.id === value);
-                    if (chat && chat.status !== 'ARCHIVED') { // アーカイブされたチャットは選択しない
+                    if (chat && chat.status !== 'ARCHIVED') {
                       setSelectedSelfAnalysisChat({
                         id: chat.id,
                         title: chat.title || '無題のチャット',
@@ -498,7 +475,7 @@ export default function StatementEditor({ statementId }: Props) {
                 <SelectContent>
                   <SelectItem value="none">選択しない</SelectItem>
                   {sessions
-                    .filter(session => session.status !== 'ARCHIVED') // アーカイブされたチャットを除外
+                    .filter(session => session.status !== 'ARCHIVED')
                     .map((session) => (
                       <SelectItem key={session.id} value={session.id}>
                         {session.title || '無題のチャット'}

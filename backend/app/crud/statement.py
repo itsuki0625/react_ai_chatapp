@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session, joinedload
 from app.models.personal_statement import PersonalStatement, Feedback
-from app.models.desired_school import DesiredDepartment
+from app.models.desired_school import DesiredDepartment, DesiredSchool
 from app.models.university import Department
 from app.schemas.personal_statement import PersonalStatementCreate, PersonalStatementUpdate, FeedbackCreate
 from uuid import UUID
@@ -15,6 +15,21 @@ def create_statement(
     user_id: UUID
 ) -> PersonalStatement:
     """新しい志望理由書を作成"""
+    # 志望学部の存在確認
+    if statement_in.desired_department_id:
+        # DesiredDepartment → DesiredSchool → user_id の関係を辿る
+        desired_dept = db.query(DesiredDepartment).join(
+            DesiredSchool, DesiredDepartment.desired_school_id == DesiredSchool.id
+        ).filter(
+            DesiredDepartment.id == statement_in.desired_department_id,
+            DesiredSchool.user_id == user_id  # ユーザーの志望学部であることも確認
+        ).first()
+        if not desired_dept:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"指定された志望学部ID {statement_in.desired_department_id} が見つかりません、またはあなたの志望学部ではありません"
+            )
+    
     if statement_in.self_analysis_chat_id:
         validate_self_analysis_chat(db, statement_in.self_analysis_chat_id, user_id)
 
