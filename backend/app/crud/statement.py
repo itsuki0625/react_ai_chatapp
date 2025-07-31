@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session, joinedload
 from app.models.personal_statement import PersonalStatement, Feedback
-from app.models.desired_school import DesiredDepartment
+from app.models.desired_school import DesiredDepartment, DesiredSchool
 from app.models.university import Department
 from app.schemas.personal_statement import PersonalStatementCreate, PersonalStatementUpdate, FeedbackCreate
 from uuid import UUID
@@ -15,6 +15,21 @@ def create_statement(
     user_id: UUID
 ) -> PersonalStatement:
     """新しい志望理由書を作成"""
+    # 志望学部の存在確認
+    if statement_in.desired_department_id:
+        # DesiredDepartment → DesiredSchool → user_id の関係を辿る
+        desired_dept = db.query(DesiredDepartment).join(
+            DesiredSchool, DesiredDepartment.desired_school_id == DesiredSchool.id
+        ).filter(
+            DesiredDepartment.id == statement_in.desired_department_id,
+            DesiredSchool.user_id == user_id  # ユーザーの志望学部であることも確認
+        ).first()
+        if not desired_dept:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"指定された志望学部ID {statement_in.desired_department_id} が見つかりません、またはあなたの志望学部ではありません"
+            )
+    
     if statement_in.self_analysis_chat_id:
         validate_self_analysis_chat(db, statement_in.self_analysis_chat_id, user_id)
 
@@ -25,7 +40,8 @@ def create_statement(
         desired_department_id=statement_in.desired_department_id,
         title=statement_in.title,
         keywords=statement_in.keywords,
-        self_analysis_chat_id=statement_in.self_analysis_chat_id
+        self_analysis_chat_id=statement_in.self_analysis_chat_id,
+        submission_deadline=statement_in.submission_deadline
     )
     db.add(db_statement)
     db.commit()
@@ -44,7 +60,8 @@ def get_statement(
     ).options(
         joinedload(PersonalStatement.desired_department)
         .joinedload(DesiredDepartment.department)
-        .joinedload(Department.university)
+        .joinedload(Department.university),
+        joinedload(PersonalStatement.feedback)
     ).first()
 
 def get_statements(
@@ -57,7 +74,8 @@ def get_statements(
     ).options(
         joinedload(PersonalStatement.desired_department)
         .joinedload(DesiredDepartment.department)
-        .joinedload(Department.university)
+        .joinedload(Department.university),
+        joinedload(PersonalStatement.feedback)
     ).all()
     
     # 明示的にリレーションをロード
@@ -104,7 +122,9 @@ def update_statement_db(
         db.commit()
         db.refresh(statement)
         # print(f"After update: {statement.__dict__}")
-        return statement
+        
+        # 関連データを含めて再取得
+        return get_statement(db, str(statement.id))
     except Exception as e:
         db.rollback()
         print(f"Update error: {str(e)}")

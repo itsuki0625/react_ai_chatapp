@@ -65,12 +65,96 @@ async def read_my_desired_schools(
 ) -> Any:
     """ログインユーザーの志望校リストを取得します。"""
     try:
+        # まず基本情報のクエリ実行をテスト
+        print(f"Attempting to fetch desired schools for user: {current_user.id}")
+        
         schools, total_count = await crud.desired_school.get_desired_schools_by_user_with_count(
             db=db, user_id=current_user.id, skip=skip, limit=limit
         )
-        return DesiredSchoolListResponse(total=total_count, desired_schools=schools)
+        
+        print(f"Successfully fetched {len(schools)} schools")
+        
+        # 手動でスキーマ互換のデータを作成
+        safe_schools = []
+        for school in schools:
+            try:
+                safe_school = {
+                    "id": str(school.id),
+                    "user_id": str(school.user_id),
+                    "university_id": str(school.university_id),
+                    "preference_order": school.preference_order,
+                    "created_at": school.created_at.isoformat() if hasattr(school, 'created_at') and school.created_at else None,
+                    "updated_at": school.updated_at.isoformat() if hasattr(school, 'updated_at') and school.updated_at else None,
+                    "desired_departments": [],
+                    "university": None
+                }
+                
+                # Universityの情報を安全に追加
+                if hasattr(school, 'university') and school.university:
+                    safe_school["university"] = {
+                        "id": str(school.university.id),
+                        "name": school.university.name,
+                        "university_code": school.university.university_code,
+                        "is_active": getattr(school.university, 'is_active', True),
+                        "created_at": school.university.created_at.isoformat() if hasattr(school.university, 'created_at') and school.university.created_at else None,
+                        "updated_at": school.university.updated_at.isoformat() if hasattr(school.university, 'updated_at') and school.university.updated_at else None,
+                    }
+                
+                # DesiredDepartmentsの情報を安全に追加  
+                if hasattr(school, 'desired_departments') and school.desired_departments:
+                    for dept in school.desired_departments:
+                        safe_dept = {
+                            "id": str(dept.id),
+                            "desired_school_id": str(dept.desired_school_id),
+                            "department_id": str(dept.department_id),
+                            "admission_method_id": str(dept.admission_method_id),
+                            "created_at": dept.created_at.isoformat() if hasattr(dept, 'created_at') and dept.created_at else None,
+                            "updated_at": dept.updated_at.isoformat() if hasattr(dept, 'updated_at') and dept.updated_at else None,
+                            "department": None,
+                            "admission_method": None
+                        }
+                        
+                        # Departmentの情報を安全に追加
+                        if hasattr(dept, 'department') and dept.department:
+                            safe_dept["department"] = {
+                                "id": str(dept.department.id),
+                                "name": dept.department.name,
+                                "department_code": dept.department.department_code,
+                                "university_id": str(dept.department.university_id),
+                                "is_active": getattr(dept.department, 'is_active', True),
+                                "created_at": dept.department.created_at.isoformat() if hasattr(dept.department, 'created_at') and dept.department.created_at else None,
+                                "updated_at": dept.department.updated_at.isoformat() if hasattr(dept.department, 'updated_at') and dept.department.updated_at else None,
+                            }
+                        
+                        # AdmissionMethodの情報を安全に追加
+                        if hasattr(dept, 'admission_method') and dept.admission_method:
+                            safe_dept["admission_method"] = {
+                                "id": str(dept.admission_method.id),
+                                "name": dept.admission_method.name,
+                                "description": getattr(dept.admission_method, 'description', None),
+                                "is_active": getattr(dept.admission_method, 'is_active', True),
+                                "created_at": dept.admission_method.created_at.isoformat() if hasattr(dept.admission_method, 'created_at') and dept.admission_method.created_at else None,
+                                "updated_at": dept.admission_method.updated_at.isoformat() if hasattr(dept.admission_method, 'updated_at') and dept.admission_method.updated_at else None,
+                            }
+                        
+                        safe_school["desired_departments"].append(safe_dept)
+                        
+                safe_schools.append(safe_school)
+                
+            except Exception as school_error:
+                print(f"Error processing individual school {school.id}: {school_error}")
+                continue
+        
+        print(f"Successfully processed {len(safe_schools)} schools")
+        return {
+            "total": total_count,
+            "desired_schools": safe_schools
+        }
+        
     except Exception as e:
+        import traceback
         print(f"Error reading desired schools: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="志望校リストの取得中にサーバーエラーが発生しました。"

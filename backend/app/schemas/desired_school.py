@@ -3,10 +3,7 @@ from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
 from .base import TimestampMixin
-# 循環参照を避けるために Optional で型ヒント、または forward ref を検討
-# from .university import UniversityResponse 
-# from .department import DepartmentResponse
-# from .admission import AdmissionMethodResponse
+from .university import UniversityResponse, DepartmentResponse, AdmissionMethodResponse
 
 # --- DesiredDepartment Schemas ---
 
@@ -20,9 +17,8 @@ class DesiredDepartmentCreate(DesiredDepartmentBase):
 class DesiredDepartmentResponse(DesiredDepartmentBase, TimestampMixin):
     id: UUID
     desired_school_id: UUID
-    # TODO: Populate related data if needed in response
-    # department: Optional[DepartmentResponse] = None
-    # admission_method: Optional[AdmissionMethodResponse] = None
+    department: Optional[DepartmentResponse] = None
+    admission_method: Optional[AdmissionMethodResponse] = None
 
     model_config = {
         "from_attributes": True,
@@ -47,8 +43,7 @@ class DesiredSchoolResponse(DesiredSchoolBase, TimestampMixin):
     id: UUID
     user_id: UUID
     desired_departments: List[DesiredDepartmentResponse] = []
-    # TODO: Populate related university data if needed
-    # university: Optional[UniversityResponse] = None
+    university: Optional[UniversityResponse] = None
 
     model_config = {
         "from_attributes": True,

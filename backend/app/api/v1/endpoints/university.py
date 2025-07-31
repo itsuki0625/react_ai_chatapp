@@ -37,13 +37,11 @@ async def get_universities(
                  DepartmentResponse(
                      id=dept.id,
                      name=dept.name,
-                     # ★ faculty_name, university_id, created_at, updated_at を追加
-                     faculty_name=getattr(dept, 'faculty_name', '不明'), # faculty_nameが存在しない場合もあるためgetattrを使用
-                     university_id=univ.id, # 大学のIDを渡す
+                     department_code=dept.department_code,  # 必須フィールドを追加
+                     university_id=univ.id,
+                     is_active=dept.is_active,  # BaseModelの必須フィールド
                      created_at=dept.created_at,
-                     updated_at=dept.updated_at,
-                     # description は DepartmentBase に含まれる Optional なのでそのままでOK
-                     description=getattr(dept.details, 'description', None) if dept.details else None # dept.details から取得
+                     updated_at=dept.updated_at
                  )
              )
              # --------------------------------------------------------------
@@ -52,16 +50,9 @@ async def get_universities(
             UniversityResponse(
                 id=univ.id,
                 name=univ.name,
-                departments=departments_response,
-                # UniversityResponse に必要な他のフィールドも渡す (prefecture など)
-                prefecture=getattr(univ.details, 'prefecture', '不明') if univ.details else '不明',
-                address=getattr(univ.details, 'address', None) if univ.details else None,
-                # HttpUrl 型は str() で囲む必要がある場合があるので注意
-                website_url=str(getattr(univ.details, 'website_url', None)) if univ.details and getattr(univ.details, 'website_url', None) else None,
-                # UniversityBase に description があるので univ.details から取得？ または univ 自体？ スキーマに合わせて調整
-                description=getattr(univ.details, 'description', None) if univ.details else getattr(univ, 'description', None),
-                is_national=getattr(univ, 'is_national', False), # Universityモデルにis_nationalがあれば
-                logo_url=str(getattr(univ, 'logo_url', None)) if getattr(univ, 'logo_url', None) else None, # Universityモデルにlogo_urlがあれば
+                university_code=univ.university_code,  # 必須フィールドを追加
+                is_active=univ.is_active,  # 必須フィールドを追加
+                departments=departments_response,  # 学部リストを追加
                 created_at=univ.created_at,
                 updated_at=univ.updated_at
             )
