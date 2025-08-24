@@ -15,6 +15,7 @@ class School(Base, TimestampMixin):
     details = relationship("SchoolDetails", back_populates="school", uselist=False)
     contacts = relationship("SchoolContact", back_populates="school")
     users = relationship("User", back_populates="school")
+    settings = relationship("SchoolSettings", back_populates="school", uselist=False)
 
 class SchoolDetails(Base, TimestampMixin):
     __tablename__ = 'school_details'

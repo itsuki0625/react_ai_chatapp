@@ -116,6 +116,18 @@ class User(Base, TimestampMixin):
     push_subscriptions = relationship("PushSubscription", back_populates="user")
     in_app_notifications = relationship("InAppNotification", back_populates="user")
 
+    # 先生・生徒の担当関係
+    teacher_assignments = relationship(
+        "TeacherStudentAssignment", 
+        foreign_keys="TeacherStudentAssignment.teacher_id", 
+        back_populates="teacher"
+    )
+    student_assignments = relationship(
+        "TeacherStudentAssignment", 
+        foreign_keys="TeacherStudentAssignment.student_id", 
+        back_populates="student"
+    )
+
 class UserProfile(Base, TimestampMixin):
     __tablename__ = 'user_profiles'
 

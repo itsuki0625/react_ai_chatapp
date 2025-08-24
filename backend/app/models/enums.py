@@ -171,6 +171,12 @@ class UserStatus(str, enum.Enum):
     PENDING = "pending"
     UNPAID = "unpaid"
 
+class AssignmentType(str, enum.Enum):
+    """先生と生徒の担当関係の種別"""
+    PRIMARY = "primary"        # 主担当
+    SECONDARY = "secondary"    # 副担当
+    SUBJECT_SPECIFIC = "subject_specific"  # 科目担当
+
 # SQLAlchemyで使用するための型定義
 UserRoleType = SQLAlchemyEnum(RoleType)
 

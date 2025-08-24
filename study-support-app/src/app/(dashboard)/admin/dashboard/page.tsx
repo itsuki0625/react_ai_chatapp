@@ -1,13 +1,12 @@
 'use client';
 
 import AdminDashboard from '@/components/feature/admin/AdminDashboardPage';
-import { AdminNavBar } from '@/components/feature/admin/AdminNavBar';
+import { AdminLayout } from '@/components/layout/AdminLayout';
 
 export default function Page() {
   return (
-    <div>
-      <AdminNavBar />
+    <AdminLayout>
       <AdminDashboard />
-    </div>
+    </AdminLayout>
   );
 }

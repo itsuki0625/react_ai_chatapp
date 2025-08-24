@@ -5,6 +5,8 @@ import { SessionProvider } from 'next-auth/react';
 import { Toaster } from 'react-hot-toast';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ChatProvider } from '@/store/chat/ChatContext';
+import { TenantProvider } from '@/contexts/TenantContext';
+import TenantDebugPanel from '@/components/dev/TenantDebugPanel';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 
 // React DevTools関連のエラーを抑制
@@ -38,12 +40,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <ErrorBoundary>
       <SessionProvider refetchOnWindowFocus={false}>
         <QueryClientProvider client={queryClient}>
-          <ErrorBoundary>
-            <ChatProvider>
-              {children}
-              <Toaster position="top-center" />
-            </ChatProvider>
-          </ErrorBoundary>
+          <TenantProvider>
+            <ErrorBoundary>
+              <ChatProvider>
+                {children}
+                <Toaster position="top-center" />
+                <TenantDebugPanel />
+              </ChatProvider>
+            </ErrorBoundary>
+          </TenantProvider>
         </QueryClientProvider>
       </SessionProvider>
     </ErrorBoundary>

@@ -9,6 +9,7 @@ from .user import (
     UserRoleMetadata, TokenBlacklist, UserContactInfo
 )
 from .school import School, SchoolDetails, SchoolContact
+from .teacher_student import TeacherStudentAssignment, SchoolAdminSettings, SchoolSettings
 from .university import University, UniversityDetails, UniversityContact, Department, DepartmentDetails
 from .admission import AdmissionMethod, AdmissionMethodDetails
 from .desired_school import DesiredSchool, DesiredDepartment
@@ -34,7 +35,7 @@ from .enums import (
     PersonalStatementStatus, RoleType, ContentType, DeviceType,
     NotificationType, NotificationPriority, StudyPlanStatus, DifficultyLevel,
     QuestionType, LearningItemStatus, ReactionType, TokenBlacklistReason,
-    AccountLockReason, AuditLogAction, AuditLogStatus
+    AccountLockReason, AuditLogAction, AuditLogStatus, AssignmentType
 )
 from .checklist import ChecklistEvaluation
 from .study_plan import StudyPlan, StudyGoal, StudyPlanTemplate
@@ -76,6 +77,9 @@ __all__ = [
     "School",
     "SchoolDetails",
     "SchoolContact",
+    "SchoolSettings",
+    "SchoolAdminSettings",
+    "TeacherStudentAssignment",
     
     # University related
     "University",
@@ -202,6 +206,7 @@ __all__ = [
     "AccountLockReason",
     "AuditLogAction",
     "AuditLogStatus",
+    "AssignmentType",
     "PushSubscription",
     "InAppNotification"
 ]

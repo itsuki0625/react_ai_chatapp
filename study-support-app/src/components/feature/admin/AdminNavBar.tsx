@@ -55,6 +55,7 @@ export const AdminNavBar: React.FC = () => {
   const navItems = [
     { label: '管理ダッシュボード', path: '/admin/dashboard' },
     { label: 'ユーザー管理', path: '/admin/users' },
+    { label: 'テナント管理', path: '/admin/tenant-management' },
     { label: 'コンテンツ管理', path: '/admin/content' },
     { label: 'サブスクリプション', path: '/admin/subscription' },
     { label: '通知管理', path: '/admin/notification-settings' },

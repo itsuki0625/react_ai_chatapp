@@ -34,11 +34,11 @@ def insert_demo_data(db: Session):
     """
     # 以下に各テーブルのデモデータを追加していきます
     
-    # ========= 1. ユーザー関連テーブル =========
-    users = create_user_related_data(db)
-    
-    # ========= 2. 学校・大学関連テーブル =========
+    # ========= 1. 学校・大学関連テーブル =========
     school_data = create_school_university_data(db)
+    
+    # ========= 2. ユーザー関連テーブル =========
+    users = create_user_related_data(db, school_data)
     
     # ========= 3. 志望校関連テーブル =========
     create_desired_school_data(db, users, school_data)
@@ -68,10 +68,11 @@ def insert_demo_data(db: Session):
 
 # 以下、各機能ごとの関数を実装していきます
 
-def create_user_related_data(db: Session):
+def create_user_related_data(db: Session, school_data):
     # ========= ロールデータ =========
     roles_data = {
         "管理者": Role(id=uuid.uuid4(), name="管理者", description="システム管理者", is_active=True),
+        "学校管理者": Role(id=uuid.uuid4(), name="学校管理者", description="学校レベル管理者", is_active=True),
         "教員": Role(id=uuid.uuid4(), name="教員", description="高校教員", is_active=True),
         "フリー": Role(id=uuid.uuid4(), name="フリー", description="無料プランユーザー", is_active=True),
         "スタンダード": Role(id=uuid.uuid4(), name="スタンダード", description="標準プランユーザー", is_active=True),
@@ -151,6 +152,22 @@ def create_user_related_data(db: Session):
          'forum_read': 'フォーラムを閲覧する',
          'forum_post': 'フォーラムに投稿する',
          'subscription_manage_own': '自身のサブスクリプションを管理する',
+        
+        # School Tenant Management (学校テナント管理)
+        'school_manage_users': '学校内のユーザーを管理する',
+        'school_view_all_students': '学校内の全生徒情報を閲覧する',
+        'school_view_all_teachers': '学校内の全先生情報を閲覧する',
+        'school_manage_settings': '学校の設定を管理する',
+        'school_view_analytics': '学校の統計・分析を閲覧する',
+        'school_manage_assignments': '先生と生徒の担当関係を管理する',
+        'school_admin_access': '学校管理機能へのアクセス',
+        
+        # Teacher-Student Management (先生・生徒管理)
+        'teacher_view_assigned_students': '担当生徒の情報を閲覧する',
+        'teacher_view_student_chat': '担当生徒のチャット履歴を閲覧する',
+        'teacher_view_student_statements': '担当生徒の志望理由書を閲覧する',
+        'teacher_view_student_schools': '担当生徒の志望校情報を閲覧する',
+        'teacher_manage_student_assignments': '生徒の担当関係を管理する',
     }
 
     # 権限をデータベースに追加
@@ -188,7 +205,27 @@ def create_user_related_data(db: Session):
     for perm_name in all_permission_names:
         add_perm("管理者", perm_name)
 
-    # 教員への権限付与 (リストで指定)
+    # 学校管理者への権限付与
+    # ★注意: このリスト内の権限名が上記の all_permissions_data に存在するか確認
+    school_admin_perms = [
+        "user_read", "content_read", "content_write",
+        "community_read", "community_post_create", "community_post_delete_own",
+        "chat_session_read", "chat_message_send",
+        "desired_school_manage_own", "desired_school_view_all",
+        "statement_review_request", "statement_review_respond", "statement_view_all",
+        "study_plan_read",
+        "communication_read", "communication_write",
+        "application_read", "application_write",
+        "permission_read", "role_read",
+        # 学校テナント管理権限
+        "school_manage_users", "school_view_all_students", "school_view_all_teachers",
+        "school_manage_settings", "school_view_analytics", "school_manage_assignments",
+        "school_admin_access",
+    ]
+    for perm_name in school_admin_perms:
+        add_perm("学校管理者", perm_name)
+
+    # 教員への権限付与 (拡張版)
     # ★注意: このリスト内の権限名が上記の all_permissions_data に存在するか確認
     teacher_perms = [
         "user_read", "content_read", "content_write",
@@ -199,8 +236,10 @@ def create_user_related_data(db: Session):
         "study_plan_read",
         "communication_read", "communication_write",
         "application_read", "application_write",
-        "permission_read", # Read permissions
-        "role_read",       # Read roles
+        "permission_read", "role_read",
+        # 先生・生徒管理権限
+        "teacher_view_assigned_students", "teacher_view_student_chat",
+        "teacher_view_student_statements", "teacher_view_student_schools",
     ]
     for perm_name in teacher_perms:
         add_perm("教員", perm_name)
@@ -258,15 +297,22 @@ def create_user_related_data(db: Session):
     db.flush() # RolePermission の変更を反映
 
     # ========= ユーザーデータ =========
+    # 学校データを取得
+    demo_school = school_data["school"]
+    
     users_data = [
-        ("admin@demo-univ.ac.jp", get_password_hash("admin123"), "管理者 テスト", roles["管理者"]),
-        ("teacher@demo-high.ed.jp", get_password_hash("teacher123"), "教員 テスト", roles["教員"]),
-        ("student@example.com", get_password_hash("student123"), "フリーユーザー テスト", roles["フリー"]),
-        ("test@example.com", get_password_hash("test123"), "テストユーザー", roles["フリー"]),
-        ("ai-system@example.com", get_password_hash("aiSystem@123"), "AIシステム", roles["システム"]),
+        ("admin@demo-univ.ac.jp", get_password_hash("admin123"), "管理者 テスト", roles["管理者"], None),
+        ("school-admin@demo-high.ed.jp", get_password_hash("schooladmin123"), "学校管理者 テスト", roles["学校管理者"], demo_school.id),
+        ("teacher@demo-high.ed.jp", get_password_hash("teacher123"), "教員 テスト", roles["教員"], demo_school.id),
+        ("teacher2@demo-high.ed.jp", get_password_hash("teacher123"), "教員2 テスト", roles["教員"], demo_school.id),
+        ("student@example.com", get_password_hash("student123"), "生徒1 テスト", roles["フリー"], demo_school.id),
+        ("student2@example.com", get_password_hash("student123"), "生徒2 テスト", roles["スタンダード"], demo_school.id),
+        ("student3@example.com", get_password_hash("student123"), "生徒3 テスト", roles["プレミアム"], demo_school.id),
+        ("test@example.com", get_password_hash("test123"), "テストユーザー", roles["フリー"], None),
+        ("ai-system@example.com", get_password_hash("aiSystem@123"), "AIシステム", roles["システム"], None),
     ]
     users = []
-    for email, pwd, name, role_obj in users_data:
+    for email, pwd, name, role_obj, school_id in users_data:
         user_id = uuid.uuid4()
         user = User(
             id=user_id,
@@ -275,7 +321,8 @@ def create_user_related_data(db: Session):
             full_name=name,
             is_active=True,
             is_verified=True, # Demo data: assume verified
-            status=UserStatus.ACTIVE # Set status to ACTIVE
+            status=UserStatus.ACTIVE, # Set status to ACTIVE
+            school_id=school_id  # 学校IDを設定
         )
         users.append(user)
         db.add(user)
@@ -292,6 +339,41 @@ def create_user_related_data(db: Session):
 
     # ========= ユーザープロフィールなど (既存のロジックを維持) =========
     # ... (User Profile, Login Info, Email Verification, Contact Info logic) ...
+
+    # ========= 先生・生徒の担当関係 =========
+    from app.models.teacher_student import TeacherStudentAssignment
+    from app.models.enums import AssignmentType
+    
+    # ユーザーを取得（インデックスベース）
+    teacher1 = users[2]  # teacher@demo-high.ed.jp
+    teacher2 = users[3]  # teacher2@demo-high.ed.jp 
+    student1 = users[4]  # student@example.com
+    student2 = users[5]  # student2@example.com
+    student3 = users[6]  # student3@example.com
+    
+    # 担当関係を作成
+    assignments_data = [
+        (teacher1, student1, AssignmentType.PRIMARY, "数学"),
+        (teacher1, student2, AssignmentType.PRIMARY, "数学"),
+        (teacher2, student2, AssignmentType.SECONDARY, "国語"),
+        (teacher2, student3, AssignmentType.PRIMARY, "国語"),
+        (teacher1, student3, AssignmentType.SECONDARY, "数学"),
+    ]
+    
+    for teacher, student, assignment_type, subject in assignments_data:
+        # 学校に所属しているユーザーのみ担当関係を作成
+        if teacher.school_id and student.school_id and teacher.school_id == student.school_id:
+            assignment = TeacherStudentAssignment(
+                id=uuid.uuid4(),
+                teacher_id=teacher.id,
+                student_id=student.id,
+                school_id=teacher.school_id,
+                assignment_type=assignment_type,
+                subject=subject,
+                is_active=True
+            )
+            db.add(assignment)
+    db.flush()
 
     return users # Return the list of created user objects
 
@@ -497,11 +579,46 @@ def create_school_university_data(db: Session):
         db.add(method_details)
     db.flush()
     
+    # ========= 学校設定データ =========
+    from app.models.teacher_student import SchoolSettings, SchoolAdminSettings
+    
+    # 学校設定を作成
+    school_settings = SchoolSettings(
+        id=uuid.uuid4(),
+        school_id=demo_school.id,
+        allow_student_chat=True,
+        require_statement_approval=True,
+        enable_analytics=True,
+        enable_teacher_student_assignment=True,
+        custom_branding_primary_color="#3B82F6",
+        custom_branding_secondary_color="#10B981",
+        custom_branding_accent_color="#F59E0B",
+        notifications_email_enabled=True,
+        notifications_push_enabled=True,
+        notifications_digest_frequency="weekly"
+    )
+    db.add(school_settings)
+    
+    # 学校管理者設定を作成
+    school_admin_settings = SchoolAdminSettings(
+        id=uuid.uuid4(),
+        school_id=demo_school.id,
+        enable_user_management=True,
+        enable_analytics_export=True,
+        enable_bulk_operations=True,
+        max_teachers=50,
+        max_students=1000
+    )
+    db.add(school_admin_settings)
+    db.flush()
+    
     return {
         "school": demo_school,
         "university": demo_university,
         "departments": departments,
-        "admission_methods": admission_methods
+        "admission_methods": admission_methods,
+        "school_settings": school_settings,
+        "school_admin_settings": school_admin_settings
     }
 
 def create_desired_school_data(db: Session, users, school_data):
